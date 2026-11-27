@@ -63,7 +63,7 @@ const AILSA: ContactProfile = {
   deals: [{ id: DEAL_ID, title: "Wedding reception, 5 June", stage: "proposal_sent", preferredDate: "2027-06-05", guestCount: 160,
     estimatedValueMinor: 1_840_000, currency: "GBP", updatedAt: "2026-09-30T14:00:00.000Z" }],
   proposals: [{ id: PROPOSAL_ID, opportunityId: DEAL_ID, title: "Henderson wedding proposal", status: "sent", currentVersion: 2,
-    sentAt: "2026-09-30T14:00:00.000Z" }],
+    sentAt: "2026-09-30T14:00:00.000Z", sentVersion: 2 }],
 };
 
 function enquiry(overrides: Partial<RecentEnquiry>): RecentEnquiry {

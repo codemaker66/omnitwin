@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   signOut: vi.fn<() => Promise<void>>(),
   openUserProfile: vi.fn<() => void>(),
   submitGuestEnquiry: vi.fn<(input: unknown) => Promise<unknown>>(),
+  /** The sign-in provider's own state: "error" once its script has failed to load. */
+  clerk: { status: "ready" as "loading" | "ready" | "degraded" | "error" },
   identity: { isLoaded: true, isSignedIn: true,
     user: { id: "clerk_elaine", primaryEmailAddress: { emailAddress: "elaine@example.test", verification: { status: "verified" as "verified" | "unverified" } },
       publicMetadata: { role: "admin", platformRole: "admin", venueId: "untrusted" } } },
@@ -22,7 +24,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@clerk/react", () => ({
   useUser: () => mocks.identity,
   useAuth: () => ({ getToken: mocks.getToken }),
-  useClerk: () => ({ signOut: mocks.signOut, openUserProfile: mocks.openUserProfile }),
+  useClerk: () => ({ signOut: mocks.signOut, openUserProfile: mocks.openUserProfile, status: mocks.clerk.status }),
 }));
 vi.mock("../../../api/auth.js", () => ({ getCurrentAuthUser: mocks.getCurrentAuthUser }));
 vi.mock("../../../api/configurations.js", () => ({ submitGuestEnquiry: mocks.submitGuestEnquiry }));
@@ -46,6 +48,7 @@ beforeEach(() => {
   mocks.getCurrentAuthUser.mockReset();
   mocks.openUserProfile.mockReset();
   mocks.submitGuestEnquiry.mockReset();
+  mocks.clerk.status = "ready";
   mocks.identity.isLoaded = true;
   mocks.identity.isSignedIn = true;
   mocks.identity.user.id = "clerk_elaine";
@@ -309,5 +312,48 @@ describe("authoritative account access", () => {
     await act(async () => { signout.reject(new Error("offline")); await signout.promise.catch(() => undefined); });
     await waitFor(() => { expect(screen.getByRole("alert").textContent).toContain("Sign out did not finish"); });
     expect(screen.getByRole("button", { name: "Use another account" }).getAttribute("aria-busy")).toBe("false");
+  });
+});
+
+// Release audit, web-auth-routing-6. On patchy wifi, during an outage at the
+// sign-in provider, or behind a content blocker, the provider's script never
+// loads. It gives up by itself and says so, but the bridge only knew "loaded"
+// from "not loaded yet", so every protected page stood at "Checking access…"
+// for ever. Nobody is signed in on a page whose sign-in could not load: the
+// bridge now says so, and a protected page sends the person to the sign-in
+// page, which already says "Secure sign-in is unavailable. Refresh the page."
+describe("when secure sign-in itself cannot load", () => {
+  beforeEach(() => {
+    mocks.identity.isLoaded = false;
+    mocks.identity.isSignedIn = false;
+    useAuthStore.setState({ isLoading: true });
+  });
+
+  it("keeps checking while the sign-in script is still loading", () => {
+    mocks.clerk.status = "loading";
+    render(<Flow />);
+    expect(useAuthStore.getState().isLoading).toBe(true);
+    expect(mocks.getCurrentAuthUser).not.toHaveBeenCalled();
+  });
+
+  it("stops checking once the script has failed, and reads as signed out rather than waiting for ever", () => {
+    mocks.clerk.status = "error";
+    render(<Flow />);
+    expect(useAuthStore.getState()).toMatchObject({ isLoading: false, isAuthenticated: false, user: null, accessStatus: "signed_out" });
+    expect(mocks.getCurrentAuthUser).not.toHaveBeenCalled();
+  });
+
+  it("carries on as usual if sign-in loads after all", async () => {
+    mocks.clerk.status = "error";
+    mocks.getCurrentAuthUser.mockResolvedValue(venueAdmin);
+    const view = render(<Flow />);
+    expect(useAuthStore.getState().isLoading).toBe(false);
+
+    mocks.clerk.status = "ready";
+    mocks.identity.isLoaded = true;
+    mocks.identity.isSignedIn = true;
+    view.rerender(<Flow />);
+    await waitFor(() => { expect(useAuthStore.getState().user?.id).toBe("db-user"); });
+    expect(screen.getByText("Venue operations")).toBeDefined();
   });
 });

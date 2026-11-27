@@ -231,9 +231,22 @@ button:disabled,
   button,
   [role="button"] {
     filter: none !important;
-    transform: none !important;
     transition-delay: 0ms !important;
     transition-duration: 0.001ms !important;
     transition-property: none !important;
+  }
+
+  /* Hover and press transforms stop: the pop and dip every button once had
+     (T-469), and each control's own press scale since (T-615). A transform
+     the control's own script sets inline is placement, not decoration: the
+     When ribbon's bar follows the pointer by one, and reduced motion never
+     stops a visual that follows the pointer (a11y-1). Such a control answers
+     reduced motion at its source, as the ribbon's settling spring does.
+     Inline styles serialise as "name: value;" joined by spaces, so these
+     match a transform declaration and not text-transform or will-change.
+     :where() keeps the reset's specificity as it was. */
+  button:where(:not([style^="transform:"], [style*=" transform:"])),
+  [role="button"]:where(:not([style^="transform:"], [style*=" transform:"])) {
+    transform: none !important;
   }
 }

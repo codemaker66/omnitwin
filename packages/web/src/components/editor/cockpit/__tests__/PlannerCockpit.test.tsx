@@ -2,12 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
+import { useChromePresenceStore } from "../../../../stores/chrome-presence-store.js";
+import { useSurveyedRoomStore } from "../../../../stores/surveyed-room-store.js";
 
 // The cockpit hosts the full editor (App) in its stage; mock it to a stand-in
 // so the test stays a structural shell test (no WebGL). The top bar reads
 // router + store context of its own, so mock it too for this shell test.
-vi.mock("../../../../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> }));
-vi.mock("../ReferenceRoomHeader.js", () => ({ ReferenceRoomHeader: () => <header data-testid="reference-room-header-mock" /> }));
+// Counted, so a test can say when the cockpit draws its hall again.
+const editorDrawn = vi.hoisted(() => ({ count: 0 }));
+vi.mock("../../../../App.js", () => ({ App: () => { editorDrawn.count += 1; return <div data-testid="mock-editor-3d" />; } }));
+// The header's save line (headerSaveLabel) stays real: the chrome's save word speaks it.
+vi.mock("../ReferenceRoomHeader.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../ReferenceRoomHeader.js")>(),
+  ReferenceRoomHeader: () => <header data-testid="reference-room-header-mock" />,
+}));
 vi.mock("../CockpitRightDock.js", () => ({ CockpitRightDock: () => <aside data-testid="cockpit-dock-mock" /> }));
 vi.mock("../CockpitBottom.js", () => ({ CockpitBottom: () => <footer data-testid="cockpit-bottom-mock" /> }));
 // The phone lens sheet has its own suite (LensSheet.test.tsx); here only where
@@ -98,6 +106,25 @@ describe("PlannerCockpit", () => {
     expect(screen.getByTestId("room-resolve-caption").textContent).toContain("Part of the room capture");
     expect(screen.getByTestId("room-resolve-caption").querySelector("svg")).toBeNull();
   });
+  it.each([true, false])("says that a surveyed room could not load on mobile=%s, and on a phone only then", (mobile) => {
+    const store = useSurveyedRoomStore.getState();
+    try {
+      // Still loading: a phone keeps its stage clear, as it does while a capture loads.
+      store.publish({ roomName: "Saloon", phase: "loading", files: { settled: 1, expected: 3 }, failure: null });
+      const { rerender } = render(<PlannerCockpit mobile={mobile} />);
+      if (mobile) expect(screen.queryByTestId("room-resolve-caption")).toBeNull();
+      else expect(screen.getByTestId("room-resolve-caption").textContent).toContain("Loading the Saloon as surveyed");
+      act(() => { store.publish({ roomName: "Saloon", phase: "failed", files: { settled: 0, expected: null }, failure: "survey.json (http): HTTP 404" }); });
+      rerender(<PlannerCockpit mobile={mobile} />);
+      const caption = screen.getByTestId("room-resolve-caption");
+      expect(caption.getAttribute("data-visible")).toBe("true");
+      expect(caption.textContent).toContain("The surveyed Saloon could not load");
+      expect(caption.querySelector("svg")).toBeNull();
+    } finally {
+      act(() => { store.publish(null); });
+    }
+  });
+
   it("keeps booking controls reachable independently of the layout timeline's expansion", () => {
     const { container, rerender } = render(<PlannerCockpit hasLinkedEvent />);
     const disclosure = screen.getByText("Booking time").closest("details");
@@ -188,5 +215,18 @@ describe("PlannerCockpit", () => {
     expect(caption.getAttribute("data-visible")).toBe("true");
     expect(caption.getAttribute("aria-live")).toBe("polite");
     expect(caption.querySelector("svg")).toBeNull();
+  });
+
+  // T-680 performance review, 4 Nov: the cockpit itself listened for
+  // clear-all, so every clear and restore drew the whole cockpit again, the
+  // hall's editor with it (65-103 ms of script a change against 12 idle).
+  it("clears and restores the tools without drawing the cockpit or its hall again", () => {
+    render(<PlannerCockpit />);
+    const drawn = editorDrawn.count;
+    act(() => { useChromePresenceStore.getState().clearAll(); });
+    expect(document.documentElement.getAttribute("data-planner-chrome")).toBe("cleared");
+    act(() => { useChromePresenceStore.getState().restoreAll(); });
+    expect(useChromePresenceStore.getState().cleared).toBe(false);
+    expect(editorDrawn.count).toBe(drawn);
   });
 });

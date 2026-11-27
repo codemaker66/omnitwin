@@ -32,9 +32,23 @@ interface RoomDossierProps {
   readonly onClose: () => void;
 }
 
-function dimsLine(dims: RoomDimensions): string {
-  const base = `${String(dims.lengthM)} × ${String(dims.widthM)} m · ${String(dims.heightM)} m high`;
-  return dims.note === undefined ? base : `${base} (${dims.note})`;
+/** The room's figures, a line for each stated extent: one for a room given as
+ *  a whole, one per named section for a room the venue publishes in sections
+ *  (the Robert Adam Room), in the venue's order. On each line the height's
+ *  qualifier sits in brackets beside it, and a room with no stated height
+ *  gives its length and width alone. The room's remark (the Grand Hall's
+ *  dome) closes the last line as a sentence of its own, so the dome is never
+ *  read as the height. */
+function dimsLines(dims: RoomDimensions): readonly string[] {
+  const lines = dims.extents.map((extent) => {
+    const floor = `${String(extent.lengthM)} × ${String(extent.widthM)} m`;
+    const sized = extent.heightM === undefined ? floor : `${floor} · ${String(extent.heightM)} m high`;
+    const named = extent.section === undefined ? sized : `${extent.section} section ${sized}`;
+    return extent.note === undefined ? named : `${named} (${extent.note})`;
+  });
+  const remark = dims.remark;
+  if (remark === undefined) return lines;
+  return lines.map((line, index) => (index === lines.length - 1 ? `${line}. ${remark}` : line));
 }
 
 export function RoomDossier({ room, onClose }: RoomDossierProps): ReactElement {
@@ -91,7 +105,15 @@ export function RoomDossier({ room, onClose }: RoomDossierProps): ReactElement {
             </button>
           </header>
 
-          {dims !== undefined && <p className="fr-dossier-dims">{dimsLine(dims)}</p>}
+          {dims !== undefined && (
+            // A paragraph per line, so a room in two sections reads as two
+            // statements to a screen reader and not as one run-on figure.
+            <div className="fr-dossier-dims">
+              {dimsLines(dims).map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
+          )}
 
           <div className="fr-enq-pills fr-dossier-pills">
             {CAPACITY_FORMATS.map((f) => (

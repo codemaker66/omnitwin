@@ -1,12 +1,17 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
 import { occasionLabel } from "@omnitwin/types";
 import { Link } from "react-router-dom";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react";
+import type { RecordFirstResponseResult } from "@omnitwin/types";
 import type { Enquiry, StatusHistoryEntry } from "../../../api/enquiries.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { AIDraftPanel } from "../../ai/AIDraftPanel.js";
+import { draftEnquirySummary } from "../../../api/ai-assistant.js";
 import { useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
+import { movesEnquiry } from "../../../lib/role-capabilities.js";
+import { useAuthStore } from "../../../stores/auth-store.js";
 import { StageChip } from "./EnquiryStages.js";
+import { EnquiryReply } from "./EnquiryReply.js";
 import { EnquiryNameText, enquiryName } from "./EnquiryLedger.js";
 import type { RoomPhoto } from "./enquiry-room-photo.js";
 import type { EnquiryStanding } from "./enquiry-standing.js";
@@ -65,6 +70,17 @@ export interface PanelDiary {
   readonly onRetry: () => void;
 }
 
+/** The enquiry's first reply, for a reader of its venue's reply time. */
+export interface PanelReply {
+  /** Whether this person records replies for this enquiry's venue. */
+  readonly canRecord: boolean;
+  /** When the enquiry arrived, if the reply-time alarm flags it. */
+  readonly overdueSinceMs: number | null;
+  readonly thresholdHours: number | null;
+  readonly viewerId: string | null;
+  readonly onRecorded: (result: RecordFirstResponseResult) => void;
+}
+
 export interface PanelNavigation {
   readonly layout: "wide" | "single";
   /** "Back to enquiries", or "Back to profile" when a profile opened it. */
@@ -97,6 +113,9 @@ interface EnquiryPanelProps {
   /** Only the venue's own team is offered an AI summary: the general AI
    *  drafts are charged to the venue and refuse anyone else (T-656). */
   readonly canDraftWithAI: boolean;
+  /** When and how the venue first replied; null for a reader who does not
+   *  see the venue's reply time (the API sends it to the venue's team only). */
+  readonly reply: PanelReply | null;
   readonly navigation: PanelNavigation;
   readonly headingRef: RefObject<HTMLHeadingElement>;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
@@ -118,6 +137,9 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
   const kindLabel = request !== null ? requestWords(request).label : occasionLabel(enquiry.eventType) ?? "Enquiry";
   const eyebrow = `${kindLabel}${received === null ? "" : ` · received ${received}`}`;
   const source = sourceWords(enquiry.source);
+  // Every move offered below is the venue's (review, decide, mark done,
+  // reopen): a customer reading their own enquiry is offered none of them.
+  const canMove = useAuthStore((state) => movesEnquiry(state.user, enquiry.venueId));
 
   const step = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.altKey || event.ctrlKey || event.metaKey || isEditable(event.target)) return;
@@ -176,13 +198,19 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
               diarySays={transition.confirming === "approved" && props.diary !== null ? props.diary.approve : undefined}
               saving={transition.saving !== null} failure={transition.failure} onConfirm={props.onConfirm} onCancel={props.onCancel} />
           ) : request === null ? (
-            <NextStep enquiry={enquiry} transition={transition} canCreateOpportunity={props.canCreateOpportunity}
+            <NextStep enquiry={enquiry} transition={transition} canMove={canMove} canCreateOpportunity={props.canCreateOpportunity}
               creatingOpportunity={props.creatingOpportunity} opportunityFailure={props.opportunityFailure}
               onRequest={props.onRequest} onCreateOpportunity={props.onCreateOpportunity} />
           ) : (
-            <RequestNextStep enquiry={enquiry} kind={request} transition={transition} onRequest={props.onRequest} />
+            <RequestNextStep enquiry={enquiry} kind={request} transition={transition} canMove={canMove} onRequest={props.onRequest} />
           )}
         </section>
+
+        {request === null && props.reply !== null && enquiry.state !== "draft" && (
+          <EnquiryReply enquiry={enquiry} canRecord={props.reply.canRecord} overdueSinceMs={props.reply.overdueSinceMs}
+            thresholdHours={props.reply.thresholdHours} viewerId={props.reply.viewerId} nowMs={nowMs}
+            onRecorded={props.reply.onRecorded} />
+        )}
 
         {request === null && props.diary !== null && <EnquiryDiary diary={props.diary} />}
 
@@ -399,9 +427,11 @@ function StagePath({ state, request }: { readonly state: string; readonly reques
   );
 }
 
-function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportunity, opportunityFailure, onRequest, onCreateOpportunity }: {
+function NextStep({ enquiry, transition, canMove, canCreateOpportunity, creatingOpportunity, opportunityFailure, onRequest, onCreateOpportunity }: {
   readonly enquiry: Enquiry;
   readonly transition: PanelTransition;
+  /** Whether the reader makes the venue's moves (movesEnquiry). */
+  readonly canMove: boolean;
   readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
   readonly opportunityFailure: string | null;
@@ -414,6 +444,7 @@ function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportuni
 
   switch (enquiry.state) {
     case "submitted":
+      if (!canMove) return <>{failure}</>;
       return (
         <>
           <div className="enq-actions">
@@ -432,6 +463,7 @@ function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportuni
         </>
       );
     case "under_review":
+      if (!canMove) return <>{failure}</>;
       return (
         <>
           <div className="enq-actions">
@@ -475,10 +507,12 @@ function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportuni
 }
 
 /** A request's next step: marked done without an email, or reopened. */
-function RequestNextStep({ enquiry, kind, transition, onRequest }: {
+function RequestNextStep({ enquiry, kind, transition, canMove, onRequest }: {
   readonly enquiry: Enquiry;
   readonly kind: RequestKind;
   readonly transition: PanelTransition;
+  /** Whether the reader makes the venue's moves (movesEnquiry). */
+  readonly canMove: boolean;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
 }): ReactElement {
   const busy = transition.saving !== null;
@@ -488,6 +522,7 @@ function RequestNextStep({ enquiry, kind, transition, onRequest }: {
   switch (enquiry.state) {
     case "submitted":
     case "under_review":
+      if (!canMove) return <>{failure}</>;
       return (
         <>
           <div className="enq-actions">
@@ -506,6 +541,7 @@ function RequestNextStep({ enquiry, kind, transition, onRequest }: {
         </>
       );
     case "archived":
+      if (!canMove) return <>{failure}</>;
       return (
         <>
           <div className="enq-actions">
@@ -678,9 +714,17 @@ function EnquiryDrafts({ enquiry }: { readonly enquiry: Enquiry }): ReactElement
   // renders nothing without one, so the section would open onto an empty body.
   // The panel still mounts only once someone opens the section. A proposal's
   // message is drafted in the proposal itself, where it can be used.
-  const available = useAIDraftsAvailable();
+  const available = useAIDraftsAvailable("enquiry_summary");
+  // A summary is drafted for the venue the person works at, and charged to
+  // it: an enquiry at another venue (a platform admin reads every venue's) is
+  // not offered one, as the server would not find it there.
+  const workVenueId = useAuthStore((state) => state.user?.venueId ?? null);
   const [open, setOpen] = useState(false);
-  if (available !== true) return null;
+  // The server builds the summary from the enquiry it holds, so only the id
+  // goes: never the guest's name, email address or message (ai-1).
+  const enquiryId = enquiry.id;
+  const summarise = useCallback(() => draftEnquirySummary(enquiryId), [enquiryId]);
+  if (available !== true || workVenueId !== enquiry.venueId) return null;
   return (
     <section className="enq-section">
       <details className="enq-drafts" onToggle={(event) => { setOpen(event.currentTarget.open); }}>
@@ -691,16 +735,7 @@ function EnquiryDrafts({ enquiry }: { readonly enquiry: Enquiry }): ReactElement
               title="Enquiry summary"
               useCase="enquiry_summary"
               actionLabel="Draft summary"
-              context={{
-                enquiryId: enquiry.id,
-                name: enquiry.guestName ?? enquiry.name,
-                email: enquiry.guestEmail ?? enquiry.email,
-                eventType: enquiry.eventType,
-                preferredDate: enquiry.preferredDate,
-                estimatedGuests: enquiry.estimatedGuests,
-                message: enquiry.message,
-                currentStatus: enquiry.state,
-              }}
+              request={summarise}
             />
           </div>
         )}

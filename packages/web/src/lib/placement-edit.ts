@@ -2,12 +2,19 @@ import { seatBaseSlug } from "@omnitwin/types";
 import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
-import { atVerdict, judgeGhost, refusalChip, type GhostObstacle, type GhostWorld } from "./ghost-truth.js";
+import {
+  atVerdict,
+  judgeGhost,
+  refusalChip,
+  type GhostObstacle,
+  type GhostWorld,
+} from "./ghost-truth.js";
 import {
   computeRotatedFootprint,
   expandIdsToGroupMembers,
   generatePlacedId,
   nextTableLabels,
+  settleMovedOnSurfaces,
   tableLabelNumber,
   type PlacedItem,
 } from "./placement.js";
@@ -60,13 +67,21 @@ function pieces(items: readonly PlacedItem[]): readonly PlacedItem[] {
   return items.filter((piece) => isSceneFurniturePlacement(piece));
 }
 
-/** The selected pieces made whole: a table brings its chairs, a trestle its set. */
+/**
+ * The selected pieces made whole: a table brings its chairs, a trestle its
+ * set, and so on until nothing more joins (a chair added to a set's trestle
+ * may carry the trestle's group and not the set).
+ */
 export function wholeSelection(selectedIds: ReadonlySet<string>, placedItems: readonly PlacedItem[]): readonly PlacedItem[] {
-  const ids = expandIdsToGroupMembers(selectedIds, placedItems);
+  let ids = new Set(selectedIds);
+  for (let size = -1; size !== ids.size;) {
+    size = ids.size;
+    ids = new Set([...ids, ...expandIdsToGroupMembers(ids, placedItems)]);
+  }
   return pieces(placedItems.filter((piece) => ids.has(piece.id)));
 }
 
-function isDiningTable(piece: PlacedItem): boolean {
+export function isDiningTable(piece: PlacedItem): boolean {
   const item = getCatalogueItem(piece.catalogueItemId);
   return item !== undefined && isDiningTableItem(item);
 }
@@ -150,9 +165,19 @@ export function duplicateOffsets(
   return last === null ? standard : [last, ...standard.filter((o) => o.dx !== last.dx || o.dz !== last.dz)];
 }
 
+/**
+ * Pieces where they would stand once moved: each settled on what is under
+ * it there (lib/placement settleMovedOnSurfaces), so they are judged, and
+ * set down, on a dance floor or a stage rather than in it.
+ */
+export function standing(moved: readonly PlacedItem[], world: GhostWorld): readonly PlacedItem[] {
+  const moving = new Set(moved.map((piece) => piece.id));
+  return settleMovedOnSurfaces(moved, world.placedItems.filter((piece) => !moving.has(piece.id)));
+}
+
 /** Judges the shifted pieces where they would land; a push of up to 0.15 m is taken, as for any ghost. */
 function landing(source: readonly PlacedItem[], offset: FloorOffset, world: GhostWorld): { readonly offset: FloorOffset; readonly obstacle: GhostObstacle | null } | { readonly offset: null; readonly obstacle: GhostObstacle | null } {
-  const moved = source.map((piece) => ({ ...piece, x: piece.x + offset.dx, z: piece.z + offset.dz }));
+  const moved = standing(source.map((piece) => ({ ...piece, x: piece.x + offset.dx, z: piece.z + offset.dz })), world);
   const verdict = judgeGhost(moved, world);
   if (verdict.state === "refused") return { offset: null, obstacle: verdict.obstacle };
   const landed = atVerdict(moved, verdict);
@@ -183,7 +208,7 @@ export function planDuplicate(
       continue;
     }
     const clone = clonePieces(source, landed.offset, world.placedItems, options);
-    return { ok: true, items: clone.items, idMap: clone.idMap, offset: landed.offset };
+    return { ok: true, items: settleMovedOnSurfaces(clone.items, world.placedItems), idMap: clone.idMap, offset: landed.offset };
   }
   return refused(firstRefusal);
 }
@@ -214,7 +239,7 @@ export function planPaste(
   const landed = landing(clipboard.items, asked, world);
   if (landed.offset === null) return refused(landed.obstacle);
   const clone = clonePieces(clipboard.items, landed.offset, world.placedItems, options);
-  return { ok: true, items: clone.items, idMap: clone.idMap, offset: landed.offset };
+  return { ok: true, items: settleMovedOnSurfaces(clone.items, world.placedItems), idMap: clone.idMap, offset: landed.offset };
 }
 
 /** Ctrl A: every piece in the room. */
@@ -234,3 +259,5 @@ export function piecesOfKindIds(placedItems: readonly PlacedItem[], selectedIds:
   const kinds = new Set(all.filter((piece) => selectedIds.has(piece.id)).map(kindOf));
   return all.filter((piece) => kinds.has(kindOf(piece))).map((piece) => piece.id);
 }
+
+// Line up and Move, and selectionUnits, which only the new chrome calls so far, are in lib/placement-moves.ts (T-671).

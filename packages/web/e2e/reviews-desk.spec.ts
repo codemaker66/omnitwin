@@ -252,7 +252,10 @@ test.describe("Layout reviews desk", () => {
     expect(emulator.moves.map((move) => `${move.id === WEDDING_ID ? "wedding" : move.id === DINNER_ID ? "dinner" : "ball"}:${move.to}`)).toEqual([
       "wedding:under_review", "wedding:approved", "dinner:under_review", "dinner:changes_requested", "ball:approved",
     ]);
-    expect(emulator.moves.find((move) => move.to === "changes_requested")?.body).toEqual({ note: "Keep the 1.2 m route clear beside the main doors." });
+    // The request names the version the desk showed, so the API can refuse it once a newer one is in.
+    expect(emulator.moves.find((move) => move.to === "changes_requested")?.body).toEqual({
+      note: "Keep the 1.2 m route clear beside the main doors.", snapshotId: snapshot(DINNER_ID, "Merchants' dinner").id,
+    });
     await expect(page.getByTestId("reviews-summary")).toHaveText("Nothing is waiting to be started. 1 layout with its planner for changes.");
     // Every decision was made here: no tab or window opened.
     expect(pagesOpened).toEqual([]);

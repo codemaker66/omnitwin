@@ -8,6 +8,8 @@ import {
   CLOTH_COLOR,
 } from "../../lib/cloth-geometry.js";
 import { noClipPlanes } from "../SectionPlane.js";
+import { TABLE_CLOTH_OPACITY } from "../../lib/table-dressing.js";
+import { clothSeeThrough } from "./cloth-material.js";
 
 // ---------------------------------------------------------------------------
 // TableClothMesh — floor-length draped cloth with fabric fold pleats
@@ -28,9 +30,12 @@ interface TableClothMeshProps {
  */
 export function TableClothMesh({
   tableItem,
-  opacity = 0.78,
+  opacity = TABLE_CLOTH_OPACITY,
   colorOverride,
 }: TableClothMeshProps): React.ReactElement {
+  // A settled cloth is opaque, so the tabletop never reads through it; only a
+  // cloth still arriving is see-through (cloth-material.ts).
+  const seeThrough = clothSeeThrough(opacity);
   const isRound = tableItem.tableShape === "round";
   const color = colorOverride ?? CLOTH_COLOR;
   const geometry = useMemo(() => {
@@ -61,9 +66,9 @@ export function TableClothMesh({
         roughness={0.88}
         metalness={0.02}
         side={DoubleSide}
-        transparent
+        transparent={seeThrough}
         opacity={opacity}
-        depthWrite={false}
+        depthWrite={!seeThrough}
         clippingPlanes={noClipPlanes}
       />
     </mesh>

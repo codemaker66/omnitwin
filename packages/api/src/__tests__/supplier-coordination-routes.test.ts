@@ -115,16 +115,29 @@ describe("supplier coordination routes", () => {
     expect(wellFormed.statusCode).not.toBe(401);
   });
 
-  it("claim-guards supplier acknowledgements", async () => {
-    const unsafeAck = await server.inject({
+  it("validates supplier acknowledgements without claim-guarding the supplier's own words", async () => {
+    // A supplier's question is the supplier speaking to the venue, not a claim
+    // the venue makes: it passes validation and reaches the database step
+    // (which this mock-database server cannot complete).
+    const safetyQuestion = await server.inject({
       method: "POST",
       url: `/supplier-share/${SHARE_TOKEN}/acknowledge`,
       payload: {
+        status: "needs_clarification",
         acknowledgedByName: "Sam Supplier",
-        note: "Confirmed because this is certified safe.",
+        note: "Is the rigging point certified safe for 300kg?",
       },
     });
-    expect(unsafeAck.statusCode).toBe(400);
+    expect(safetyQuestion.statusCode).not.toBe(400);
+
+    for (const note of ["", "a".repeat(4001)]) {
+      const badNote = await server.inject({
+        method: "POST",
+        url: `/supplier-share/${SHARE_TOKEN}/acknowledge`,
+        payload: { acknowledgedByName: "Sam Supplier", note },
+      });
+      expect(badNote.statusCode).toBe(400);
+    }
 
     const missingIdentity = await server.inject({
       method: "POST",

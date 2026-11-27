@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { twinEquirectPath, type TwinEquirectLod } from "@omnitwin/types";
+import type { TwinEquirectLod } from "@omnitwin/types";
+import { twinEquirectPath } from "@omnitwin/types/twin";
 
 /** Warm the tiny PREVIEW first (so an arriving node paints almost instantly and
  *  a hop never sits on black) then the 4096 BASE (sharpens it). The 8192 zoom

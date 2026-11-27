@@ -35,6 +35,15 @@ import {
 const ASSETS_DIR = resolve("dist/assets");
 const TWIN_CHUNK_BUDGET_GZIP_BYTES = 250 * 1024;
 
+// The enquiry forms' chunk: Vite names it after @omnitwin/types' enquiry
+// module (dist/assets/enquiry-<8-character hash>.js, so not enquiry-fit-* or
+// enquiry-desk-format-*). It was 1.79 kB gzip in CI's build of #404. Which
+// modules reach it is held in packages/types
+// (enquiry-module-imports.test.ts); its bytes are held here, to about 2.5 KB
+// gzip (review of #404, Q6).
+const ENQUIRY_CHUNK = /^enquiry-[\w-]{8}\.js$/u;
+const ENQUIRY_CHUNK_BUDGET_GZIP_BYTES = 2_560;
+
 function jsChunks(prefix: string): string[] {
   return readdirSync(ASSETS_DIR).filter(
     (name) => name.startsWith(`${prefix}-`) && name.endsWith(".js"),
@@ -42,6 +51,18 @@ function jsChunks(prefix: string): string[] {
 }
 
 const hasTwinBuild = existsSync(ASSETS_DIR) && jsChunks("TwinPage").length > 0;
+
+// CI's Build job builds the bundle and then runs this file with
+// REQUIRE_WEB_DIST=1, so there a missing build fails instead of skipping the
+// budgets below (T-685: they had skipped in every CI run, since the Test job
+// never builds the web app).
+const REQUIRE_WEB_DIST = process.env["REQUIRE_WEB_DIST"] === "1";
+
+describe.runIf(REQUIRE_WEB_DIST)("the build these budgets check", () => {
+  it("is there, with its twin route chunk", () => {
+    expect(hasTwinBuild, `no TwinPage chunk in ${ASSETS_DIR}`).toBe(true);
+  });
+});
 
 describe("twin fixture bundle", () => {
   it("parse-validates against twin/0 with the walk graph the e2e relies on", () => {
@@ -80,6 +101,19 @@ describe("twin chunk budgets", () => {
         gzippedBytes,
         `${chunk} must stay within the twin chunk gzip budget`,
       ).toBeLessThanOrEqual(TWIN_CHUNK_BUDGET_GZIP_BYTES);
+    }
+  });
+
+  it.skipIf(!hasTwinBuild)("keeps the enquiry forms' chunk within 2.5 KB gzip", async () => {
+    const chunks = readdirSync(ASSETS_DIR).filter((name) => ENQUIRY_CHUNK.test(name));
+    // Exactly one: with none the module has moved, and this would measure nothing.
+    expect(chunks).toHaveLength(1);
+    for (const chunk of chunks) {
+      const gzippedBytes = gzipSync(await readFile(resolve(ASSETS_DIR, chunk))).byteLength;
+      expect(
+        gzippedBytes,
+        `${chunk} must stay within the enquiry chunk gzip budget`,
+      ).toBeLessThanOrEqual(ENQUIRY_CHUNK_BUDGET_GZIP_BYTES);
     }
   });
 

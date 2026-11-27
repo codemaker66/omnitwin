@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import {
+  COCKPIT_MODES,
   COCKPIT_OVERLAY_KEYS,
   type CockpitLayerMode,
   type CockpitMode,
@@ -56,8 +57,21 @@ const DEFAULT_ROOM_RESOLVE: CockpitRoomResolve = {
   totalChunks: 0,
 };
 
+/** Every lens, in rail order: what a viewer may open until the cockpit says otherwise. */
+const ALL_MODES: readonly CockpitMode[] = COCKPIT_MODES.map((mode) => mode.id);
+
+function sameModes(a: readonly CockpitMode[], b: readonly CockpitMode[]): boolean {
+  return a.length === b.length && a.every((mode, index) => mode === b[index]);
+}
+
 interface CockpitState {
   readonly activeMode: CockpitMode;
+  /**
+   * The lenses this viewer's rail offers (Blake's decision 5, lib/cockpit-
+   * lenses.ts). PlannerCockpit keeps it to the viewer's rail; with the
+   * decision's keys off that is all eleven, as before.
+   */
+  readonly offeredModes: readonly CockpitMode[];
   readonly layerMode: CockpitLayerMode;
   readonly overlayVisibility: OverlayVisibility;
   readonly selectedPhaseId: string | null;
@@ -72,7 +86,10 @@ interface CockpitState {
   readonly plannedGuestCount: number | null;
   /** Arrival-window minutes for the Flow lens scenario (phase duration). */
   readonly flowArrivalMinutes: number;
+  /** Opens a lens. A lens the viewer's rail does not offer is refused, whoever asks. */
   readonly setMode: (mode: CockpitMode) => void;
+  /** Sets the offered lenses; an active lens no longer offered goes back to Design. */
+  readonly offerModes: (modes: readonly CockpitMode[]) => void;
   readonly setLayerMode: (mode: CockpitLayerMode) => void;
   readonly toggleOverlay: (key: CockpitOverlayKey) => void;
   readonly setOverlay: (key: CockpitOverlayKey, visible: boolean) => void;
@@ -104,6 +121,7 @@ interface CockpitState {
 
 export const useCockpitStore = create<CockpitState>((set) => ({
   activeMode: "design",
+  offeredModes: ALL_MODES,
   layerMode: "hybrid",
   overlayVisibility: allOverlaysOn(),
   selectedPhaseId: null,
@@ -117,7 +135,14 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   walkMode: false,
   plannedGuestCount: null,
   flowArrivalMinutes: 30,
-  setMode: (mode) => { set({ activeMode: mode }); },
+  setMode: (mode) => { set((state) => (state.offeredModes.includes(mode) ? { activeMode: mode } : state)); },
+  offerModes: (modes) => {
+    set((state) => (
+      sameModes(state.offeredModes, modes)
+        ? state
+        : { offeredModes: modes, activeMode: modes.includes(state.activeMode) ? state.activeMode : "design" }
+    ));
+  },
   setLayerMode: (mode) => { set({ layerMode: mode }); },
   toggleOverlay: (key) => {
     set((state) => ({
@@ -159,6 +184,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   reset: () => {
     set({
       activeMode: "design",
+      offeredModes: ALL_MODES,
       layerMode: "hybrid",
       overlayVisibility: allOverlaysOn(),
       selectedPhaseId: null,

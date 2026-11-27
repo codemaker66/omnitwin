@@ -166,6 +166,12 @@ describe("action-log routes: source contract (db-dependent invariants)", () => {
     expect(source).toContain("receivedAt");
   });
 
+  it("stores every payload and inverse through the allergy-note redaction", async () => {
+    const source = await readFile(resolve("src/routes/action-log.ts"), "utf8");
+    expect(source).toContain("payload: redactAllergyNote(entry.payload)");
+    expect(source).toContain("inverse: redactAllergyNote(entry.inverse)");
+  });
+
   it("pins the route registration prefix", async () => {
     const index = await readFile(resolve("src/index.ts"), "utf8");
     expect(index).toContain('prefix: "/configurations/:configId/actions"');

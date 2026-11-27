@@ -36,7 +36,7 @@ import { attribute, bool, cameraPosition, color, dot, float, luminance, max, min
 import type { HallMaterialKey } from "./hall-builders.js";
 import { HALL_GLAZING_PAINT, HALL_OPENINGS, HALL_WALLS, isWindow } from "./hall-spec.js";
 import { CARD, cardColour, cardLit } from "./hall-beyond.js";
-import { DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP } from "./hall-wall-body.js";
+import { BAY_FRONT, BAY_SLOTS, DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP } from "./hall-wall-body.js";
 import { cutEdge, GILT_COLOUR, type CutEdge } from "./hall-cut-lines.js";
 import type { HallSun } from "./hall-sun.js";
 import { hallSkyUniforms } from "./hall-sky-runtime.js";
@@ -46,6 +46,7 @@ import type { HallPhotos, HallPhotoKind } from "./hall-photos.js";
 import type { HallDetailLayer } from "./hall-detail.js";
 import { createOakFloorMaterial } from "./hall-floor.js";
 import { doorLeafMask, doorLeafPosition, doorLeafTurn, type DoorSwingUniforms } from "./hall-doors.js";
+import { photographLift } from "../../lib/film-toe.js";
 
 type Shading = "gloss" | "metal" | "photo" | "photoGloss" | "paint";
 
@@ -93,7 +94,11 @@ export class HallSectionUniforms {
  * wall (`aWallB`, hall-walls.ts sharedNeighbour) takes the lower of the two
  * walls' cuts. Over each doorway, once its wall is cut low enough that the
  * body drops the lintel (LINTEL_RELEASE), the relief over the door goes too,
- * so the doorway reads from above as a gap through the whole wall.
+ * so the doorway reads from above as a gap through the whole wall. In a
+ * window's bay, while its wall is cut below the window's head, the walls'
+ * photographed relief goes from just above the board, in front of the glass
+ * plane (BAY_SLOTS): the curtains and reveals the scan saw as thin shells,
+ * which a cut showed as torn shards, give way to the body's linings.
  */
 function sectionCut(section: HallSectionUniforms): SectionCut {
   // Built once per set of cuts: the walls' mask and their cut's gilt edge
@@ -110,6 +115,8 @@ interface SectionCut {
   readonly cut: Node<"float">;
   /** Whether the fragment is drawn: under its cut, and not over a doorway whose lintel has gone. */
   readonly mask: Node<"bool">;
+  /** Whether it lies in a window's bay that the cut has cleared (only the walls' photographed relief goes there). */
+  readonly inClearedBay: Node<"bool">;
 }
 
 const sectionCuts = new WeakMap<HallSectionUniforms, SectionCut>();
@@ -132,11 +139,29 @@ function buildSectionCut(section: HallSectionUniforms): SectionCut {
     overDoor = overDoor.or(wall.greaterThan(slot.wall - 0.5).and(wall.lessThan(slot.wall + 0.5))
       .and(u.greaterThan(slot.u0)).and(u.lessThan(slot.u1)).and(p.y.greaterThan(slot.head)));
   }
-  return { cut, mask: p.y.lessThan(cut).and(overDoor.and(own.lessThan(LINTEL_RELEASE)).not()) };
+  // Each bay's wall-local u and depth behind the plane, worked out once a wall.
+  const frames = new Map<number, { readonly u: Node<"float">; readonly behind: Node<"float"> }>();
+  let inClearedBay: Node<"bool"> = bool(false);
+  for (const slot of BAY_SLOTS) {
+    let frame = frames.get(slot.wall);
+    if (frame === undefined) {
+      const dx = p.x.sub(slot.origin[0]);
+      const dz = p.z.sub(slot.origin[1]);
+      frame = { u: dx.mul(slot.tangent[0]).add(dz.mul(slot.tangent[1])), behind: dx.mul(slot.normal[0]).add(dz.mul(slot.normal[1])).negate() };
+      frames.set(slot.wall, frame);
+    }
+    const { u, behind } = frame;
+    inClearedBay = inClearedBay.or(wall.greaterThan(slot.wall - 0.5).and(wall.lessThan(slot.wall + 0.5)).and(own.lessThan(slot.head))
+      .and(u.greaterThan(slot.u0)).and(u.lessThan(slot.u1)).and(p.y.greaterThan(slot.clearFrom))
+      .and(behind.greaterThan(BAY_FRONT)).and(behind.lessThan(slot.glass)));
+  }
+  return { cut, mask: p.y.lessThan(cut).and(overDoor.and(own.lessThan(LINTEL_RELEASE)).not()), inClearedBay };
 }
 
-function sectionMask(section: HallSectionUniforms) {
-  return sectionCut(section).mask;
+/** The section's mask; `clearsBays` for the walls' photographed relief, which a cut window's bay clears. */
+function sectionMask(section: HallSectionUniforms, clearsBays = false): Node<"bool"> {
+  const { mask, inClearedBay } = sectionCut(section);
+  return clearsBays ? mask.and(inClearedBay.not()) : mask;
 }
 
 /** Indices in HALL_OPENINGS of the windows. */
@@ -390,13 +415,16 @@ function paintSurface(mood: HallMoodUniforms, sun: HallSun | null): Material {
   const room = bakedIrradiance(mood);
   const direct = sun === null ? vec3(0) : sunIrradiance(sun);
   const [pr, pg, pb] = HALL_GLAZING_PAINT;
-  const bars = vec3(pr, pg, pb).mul(room.add(direct).add(k).div(scanIrradiance().add(k)));
+  const bars: Node<"vec3"> = vec3(pr, pg, pb).mul(room.add(direct).add(k).div(scanIrradiance().add(k)));
   const albedo = mix(color(REVEAL_PAINT).rgb, color(REVEAL_STONE).rgb, stone);
   const sky = mood.daylight.rgb.mul(mood.daylightIntensity).mul(REVEAL_SKY_VIEW);
   const reveals = albedo.mul(room.add(sky).add(direct));
   const material = new MeshStandardNodeMaterial({ roughness: 0.38, metalness: 0, fog: false });
   material.colorNode = vec3(0);
-  material.emissiveNode = mix(bars, reveals, outside);
+  // The bars give the curve's toe back as the photographs do (lib/film-toe.ts),
+  // or they would sit darker than the photographed frames they are matched to.
+  // The reveals are art direction, lit as surfaces, and keep the toe.
+  material.emissiveNode = mix(photographLift(bars), reveals, outside);
   material.roughnessNode = mix(float(0.38), float(0.85), stone);
   return material;
 }
@@ -442,7 +470,9 @@ function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: Hall
   if (style.shading === "photo" || style.shading === "photoGloss") {
     const kind = style.photo ?? "walls";
     const wall = kind === "walls" ? wallTexel(photos, true, options.detail) : null;
-    const photographed = relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level));
+    // A photograph is shown with the light Neutral's toe will take out again
+    // added (lib/film-toe.ts photographLift), so it draws with the photographs' own toe.
+    const photographed = photographLift(relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level)));
     // A near wall's slivers past the cut are drawn as the section's room line (outsideSliver).
     const line = wall === null ? null : options.sliverColour;
     const sliver = line === null ? null : outsideSliver(options.section);
@@ -526,7 +556,7 @@ export function createHallMaterials(
     const floorLight = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
     const material = key === "floor" ? createOakFloorMaterial(floorLight, section.chandeliersAway) : createSurface(table[key], mood, photos, sun, surface);
     if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
-      material.maskNode = sectionMask(section);
+      material.maskNode = sectionMask(section, key === "wallPhoto" || key === "wallPhotoGloss");
     }
     material.name = `grand-hall-${key}`;
     materials.set(key, material);
@@ -563,12 +593,12 @@ export function createDoorLeafMaterials(
     } else if (key === "wallPhoto") {
       // Above the dado the walls' photograph is matte, on the leaves as on the relief they replace.
       const photo = new MeshBasicNodeMaterial({ fog: false });
-      photo.colorNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail));
+      photo.colorNode = photographLift(relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail)));
       material = photo;
     } else if (key === "wallPhotoGloss") {
       const photo = new MeshStandardNodeMaterial({ roughness: table.wallPhotoGloss.roughness ?? 0.42, metalness: 0, fog: false });
       photo.colorNode = vec3(0);
-      photo.emissiveNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail));
+      photo.emissiveNode = photographLift(relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail)));
       material = photo;
     } else {
       material = createSurface(table[key], mood, photos, sun, { glazing: null, alphaToCoverage: false, section, detail: null, sliverColour: null });

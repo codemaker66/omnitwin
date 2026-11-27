@@ -97,6 +97,21 @@ describe.skipIf(testUrl === undefined)("a proposal's moves move its deal", () =>
     });
   });
 
+  // The stage's own step replaces the old one, and the old step's date goes
+  // with it (audit api-enquiries-people-3): a deal waiting on the client is
+  // not overdue because the step it had before the proposal went was.
+  it("gives the deal its new stage's step with no date", async () => {
+    await deal("qualified");
+    await pool.query("UPDATE opportunities SET next_action_due_at = now() - interval '2 days' WHERE id = $1", [DEAL]);
+
+    expect(await moveDealWithProposal(db, proposal, "sent", STAFF)).toBe("proposal_sent");
+
+    const [row] = (await pool.query<{ next_action: string; next_action_due_at: Date | null }>(
+      "SELECT next_action, next_action_due_at FROM opportunities WHERE id = $1", [DEAL],
+    )).rows;
+    expect(row).toEqual({ next_action: "Wait for the client response and log any requested changes.", next_action_due_at: null });
+  });
+
   it("is won when the client accepts, with their act as the reason, and lost when they decline", async () => {
     await deal("proposal_sent");
     expect(await moveDealWithProposal(db, proposal, "accepted", null)).toBe("won");

@@ -36,7 +36,8 @@ import { migrationText, tagEndingWith } from "./migration-text.js";
 //   - A call through the Anthropic adapter (the real SDK, only its HTTP
 //     boundary replaced) is one row: the venue, the person, the feature, the
 //     model that served it, its request id, its tokens and its exact cost in
-//     micro-dollars, for an answer, a refusal rescued by the fallback, a
+//     micro-dollars, for an answer, a draft the fallback wrote after a
+//     refusal (refused in turn: a draft is the asked model's or none), a
 //     refusal, a cut-off and a failure; and one structured log line with no
 //     words, person or key in it.
 //   - A provider that reports no usage (the bespoke HTTP gateway, here with
@@ -79,6 +80,74 @@ function recordingLog(): { readonly log: AIUsageLog; readonly lines: LogLine[] }
 }
 
 const quiet: AIUsageLog = { info: () => undefined, warn: () => undefined, error: () => undefined };
+
+type AnyCall = (...args: readonly unknown[]) => unknown;
+
+/**
+ * The same query, with `afterwards` run once its rows are in and before its
+ * caller sees them. Every step of a query builder returns a new builder, so
+ * each thenable step is watched in turn; whatever is not awaited (a subquery
+ * written into another statement) is left exactly as it was.
+ */
+function thenRun<T extends object>(query: T, afterwards: () => Promise<void>): T {
+  return new Proxy(query, {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key, target);
+      if (typeof value !== "function") return value;
+      const method = value as AnyCall;
+      if (key === "then") {
+        return (onRows?: (rows: unknown) => unknown, onError?: (error: unknown) => unknown): unknown =>
+          Reflect.apply(method, target, [
+            async (rows: unknown) => {
+              await afterwards();
+              return onRows === undefined ? rows : onRows(rows);
+            },
+            onError,
+          ]);
+      }
+      return (...args: readonly unknown[]): unknown => {
+        const result: unknown = Reflect.apply(method, target, args);
+        const awaitable = typeof result === "object" && result !== null && "then" in result;
+        return awaitable ? thenRun(result, afterwards) : result;
+      };
+    },
+  });
+}
+
+/**
+ * A database whose transactions run `afterFirstRead` straight after the first
+ * SELECT they wait for: how a test lands another transaction's commit between
+ * two statements of the one under test.
+ */
+function commitAfterFirstRead(real: Database, afterFirstRead: () => Promise<void>): Database {
+  return new Proxy(real, {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key, target);
+      if (key !== "transaction") return typeof value === "function" ? (value as AnyCall).bind(target) : value;
+      const transaction: Database["transaction"] = (run, config) => target.transaction((tx) => {
+        let reads = 0;
+        const afterTheFirst = async (): Promise<void> => {
+          reads += 1;
+          if (reads === 1) await afterFirstRead();
+        };
+        const watched = new Proxy(tx, {
+          get(inner, innerKey) {
+            const member: unknown = Reflect.get(inner, innerKey, inner);
+            if (typeof member !== "function") return member;
+            const method = member as AnyCall;
+            return (...args: readonly unknown[]): unknown => {
+              const result: unknown = Reflect.apply(method, inner, args);
+              const isSelect = innerKey === "select" && typeof result === "object" && result !== null;
+              return isSelect ? thenRun(result, afterTheFirst) : result;
+            };
+          },
+        });
+        return run(watched);
+      }, config);
+      return transaction;
+    },
+  });
+}
 
 interface Person { readonly id: string; readonly role: string; readonly venueId: string | null; readonly platformRole: "none" | "admin" }
 
@@ -254,7 +323,8 @@ describe.skipIf(target === undefined)("AI usage ledger and allowance on migrated
       const brief = { useCase: "event_brief", system: EVENT_BRIEF_SYSTEM_PROMPT, prompt: "Dinner for 80.", schema: EVENT_BRIEF_ANSWER_SCHEMA, cacheSystem: true } as const;
 
       await expect(adapter.generateText(draft, attribution)).resolves.toBe("Dear Morgan, thank you.");
-      await expect(adapter.generateText(draft, attribution)).resolves.toBe("Dear Morgan.");
+      // Written by Opus 4.8 after Opus 5.5 declined: no draft, recorded as the asked model's refusal.
+      await expect(adapter.generateText(draft, attribution)).rejects.toThrow("Another model than the one asked answered");
       await expect(adapter.generateText(draft, attribution)).rejects.toThrow("declined");
       await expect(adapter.generateStructured(brief, attribution)).rejects.toThrow("cut off");
       await expect(adapter.generateStructured(brief, attribution)).rejects.toBeInstanceOf(Anthropic.APIError);
@@ -266,7 +336,7 @@ describe.skipIf(target === undefined)("AI usage ledger and allowance on migrated
           // 1,200 at $4, 1,000 written at $5, 2,000 read at $0.20 and 800 out at $20.
           ["proposal_draft", "ok", "claude-opus-5-5", "req_t656_1", 1_200, 800, 1_000, 2_000, String(4_800 + 5_000 + 400 + 16_000)],
           // Declined by Opus 5.5 (535 at $4), served by Opus 4.8 (412 at $5, 264 at $25).
-          ["proposal_draft", "ok", "claude-opus-4-8", "req_t656_2", 947, 264, 0, 0, String(2_140 + 2_060 + 6_600)],
+          ["proposal_draft", "refusal", "claude-opus-4-8", "req_t656_2", 947, 264, 0, 0, String(2_140 + 2_060 + 6_600)],
           // A biology refusal before any output is billed: 300 at $4.
           ["proposal_draft", "refusal", "claude-opus-5-5", "req_t656_3", 300, 0, 0, 0, String(1_200)],
           // Cut off: 2,000 at $4, 1,100 read at $0.20 and 16,000 out at $20.
@@ -457,6 +527,41 @@ describe.skipIf(target === undefined)("AI usage ledger and allowance on migrated
       expect((await pool.query("SELECT count(*)::int AS n FROM ai_usage_reservations WHERE venue_id = $1 AND expires_at <= now()", [venueId])).rows[0])
         .toEqual({ n: 0 });
       await hold.settle(spent(5));
+      expect(await heldFor(venueId)).toBe(0);
+    });
+
+    // Whole-repository audit, api-ai-public-assets-1. The check read the
+    // month's recorded spend and the calls in flight in two statements, each
+    // of its own moment. A call that finished between them was in neither:
+    // not yet recorded for the first, its reservation gone by the second.
+    it("counts a call that finishes while another call's allowance is being checked", async () => {
+      const venueId = await venue();
+      const who = await person("staff", venueId);
+      const limit = 1_000_000;
+      const meter = new PostgresAIUsageMeter(db, { monthlyLimitMicroUsd: limit, log: quiet });
+      // Call A is in flight, holding 600,000 of the 1,000,000 allowance.
+      const inFlight = await meter.hold(call(venueId, who.id, 600_000));
+
+      // Call B is checked on a database where A finishes, costing all it
+      // held, straight after B's check has made its first read.
+      let finished = false;
+      const racing = new PostgresAIUsageMeter(
+        commitAfterFirstRead(db, async () => {
+          if (finished) return;
+          finished = true;
+          await inFlight.settle(spent(600_000));
+        }),
+        { monthlyLimitMicroUsd: limit, log: quiet },
+      );
+
+      // 600,000 is spent or held whichever moment is read, so 600,000 more does not fit.
+      await expect(racing.hold(call(venueId, who.id, 600_000))).rejects.toBeInstanceOf(AIBudgetReachedError);
+      expect(finished).toBe(true);
+      // The month holds A's cost and B's refusal, and nothing is left held.
+      // (B's row is dated from the start of its check, so it sorts first.)
+      const rows = await ledgerFor(venueId);
+      expect(rows.map((row) => `${String(row["outcome"])} ${String(row["cost_micro_usd"])}`).sort())
+        .toEqual(["budget_blocked 0", "ok 600000"]);
       expect(await heldFor(venueId)).toBe(0);
     });
   });

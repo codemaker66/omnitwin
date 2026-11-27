@@ -21,7 +21,7 @@ import { generateDiagramLabels } from "../lib/diagram-labels.js";
  *
  * The group is always mounted in the scene graph (visible=false by
  * default). The ortho-capture utility imperatively sets
- * `group.visible = true` before rendering the floor plan PNG, then
+ * `group.visible = true` before rendering the floor plan image, then
  * restores it. This avoids the non-reactive module-global boolean
  * problem: React re-render is not needed for the capture path.
  */

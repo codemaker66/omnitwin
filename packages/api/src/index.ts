@@ -31,6 +31,8 @@ import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
 import { forwardBookRoutes } from "./routes/forward-book.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
 import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
+import { enquirySummaryDraftRoutes } from "./routes/enquiry-summary-draft.js";
+import { decisionRoutes } from "./routes/decisions.js";
 import { rotaRoutes } from "./routes/rota.js";
 import { venueTeamRoutes } from "./routes/venue-team.js";
 import { referenceLoadoutRoutes } from "./routes/reference-loadouts.js";
@@ -43,12 +45,17 @@ import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-r
 import { publicSheetCheckRoutes } from "./routes/public-sheet-check.js";
 import { resolveSheetPaperCheck } from "./services/sheet-paper-check.js";
 import { publicMcpRoutes } from "./routes/public-mcp.js";
+import { publicWebVitalsRoutes, type PublicWebVitalsOptions } from "./routes/public-web-vitals.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
 import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { stripeWebhookRoutes } from "./routes/stripe-webhook.js";
+import { proposalDepositRoutes, proposalShareDepositRoutes } from "./routes/deposits.js";
+import { proposalContractRoutes, proposalShareContractRoutes } from "./routes/contracts.js";
+import { depositPaymentsFrom } from "./services/payments/deposit-gateway.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
@@ -69,6 +76,7 @@ import { opsHandoffRoutes } from "./routes/ops-handoff.js";
 import { supplierCoordinationRoutes, supplierShareRoutes } from "./routes/supplier-coordination.js";
 import { analyticsRoutes, eventRevenueRoutes, revenueScenarioRoutes } from "./routes/revenue-analytics.js";
 import { aiAssistantRoutes } from "./routes/ai-assistant.js";
+import { missingAccessLists } from "./services/ai-access.js";
 import { aiUsageRoutes } from "./routes/ai-usage.js";
 import { venueAllowanceMeter } from "./services/ai-usage.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
@@ -98,7 +106,7 @@ import { registerAutoSave } from "./ws/auto-save.js";
 import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
-import { apiLoggerOptions } from "./observability/health-redaction.js";
+import { apiLoggerOptions, type LogLineStream } from "./observability/health-redaction.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
 import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
@@ -109,10 +117,19 @@ import { registerMetrics } from "./observability/metrics.js";
 // OMNITWIN API — Fastify server entry point
 // ---------------------------------------------------------------------------
 
+export interface BuildServerOptions {
+  /** Tests only: the production logger, writing its lines here, so a test
+   *  reads what the server would log in production (no logger otherwise). */
+  readonly logStream?: LogLineStream;
+  /** Tests only: the field web vitals route's batch (to write on demand) and
+   *  how often it writes. */
+  readonly webVitals?: Pick<PublicWebVitalsOptions, "batch" | "flushEveryMs">;
+}
+
 /** Builds and configures the Fastify instance (exported for testing).
  *  Accepts a pre-validated Env so the direct-run entry point can validate
  *  once and pass the result in, avoiding the double-validation on startup. */
-export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<typeof Fastify>> {
+export async function buildServer(env: Env = validateEnv(), options: BuildServerOptions = {}): Promise<ReturnType<typeof Fastify>> {
 
   // Initialise Sentry BEFORE Fastify so its HTTP instrumentation
   // patches the global fetch/http layer before any request handler
@@ -157,7 +174,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     // logs request urls without their query string (a client's name, email or
     // phone on the search routes) and errors without query parameters or pg
     // `detail`/`where` (observability/health-redaction.ts and redact.ts).
-    logger: apiLoggerOptions(isDev ? "development" : isTest ? "test" : "production"),
+    logger: options.logStream === undefined
+      ? apiLoggerOptions(isDev ? "development" : isTest ? "test" : "production")
+      : apiLoggerOptions("production", options.logStream),
     bodyLimit: 2_000_000,
     connectionTimeout: 30_000,
     requestTimeout: 60_000,
@@ -203,7 +222,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // Rate limiting — per-user where authenticated, per-IP otherwise.
   // Global 100/min is the baseline; individual routes tighten or
   // relax via their own `config.rateLimit` option, which inherits this
-  // keyGenerator.
+  // keyGenerator unless it names its own (POST /public/web-vitals keys by
+  // an HMAC of the address, never the address; routes/public-web-vitals.ts).
   //
   // The limiter keys each request at onRequest, before any route's
   // `authenticate` preHandler runs, so it cannot read `request.user`.
@@ -246,6 +266,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
       retryAfterSeconds: Math.ceil(context.ttl / 1000),
     }),
   });
+  // The plugin attaches itself to each route as it is added, and Fastify's
+  // not-found handler is not a route, so a path matching no route went
+  // unlimited: anyone could send any number. Such requests draw on the same
+  // budget as the rest, checked at the same point, before any body is read.
+  const limitUnmatched = server.rateLimit();
+  server.addHook("onRequest", async function limitUnmatchedPaths(request, reply) {
+    if (request.is404) await limitUnmatched.call(this, request, reply);
+  });
 
   // Response compression. Railway's edge forwards an encoded body as-is but
   // does not compress API responses itself, so layouts (130 KB for 300
@@ -279,7 +307,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // --- Health check ---
   // Returns 200 even if DB is down — this is a process liveness probe.
   //
-  // `/health/ready` is the Railway healthcheck path in `railway.json`.
+  // `/health/ready` is Railway's healthcheck path, declared in
+  // `.railway/railway.ts` and applied to Railway's stored settings.
   // The routes below follow the Kubernetes / CNCF liveness-vs-readiness
   // convention so the same container can be deployed without rewiring probes:
   //   - `/health/live`  mirrors `/health` (process-alive, do not restart).
@@ -485,6 +514,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(publicPlanViewRoutes, { db, prefix: "/public" });
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
+  await server.register(publicWebVitalsRoutes, { db, prefix: "/public", ...options.webVitals });
   await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });
   // One Living Record: a printed sheet's QR asks "is this copy current?" —
   // version state only, no sign-in, no content.
@@ -514,6 +544,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     prefix: "/admin/reconstruction-foundry/derivative-rights",
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
+  // Deposits (Plan 19 L5): off without the Stripe variables; refused, with a
+  // logged reason, for any key that is not a test key (env.ts refuses it at
+  // startup first).
+  const depositPayments = depositPaymentsFrom(env);
+  if (depositPayments.status === "refused") server.log.error({ event: "stripe.payments_refused", reason: depositPayments.reason }, "Deposits are refused");
+  await server.register(stripeWebhookRoutes, { db, payments: depositPayments, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
   await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
@@ -567,11 +603,25 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(webhookOutboundRoutes, { db, prefix: "/webhooks" });
   await server.register(revenueScenarioRoutes, { db, prefix: "/revenue-scenarios" });
   await server.register(analyticsRoutes, { db, prefix: "/analytics" });
+  // C1: AI on without its allow lists fails closed (on for no venue). Said
+  // loudly at boot, not refused, so a forgotten variable never blocks a deploy.
+  const missingAiLists = missingAccessLists(env);
+  if (missingAiLists.length > 0) {
+    server.log.warn({ missing: missingAiLists }, `AI_ASSISTANT_ENABLED is true but ${missingAiLists.join(" and ")} ${missingAiLists.length === 1 ? "is" : "are"} unset: AI drafts are off for every venue until set (docs/operations/ai-pilot-switch-on.md)`);
+  }
   await server.register(aiAssistantRoutes, { env, db, aiUsage, prefix: "/ai" });
   await server.register(proposalRoutes, { db, prefix: "/proposals" });
   await server.register(proposalMessageDraftRoutes, { db, env, aiUsage, prefix: "/proposals" });
+  await server.register(enquirySummaryDraftRoutes, { db, env, aiUsage, prefix: "/enquiries" });
+  await server.register(decisionRoutes, { db, prefix: "/decisions" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
   await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
+  // Deposits on an accepted proposal (Plan 19 L5), Stripe test mode only.
+  await server.register(proposalDepositRoutes, { db, payments: depositPayments, prefix: "/proposals" });
+  await server.register(proposalShareDepositRoutes, { db, payments: depositPayments, prefix: "/proposal-share" });
+  // The contract and its simple electronic signature (Plan 19 L5).
+  await server.register(proposalContractRoutes, { db, prefix: "/proposals" });
+  await server.register(proposalShareContractRoutes, { db, prefix: "/proposal-share" });
   await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 
@@ -597,6 +647,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 }
 
 // --- Start server (only when run directly, not imported) ---
+
+/** The API's hard stop after SIGTERM or SIGINT: past it the process exits 1,
+ *  whatever is still closing (Railway's own kill waits 30 s, #420). Exported
+ *  so a test can hold the web vitals batch's closing write, and the time it
+ *  leaves requests in flight, inside it (web-vitals-postgres.test.ts). */
+export const SHUTDOWN_GRACE_MS = 25_000;
 
 const isDirectRun = process.argv[1]?.endsWith("index.ts") === true ||
                     process.argv[1]?.endsWith("index.js") === true;
@@ -629,12 +685,12 @@ if (isDirectRun) {
   //      deployment events.
   //   2. Call `server.close()` — stops accepting new connections and
   //      drains in-flight requests using Fastify's internal tracking.
-  //   3. Hard-abort after 25s so a stuck request doesn't block the
-  //      platform's KILL timer (orchestrators typically give 30s).
+  //   3. Hard-abort after SHUTDOWN_GRACE_MS (25 s) so a stuck request
+  //      doesn't block the platform's KILL timer (orchestrators typically
+  //      give 30s).
   //   4. Re-raise the exit code so container runtimes see the expected
   //      signal exit.
   // ---------------------------------------------------------------------------
-  const SHUTDOWN_GRACE_MS = 25_000;
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals): void => {
     if (shuttingDown) return;

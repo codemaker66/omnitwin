@@ -6,6 +6,7 @@ import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { nativeSplatScene } from "../../lib/native-splat-scene.js";
 import { nativeSplatCount } from "../../lib/native-splat-merge.js";
 import { gaussianSplatsAvailable } from "../../lib/splat-access.js";
+import { deviceDayTileRequested } from "../../data/device-day-splat-bundles.js";
 
 type Vector3Tuple = readonly [number, number, number];
 export type NativeSplatRuntime = Pick<SplatRuntimeSettings, "minSortIntervalMs" | "maxStdDev" | "lod" | "lodSplatCount"> & Partial<Pick<SplatRuntimeSettings, "maxSh">>;
@@ -76,7 +77,10 @@ export const NativeRendererMount = NativeSplatRendererMount;
 /** Loads one source; the host merges all sources in their actual scene-world frame. */
 export function NativeSplatLayer(props: NativeSplatLayerProps): ReactElement | null {
   // A final render boundary also covers future callers and persisted scene state.
-  if (!gaussianSplatsAvailable()) return null;
+  // Past the hold go only the tiles of the device-day cut this page's own query
+  // names from the allowlist (data/device-day-splat-bundles.ts), never a URL a
+  // caller supplies.
+  if (!gaussianSplatsAvailable() && !deviceDayTileRequested(props.url)) return null;
   return <AvailableNativeSplatLayer {...props} />;
 }
 

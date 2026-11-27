@@ -175,19 +175,28 @@ describe.skipIf(target === undefined)("a setup sheet's ticks belong to the event
 
   // The Day Board can offer a layout for an event that reaches it only through
   // a frozen phase plan, with no link row: that event's ticks are its own.
-  it("keeps ticks for a venue event the layout is not linked to as that event's own", async () => {
+  // Any other event of the venue is not the layout's (T-695 api-eventday-sheet-6).
+  it("keeps ticks for an event the layout reaches only through a frozen phase plan as that event's own", async () => {
     const f = await layout(1);
     const [linked] = f.eventIds as [string];
-    const [{ venueId }] = await db.select({ venueId: schema.configurations.venueId }).from(schema.configurations)
-      .where(eq(schema.configurations.id, f.configId)) as [{ venueId: string }];
-    const frozenOnly = randomUUID();
+    const [{ venueId, spaceId }] = await db.select({ venueId: schema.configurations.venueId, spaceId: schema.configurations.spaceId })
+      .from(schema.configurations).where(eq(schema.configurations.id, f.configId)) as [{ venueId: string; spaceId: string }];
+    const frozenOnly = randomUUID(); const phaseId = randomUUID();
     await db.insert(schema.events).values({ id: frozenOnly, venueId, createdBy: f.userId, name: "DEMO ONLY frozen-plan event" });
+    await db.insert(schema.eventPhases).values({ id: phaseId, eventId: frozenOnly, spaceId, name: "Dinner", sortOrder: 0, durationMinutes: 180 });
+    const frozenAt = new Date("2026-11-20T10:00:00.000Z");
+    await db.insert(schema.phaseLayoutSnapshots).values({ eventPhaseId: phaseId, configurationId: f.configId, status: "frozen", frozenBy: f.userId, createdAt: frozenAt, frozenAt });
 
     await tick(f, frozenOnly, true);
     expect(await storedEvents(f)).toEqual([frozenOnly]);
     expect(await summary(f, frozenOnly)).toMatchObject({ checked: 1 });
     expect(await summary(f, linked)).toMatchObject({ checked: 0 });
-    expect(await progress(f, frozenOnly)).toMatchObject({ eventId: frozenOnly, linkedEvents: 1 });
+    expect(await progress(f, frozenOnly)).toMatchObject({ eventId: frozenOnly, linkedEvents: 2 });
+
+    // An event of the same venue the layout does not serve is a stale link.
+    const unrelated = randomUUID();
+    await db.insert(schema.events).values({ id: unrelated, venueId, createdBy: f.userId, name: "DEMO ONLY unrelated event" });
+    expect(await progress(f, unrelated)).toMatchObject({ eventId: null, linkedEvents: 2 });
   });
 
   it("ignores another venue's event, keeping to the layout's own", async () => {
@@ -215,6 +224,81 @@ describe.skipIf(target === undefined)("a setup sheet's ticks belong to the event
     expect(eventless.linkedEvents).toBe(2);
     expect(Object.keys(eventless.checked)).toEqual([f.rowKey]);
     for (const eventId of f.eventIds) expect(await summary(f, eventId)).toMatchObject({ checked: 0 });
+  });
+
+  // Release audit tenancy-f-2: the checklist is the venue crew's record of
+  // its own work. The layout's owner reads it; only the venue's floor ticks.
+  async function ownedBy(f: Layout, role: string, venueId: string | null) {
+    const ownerId = randomUUID();
+    await db.insert(schema.users).values({ id: ownerId, venueId, name: "Layout owner", email: `${ownerId}@demo.invalid`, role });
+    await db.update(schema.configurations).set({ userId: ownerId }).where(eq(schema.configurations.id, f.configId));
+    return { authorization: `Bearer ${JSON.stringify({ id: ownerId, name: "Layout owner", email: `${ownerId}@demo.invalid`, role, venueId })}` };
+  }
+
+  function patchAs(f: Layout, headers: { authorization: string }, eventId: string | null, checked?: boolean) {
+    return server.inject({ method: "PATCH", url: `/hallkeeper/${f.configId}/progress${query(eventId)}`,
+      headers, payload: checked === undefined ? { rowKey: f.rowKey } : { rowKey: f.rowKey, checked } });
+  }
+
+  it.each(["client", "planner"])("a %s who owns the layout reads its checklist and cannot tick it", async (role) => {
+    const f = await layout(1);
+    const [only] = f.eventIds as [string];
+    const owner = await ownedBy(f, role, null);
+
+    for (const checked of [true, undefined]) {
+      const refused = await patchAs(f, owner, only, checked);
+      expect(refused.statusCode, refused.body).toBe(403);
+      expect(refused.json<{ code: string }>().code).toBe("FORBIDDEN");
+    }
+    expect(await storedEvents(f)).toEqual([]);
+
+    // Reading stays theirs.
+    const read = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/progress${query(only)}`, headers: owner });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json<ProgressBody>().data.checked).toEqual({});
+    const sheet = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary${query(only)}`, headers: owner });
+    expect(sheet.statusCode, sheet.body).toBe(200);
+  });
+
+  it("a hallkeeper's tick survives the owner's untick, and the Day Board's count with it", async () => {
+    const f = await layout(1);
+    const [only] = f.eventIds as [string];
+    const owner = await ownedBy(f, "client", null);
+    await tick(f, only, true);
+
+    expect((await patchAs(f, owner, only, false)).statusCode).toBe(403);
+    // The legacy toggle would have flipped it off.
+    expect((await patchAs(f, owner, only)).statusCode).toBe(403);
+    expect(await storedEvents(f)).toEqual([only]);
+    expect(await summary(f, only)).toMatchObject({ total: 1, checked: 1 });
+
+    const read = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/progress${query(only)}`, headers: owner });
+    expect(Object.keys(read.json<ProgressBody>().data.checked)).toEqual([f.rowKey]);
+  });
+
+  it("another venue's staff who own a layout here read it and cannot tick it", async () => {
+    const f = await layout(1);
+    const [only] = f.eventIds as [string];
+    const elsewhere = randomUUID();
+    await db.insert(schema.venues).values({ id: elsewhere, name: "DEMO ONLY other venue", slug: elsewhere, address: "Test only" });
+    const owner = await ownedBy(f, "staff", elsewhere);
+
+    expect((await patchAs(f, owner, only, true)).statusCode).toBe(403);
+    expect(await storedEvents(f)).toEqual([]);
+    expect((await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/progress${query(only)}`, headers: owner })).statusCode).toBe(200);
+  });
+
+  it.each(["staff", "manager", "admin"])("the venue's %s ticks as the hallkeeper does", async (role) => {
+    const f = await layout(1);
+    const [only] = f.eventIds as [string];
+    const [{ venueId }] = await db.select({ venueId: schema.configurations.venueId }).from(schema.configurations)
+      .where(eq(schema.configurations.id, f.configId)) as [{ venueId: string }];
+    const id = randomUUID();
+    await db.insert(schema.users).values({ id, venueId, name: "Venue floor", email: `${id}@demo.invalid`, role });
+    const headers = { authorization: `Bearer ${JSON.stringify({ id, name: "Venue floor", email: `${id}@demo.invalid`, role, venueId })}` };
+    const response = await patchAs(f, headers, only, true);
+    expect(response.statusCode, response.body).toBe(200);
+    expect(await storedEvents(f)).toEqual([only]);
   });
 
   it("removes an event's ticks with the event", async () => {

@@ -311,6 +311,7 @@ export {
   SupplierCoordinationItemKindSchema,
   SupplierAcknowledgementStatusSchema,
   SupplierCoordinationTextSchema,
+  SupplierAuthoredTextSchema,
   SupplierCoordinationPackSchema,
   SupplierCoordinationPackItemSchema,
   SupplierCoordinationShareTokenSchema,
@@ -355,6 +356,7 @@ export {
   type SupplierCoordinationItemKind,
   type SupplierAcknowledgementStatus,
   type SupplierCoordinationText,
+  type SupplierAuthoredText,
   type SupplierCoordinationPack,
   type SupplierCoordinationPackItem,
   type SupplierCoordinationShareToken,
@@ -390,6 +392,8 @@ export {
   EventDayChangesSinceLastHandoffSchema,
   EventDayOpsBoardSchema,
   UpdateOpsTaskStatusInputSchema,
+  UpdateOpsTaskStatusConflictSchema,
+  MAX_EARLIER_PRESS_KEYS,
   CreateEventDayIssueInputSchema,
   UpdateEventDayIssueInputSchema,
   type EventDayIssueId,
@@ -411,6 +415,7 @@ export {
   type EventDayChangesSinceLastHandoff,
   type EventDayOpsBoard,
   type UpdateOpsTaskStatusInput,
+  type UpdateOpsTaskStatusConflict,
   type CreateEventDayIssueInput,
   type UpdateEventDayIssueInput,
 } from "./event-day-ops.js";
@@ -930,6 +935,7 @@ export {
   UserIdSchema,
   USER_ROLES,
   UserRoleSchema,
+  VENUE_ADMINISTRATION_ROLES,
   PLATFORM_ROLES,
   PlatformRoleSchema,
   EmailSchema,
@@ -1043,6 +1049,9 @@ export {
   EnquirySchema,
   CreateEnquirySchema,
   GuestEnquirySchema,
+  GuestEnquiryEmailSchema,
+  GUEST_ENQUIRY_LIMITS,
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
   GUEST_ENQUIRY_SOURCES,
   ENQUIRY_SOURCES,
   EnquirySourceSchema,
@@ -1063,6 +1072,8 @@ export {
   type GuestEnquirySource,
   type EnquirySource,
 } from "./enquiry.js";
+
+export { eventDisplayName, eventNameFor, eventTitleFor, holdsEmailAddress, type EventNameInput, type NamedEvent } from "./event-name.js";
 
 export {
   PricingRuleIdSchema,
@@ -1183,13 +1194,13 @@ export {
   AIDraftSendStateSchema,
   AIDraftContextSchema,
   CreateAIDraftRequestSchema,
+  MAX_AI_DRAFT_CONTEXT_CHARACTERS,
   AIAssistantStatusSchema,
   AIDraftSchema,
   ProposalMessageDraftSchema,
   findUnsafeAIDraftClaims,
   sanitizeAIDraftText,
   aiDraftDigest,
-  createReviewGatedAIDraft,
   type AIDraftUseCase,
   type AIDraftProvenance,
   type AIDraftEvidenceStatus,
@@ -1200,6 +1211,13 @@ export {
   type AIDraft,
   type ProposalMessageDraft,
 } from "./ai-assistant.js";
+
+export {
+  AI_DRAFT_COMMITMENT_KINDS,
+  AIDraftCommitmentKindSchema,
+  type AIDraftCommitmentKind,
+} from "./ai-draft-commitment-kinds.js";
+// The filter and createReviewGatedAIDraft: @omnitwin/types/ai-draft-review.
 
 export {
   COMMERCIAL_SPINE_SCHEMA_VERSION,
@@ -1451,11 +1469,16 @@ export * from "./sheet-paper-check.js";
 // setup steps, plan markers, keep-in-view facts), shared by paper and screen.
 export * from "./sheet-brief.js";
 
+// Share tokens and guest layout ids templated out of error reports, spans and
+// request logs, in the browser and the API alike.
+export * from "./capability-paths.js";
+
 export {
   DayOfContactSchema,
   PhaseDeadlineSchema,
   EventInstructionsSchema,
   ConfigurationMetadataSchema,
+  PlannerEventKindSchema,
   PlacedObjectMetadataSchema,
   emptyEventInstructions,
   hasInstructionContent,
@@ -1537,6 +1560,7 @@ export {
   REDACTED_HEALTH_TEXT,
   redactHealthFreeText,
   redactHealthFreeTextInString,
+  redactAllergyNote,
   emptyDoorSchedule,
   hasDoorScheduleContent,
   type AccessibilityRequirements,
@@ -2525,6 +2549,7 @@ export * from "./event-mission-control.js";
 export * from "./capture-intake.js";
 export * from "./layout-validator.js";
 export * from "./event-architect.js";
+export * from "./event-architect-ops-reviewers.js";
 export * from "./event-architect-engine.js";
 export * from "./event-brief-draft.js";
 export * from "./reconstruction-release.js";
@@ -2607,8 +2632,20 @@ export * from "./competitor-watch.js";
 // The enquiry funnel (migration 0100): first replies, where enquiries come from,
 // proposal link visits, and engagement attached to an enquiry or a proposal.
 export * from "./enquiry-funnel.js";
+// Field web vitals (goal 07): a sampled page load's LCP, INP, CLS and TTFB by
+// route pattern and device class, for p75 on production.
+export * from "./web-vitals.js";
 // The gangway review (25 Oct 2026): pinches under the 1.1 m guidance, for the venue to decide.
 export * from "./gangway-review.js";
 // The venue team (Plan 19 L1): venue admins invite their own staff; Blake
 // decided on 24 October 2026 that venue administrators invite any role.
 export * from "./venue-team.js";
+// A crowded Trades Hall day (Plan 19 L9): one deterministic Saturday in all
+// six published rooms, for tests and local demos; invented people only.
+export * from "./crowded-day.js";
+// Plan 19 L5 (goal 06 S6): deposits through Stripe Checkout in test mode, and
+// the contract's simple electronic signature with its audit record.
+export * from "./deposits.js";
+export * from "./contracts.js";
+export * from "./reference-loadouts.js";
+export * from "./decision.js";

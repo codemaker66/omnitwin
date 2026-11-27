@@ -1,4 +1,3 @@
-import { listVenueInventory, type VenueInventoryData } from "../api/venue-inventory.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
 import type { PlacedItem } from "./placement.js";
 import { stampSetup, type CardParams } from "./setup-cards.js";
@@ -30,54 +29,32 @@ import { isSceneFurniturePlacement } from "./table-dressing.js";
 export type UsableStock = ReadonlyMap<string, number>;
 
 /**
- * Clothed tables and the bare table the store counts them as: a cloth is
- * dressing, not a table. Nothing else is pooled. A wooden-top trestle is not
- * assumed to be a 6 ft trestle, because a guessed pooled count is what the
- * stock import refuses to make (api/src/scripts/import-venue-stock.ts).
+ * Pieces the store counts under another catalogue entry. Clothed tables count
+ * as their bare table: a cloth is dressing, not a table. The Burgess Turini
+ * 18/3 the planner sets counts as the venue's pink chair, the same chair
+ * (Blake, 26 Oct 2026), whose record the stock import writes. Nothing else is
+ * pooled. A wooden-top trestle is not assumed to be a 6 ft trestle, because a
+ * guessed pooled count is what the stock import refuses to make
+ * (api/src/scripts/import-venue-stock.ts).
  */
-const CLOTHED_TABLES: ReadonlyMap<string, string> = new Map([
+const COUNTED_AS: ReadonlyMap<string, string> = new Map([
   ["round-table-6ft-white", "round-table-6ft"],
   ["round-table-6ft-black", "round-table-6ft"],
   ["trestle-6ft-white", "trestle-6ft"],
   ["trestle-6ft-black", "trestle-6ft"],
   ["trestle-4ft-white", "trestle-4ft"],
   ["trestle-4ft-black", "trestle-4ft"],
+  ["burgess-turini-18-3", "pink-chair"],
 ]);
 
-/** The catalogue id the store counts a piece under: a clothed table's bare table, else the piece itself. */
+/** The catalogue id the store counts a piece under: a clothed table's bare table, the Turini's pink chair, else the piece itself. */
 export function stockIdentity(catalogueItemId: string): string {
   const slug = getCatalogueItem(catalogueItemId)?.slug;
-  const bare = slug === undefined ? undefined : CLOTHED_TABLES.get(slug);
-  return (bare === undefined ? undefined : getCatalogueItemBySlug(bare)?.id) ?? catalogueItemId;
+  const countedAs = slug === undefined ? undefined : COUNTED_AS.get(slug);
+  return (countedAs === undefined ? undefined : getCatalogueItemBySlug(countedAs)?.id) ?? catalogueItemId;
 }
 
-/**
- * Usable stock from the staff inventory list, by stock identity. A bare
- * table's own record is its count; with none, the largest record among its
- * clothed variants stands for it (records of the same tables under two
- * names are never added together, which could invent tables).
- */
-export function usableStock(inventory: VenueInventoryData): UsableStock {
-  const own = new Map<string, number>();
-  for (const { catalogue, stock } of inventory.items) {
-    if (stock === null) continue;
-    own.set(catalogue.id, stock.status === "retired"
-      ? 0
-      : Math.max(0, stock.ownedQuantity - stock.damagedQuantity - stock.unavailableQuantity));
-  }
-  const usable = new Map<string, number>();
-  for (const [assetId, count] of own) {
-    const identity = stockIdentity(assetId);
-    if (identity === assetId) usable.set(identity, count);
-    else if (!own.has(identity)) usable.set(identity, Math.max(usable.get(identity) ?? 0, count));
-  }
-  return usable;
-}
-
-/** The staff route's usable stock for a venue. Call it for staff only: the route refuses everyone else. */
-export async function loadUsableStock(venueId: string, signal?: AbortSignal): Promise<UsableStock> {
-  return usableStock(await listVenueInventory(venueId, signal));
-}
+// The staff route's usable stock and a card's store figure, which only the new chrome shows, are in lib/card-store-figures.ts (T-671).
 
 /** How many of each stock identity a layout holds. */
 export function placedCounts(placedItems: readonly PlacedItem[]): ReadonlyMap<string, number> {
@@ -101,25 +78,8 @@ export function cardNeeds(params: CardParams): ReadonlyMap<string, number> {
 }
 
 /** Whole cards a piece's stock still allows: what is left over what one card takes. */
-function wholeCardsLeft(usable: number, placed: number, need: number): number {
+export function wholeCardsLeft(usable: number, placed: number, need: number): number {
   return Math.floor(Math.max(0, usable - placed) / need);
-}
-
-/**
- * How many more of this card the store allows beyond what the layout holds:
- * the fewest whole cards any of its pieces allows, never below 0. Null when
- * a piece it needs has no stock record (no record, no figure).
- */
-export function cardStoreFigure(params: CardParams, stock: UsableStock, placed: ReadonlyMap<string, number>): number | null {
-  const needs = cardNeeds(params);
-  if (needs.size === 0) return null;
-  let whole = Number.POSITIVE_INFINITY;
-  for (const [identity, need] of needs) {
-    const usable = stock.get(identity);
-    if (usable === undefined) return null;
-    whole = Math.min(whole, wholeCardsLeft(usable, placed.get(identity) ?? 0, need));
-  }
-  return whole;
 }
 
 /**
@@ -162,14 +122,74 @@ export function storeShortfall(stock: UsableStock | null, placedItems: readonly 
   if (stock === null) return null;
   const changedIds = new Set(change.add.map((piece) => piece.id));
   const kept = placedItems.filter((piece) => change.removeIds?.has(piece.id) !== true && !changedIds.has(piece.id));
-  const before = placedCounts(placedItems);
-  for (const [identity, count] of placedCounts([...kept, ...change.add])) {
+  return storeShortfallBetween(stock, placedItems, [...kept, ...change.add]);
+}
+
+/**
+ * The first piece taking the layout from `before` to `after` would take past
+ * its usable stock, or null: storeShortfall for a change given as the whole
+ * layout after it (a store action's write).
+ */
+export function storeShortfallBetween(stock: UsableStock | null, before: readonly PlacedItem[], after: readonly PlacedItem[]): StoreShortfall | null {
+  if (stock === null) return null;
+  const was = placedCounts(before);
+  for (const [identity, count] of placedCounts(after)) {
     const usable = stock.get(identity);
-    if (usable !== undefined && count > usable && count > (before.get(identity) ?? 0)) {
+    if (usable !== undefined && count > usable && count > (was.get(identity) ?? 0)) {
       return { catalogueItemId: identity, usable, needed: count };
     }
   }
   return null;
+}
+
+let stockSource: () => UsableStock | null = () => null;
+
+/**
+ * Where every adding commit reads the store's stock (B2, hard): the cards
+ * store registers its reading as it loads stock for staff (lane C), so the
+ * placement store refuses any write past it, whichever control made it.
+ * Unknown until a reading is registered, and unknown never refuses. Returns
+ * the way to take the reading away again.
+ */
+export function registerStoreStock(read: () => UsableStock | null): () => void {
+  stockSource = read;
+  return () => {
+    if (stockSource === read) stockSource = () => null;
+  };
+}
+
+/** The store's usable stock as the planner knows it now, or null when unknown (a guest, or not yet loaded). */
+export function currentStoreStock(): UsableStock | null {
+  return stockSource();
+}
+
+/**
+ * Trades Hall's chairs as its equipment list of 5 September 2026 records them
+ * (packages/api import-venue-stock maps that list onto the catalogue): the four
+ * kinds Blake gave the planner (28 Oct 2026: "only use the chairs i gave you
+ * inventory for"). Fill reads them where the store's own figures are not
+ * known, a guest's planner or before the cards register stock, so it never
+ * sets more of a kind than the hall owns. They are never shown.
+ */
+const RECORDED_CHAIR_STOCK: Readonly<Record<string, number>> = {
+  "chiavari-chair": 200,
+  "pink-chair": 120,
+  "gallery-chair-red-gold": 107,
+  "checked-banquet-chair": 106,
+};
+
+/**
+ * How many of a chair the hall has for Fill, by its stock identity (so the
+ * Turini counts as the pink chair): the store's usable stock where it is
+ * known, else the recorded figure; null where neither knows, which sets no
+ * limit.
+ */
+export function chairsInStore(chairItemId: string, stock: UsableStock | null = currentStoreStock()): number | null {
+  const identity = stockIdentity(chairItemId);
+  const usable = stock?.get(identity);
+  if (usable !== undefined) return usable;
+  const slug = getCatalogueItem(identity)?.slug;
+  return slug === undefined ? null : RECORDED_CHAIR_STOCK[slug] ?? null;
 }
 
 /** The refusal's words, in the planner's name for the piece: "Velvet Banquet Chair: 40 in store, this needs 48". */

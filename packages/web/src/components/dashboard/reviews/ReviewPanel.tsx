@@ -436,7 +436,7 @@ const CONFIRM_WORDS: Readonly<Record<ReviewDecision, ConfirmWords>> = {
   },
   withdrawn: {
     question: (name) => `Withdraw ${name} from review?`,
-    consequence: () => "The review ends here and cannot be reopened. Nobody is emailed.",
+    consequence: () => "The review ends here. The planner can change the layout and send it again. Nobody is emailed.",
     noteLabel: null,
     confirm: () => "Withdraw",
     saving: "Withdrawing…",

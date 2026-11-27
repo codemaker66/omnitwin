@@ -13,7 +13,10 @@ import {
   tableGroupSeatCapacity,
   tableOwnChairs,
 } from "./table-group.js";
-import { BANQUET_CHAIR_CLEARANCE_M } from "./auto-fill.js";
+import { BANQUET_CHAIR_CLEARANCE_M, groupClearOfDoors } from "./auto-fill.js";
+import { rectsOverlap, type LayoutRect } from "./auto-layout.js";
+import { footprintInKeepOut } from "./door-clear-spaces.js";
+import { placedFootprint } from "./keep-doors-clear.js";
 import { countLabel } from "./count-label.js";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +30,8 @@ import { countLabel } from "./count-label.js";
 //     banquet (the catalogue's recorded count: 10 at a 6 ft round);
 //   - "Add tables for 16" when those tables are full, set like the ones
 //     already there, in free floor at the banquet spacing (0.6 m clear
-//     behind every chair, to the next chairs, any other furniture or a wall);
+//     behind every chair, to the next chairs, any other furniture or a wall),
+//     never in a door's clear space;
 //   - nothing to tap when neither fits, so the lens can say so plainly.
 //
 // It only ever adds: the existing tables keep their places and their chairs
@@ -40,8 +44,9 @@ export type SeatShortfallOffer =
   | { readonly kind: "chairs"; readonly short: number; readonly guests: number; readonly chairs: number; readonly tables: number; readonly seatsPerTable: number }
   /** `tables` new tables like those on the floor, with `chairs` chairs between them. */
   | { readonly kind: "tables"; readonly short: number; readonly guests: number; readonly chairs: number; readonly tables: number; readonly tableItemId: string; readonly round: boolean }
-  /** The tables are full and the room has no space for another at this spacing. */
-  | { readonly kind: "no-room"; readonly short: number; readonly guests: number };
+  /** The tables are full and the room has no space for another at this spacing
+   *  (`doorsKeptClear` when only the doors' clear spaces would have had room). */
+  | { readonly kind: "no-room"; readonly short: number; readonly guests: number; readonly doorsKeptClear?: true };
 
 export interface SeatShortfallInput {
   readonly placedItems: readonly PlacedItem[];
@@ -50,6 +55,10 @@ export interface SeatShortfallInput {
   /** The room's interior, metres. */
   readonly roomWidthM: number;
   readonly roomLengthM: number;
+  /** The chair new tables are set with; the event's (plannerChairSlug) unless named. */
+  readonly chairSlug?: string;
+  /** The room's door clear spaces (lib/door-clear-spaces doorKeepOuts): no new table stands in one. */
+  readonly doorSpaces?: readonly LayoutRect[];
 }
 
 export interface SeatShortfallFixResult {
@@ -71,7 +80,7 @@ interface SeatedTable {
   readonly limit: number;
 }
 
-function seatedTables(placedItems: readonly PlacedItem[]): SeatedTable[] {
+function seatedTables(placedItems: readonly PlacedItem[], doorSpaces: readonly LayoutRect[]): SeatedTable[] {
   const tables: SeatedTable[] = [];
   for (const placed of placedItems) {
     if (!isSceneFurniturePlacement(placed)) continue;
@@ -80,9 +89,54 @@ function seatedTables(placedItems: readonly PlacedItem[]): SeatedTable[] {
     // Its own chairs: a group made with Group can hold other tables and theirs.
     const chairs = tableOwnChairs(placed, placedItems).length;
     const limit = Math.min(banquetSeatsPerTable(item), tableGroupSeatCapacity(placed, placedItems));
-    tables.push({ placed, item, chairs, limit });
+    tables.push({ placed, item, chairs, limit: doorLimit(placed, item, chairs, limit, placedItems, doorSpaces) });
   }
   return tables;
+}
+
+/** How far a table's chairs reach past its own footprint, metres: a chair's depth and the tuck. */
+const CHAIR_REACH_M = 1;
+
+/**
+ * The most chairs a table may be set for with no piece of its group in a
+ * door's clear space, judged as the door notice judges it (placedFootprint,
+ * footprintInKeepOut): each count from the chairs it has, up to `limit`, is
+ * rung round it in turn, and the first that would reach a door stops there,
+ * since the chairs can be added one at a time. A table far from every door
+ * keeps its limit unbuilt.
+ */
+function doorLimit(
+  placed: PlacedItem,
+  item: CatalogueItem,
+  chairs: number,
+  limit: number,
+  placedItems: readonly PlacedItem[],
+  doorSpaces: readonly LayoutRect[],
+): number {
+  if (doorSpaces.length === 0 || limit <= chairs) return limit;
+  const own = computeRotatedFootprint(item, placed.rotationY, placed.scale);
+  const near: LayoutRect = {
+    cx: toRealWorld(placed.x),
+    cz: toRealWorld(placed.z),
+    width: 2 * (toRealWorld(own.halfW) + CHAIR_REACH_M),
+    depth: 2 * (toRealWorld(own.halfD) + CHAIR_REACH_M),
+  };
+  if (!doorSpaces.some((space) => rectsOverlap(near, space))) return limit;
+  // A table placed on its own is rung as the fix rings it, in a group of its own.
+  const items = placed.groupId === null
+    ? placedItems.map((piece) => (piece.id === placed.id ? { ...piece, groupId: `${placed.id}-door-check` } : piece))
+    : placedItems;
+  for (let count = chairs + 1; count <= limit; count += 1) {
+    const rung = rearrangeTableGroup(placed.id, count, items);
+    const table = rung.find((piece) => piece.id === placed.id);
+    if (table === undefined) return chairs;
+    const entering = [table, ...tableOwnChairs(table, rung)].some((piece) => {
+      const footprint = placedFootprint(piece);
+      return footprint !== null && doorSpaces.some((space) => footprintInKeepOut(footprint, space));
+    });
+    if (entering) return count - 1;
+  }
+  return limit;
 }
 
 /** Spread `count` chairs over the tables, one at a time to the table with the
@@ -129,8 +183,8 @@ function freeTableSpots(input: SeatShortfallInput, table: CatalogueItem, seats: 
   if (wanted <= 0) return [];
   const clearance = BANQUET_CHAIR_CLEARANCE_M;
   const round = table.tableShape === "round";
-  const footprint = tableGroupPlanningFootprint(table, seats);
-  const radius = round ? tableGroupPlanningRadius(table, seats) : 0;
+  const footprint = tableGroupPlanningFootprint(table, seats, input.chairSlug);
+  const radius = round ? tableGroupPlanningRadius(table, seats, input.chairSlug) : 0;
   const hw = round ? radius : footprint.width / 2;
   const hd = round ? radius : footprint.depth / 2;
 
@@ -170,9 +224,18 @@ function freeTableSpots(input: SeatShortfallInput, table: CatalogueItem, seats: 
   }
   candidates.sort((a, b) => (Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z)) || (a.z - b.z) || (a.x - b.x));
 
+  // Judged as Fill and the door notice judge it: each piece of the new group,
+  // table and chairs (auto-fill groupClearOfDoors), never the group's bounds.
+  const doorSpaces = input.doorSpaces ?? [];
+  const clearOfDoors = doorSpaces.length === 0
+    ? null
+    : groupClearOfDoors(table, seats, { width: 2 * hw, depth: 2 * hd }, doorSpaces, input.chairSlug);
+  const inDoorSpace = (spot: Spot): boolean => clearOfDoors !== null && !clearOfDoors({ xM: spot.x, zM: spot.z, rotationY: 0 });
+
   const spots: Spot[] = [];
   for (const candidate of candidates) {
     if (spots.length >= wanted) break;
+    if (inDoorSpace(candidate)) continue;
     if (obstacles.some((o) => gapTo(candidate.x, candidate.z, o) < clearance - EPS)) continue;
     const spaced = spots.every((spot) => (round
       ? Math.hypot(candidate.x - spot.x, candidate.z - spot.z) >= 2 * radius + clearance - EPS
@@ -198,7 +261,7 @@ interface Planned {
 function planShortfall(input: SeatShortfallInput): Planned | null {
   const need = shortfallOf(input);
   if (need === null) return null;
-  const tables = seatedTables(input.placedItems);
+  const tables = seatedTables(input.placedItems, input.doorSpaces ?? []);
   // A layout with no dining table on the floor (rows of chairs, a standing
   // reception) gets no table fix here.
   if (tables.length === 0) return null;
@@ -219,7 +282,7 @@ function planShortfall(input: SeatShortfallInput): Planned | null {
   if (spare >= short) return chairsOffer(short);
 
   const table = commonestTable(tables);
-  const seats = table === null ? 0 : banquetSeatsPerTable(table);
+  const seats = table === null ? 0 : banquetSeatsPerTable(table, input.chairSlug);
   const tablesNeeded = seats > 0 ? Math.ceil(short / seats) : 0;
   const spots = table === null || seats === 0 ? [] : freeTableSpots(input, table, seats, tablesNeeded);
   const tablesOffer = (item: CatalogueItem, count: number, chairs: number): Planned => ({
@@ -231,7 +294,10 @@ function planShortfall(input: SeatShortfallInput): Planned | null {
   const partialTableSeats = Math.min(short, spots.length * seats);
   if (spare > 0 && spare >= partialTableSeats) return chairsOffer(spare);
   if (table !== null && spots.length > 0) return tablesOffer(table, spots.length, partialTableSeats);
-  return { offer: { kind: "no-room", short, guests }, tables, spots: [] };
+  // Say so when the doors' clear spaces are what leave no room.
+  const doorsKeptClear = table !== null && seats > 0 && (input.doorSpaces ?? []).length > 0
+    && freeTableSpots({ ...input, doorSpaces: [] }, table, seats, 1).length > 0;
+  return { offer: { kind: "no-room", short, guests, ...(doorsKeptClear ? { doorsKeptClear } : {}) }, tables, spots: [] };
 }
 
 /** The one action to offer for a seat shortfall, or null when nothing is short. Pure. */
@@ -267,7 +333,7 @@ export function applySeatShortfallFix(input: SeatShortfallInput): SeatShortfallF
     const extra = offer.chairs % offer.tables;
     planned.spots.slice(0, offer.tables).forEach((spot, index) => {
       const chairs = base + (index < extra ? 1 : 0);
-      items.push(...createTableGroup(offer.tableItemId, toRenderSpace(spot.x), toRenderSpace(spot.z), 0, chairs));
+      items.push(...createTableGroup(offer.tableItemId, toRenderSpace(spot.x), toRenderSpace(spot.z), 0, chairs, 0, undefined, "around", input.chairSlug));
     });
   }
 
@@ -298,7 +364,9 @@ export function seatShortfallDetail(offer: SeatShortfallOffer): string {
     case "tables":
       return `${countLabel(offer.tables, offer.round ? "round table" : "table")} with ${countLabel(offer.chairs, "chair")}, ${String(BANQUET_CHAIR_CLEARANCE_M)} m clear behind every chair.`;
     case "no-room":
-      return "The tables are full, and there is no room for another at this spacing.";
+      return offer.doorsKeptClear === true
+        ? "The tables are full, and there is no room for another at this spacing with the doors kept clear."
+        : "The tables are full, and there is no room for another at this spacing.";
   }
 }
 

@@ -354,6 +354,9 @@ describe("the cut's materials", () => {
       const built = createHallSection(section, mood, options);
       expect(built.materials.cap.name).toBe("grand-hall-section-cap");
       expect(built.materials.body.name).toBe("grand-hall-wall-body");
+      // The sun's casters: the bodies less the cleared bays' faces (hall-sun-casters.test.ts).
+      expect(built.bodyCasters.getIndex()?.count ?? 0).toBeLessThan(built.body.getIndex()?.count ?? 0);
+      expect(built.bodyCasters.getIndex()?.count ?? 0).toBeGreaterThan(0);
       expect(built.profile.texture.image.width).toBe(SECTION_PROFILE_WIDTH);
       built.dispose();
     }

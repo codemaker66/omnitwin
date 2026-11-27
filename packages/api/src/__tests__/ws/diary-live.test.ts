@@ -414,6 +414,8 @@ describe("registerDiaryLive — source contract", () => {
   it("subscribes to the house event bus and cleans up on server close", async () => {
     const source = await readFile(resolve("src/ws/diary-live.ts"), "utf-8");
     expect(source).toContain('subscribe("diary.changed"');
+    // A command's change goes to the booking's venue, not the connection's.
+    expect(source).toContain("venueId: execution.changed.venueId");
     expect(source).toContain('server.addHook("onClose"');
     expect(source).toContain("clearInterval");
   });

@@ -26,11 +26,13 @@ import { ConfigurationIdSchema } from "./configuration.js";
 //   approved           — signed off; hallkeeper sees the sheet;
 //                        pre-rendered PDF in R2
 //   rejected           — staff said no; planner gets rejection email
-//                        with note; planner can clone to a new draft
-//   changes_requested  — staff said "revise"; planner can re-submit
-//                        without losing the original config history
+//                        with note; planner can revise and submit again
+//                        (or the venue archives it)
+//   changes_requested  — staff said "revise"; planner edits and submits
+//                        again without losing the original config history
 //   withdrawn          — planner pulled their submission back (may be
-//                        because they noticed an error themselves)
+//                        because they noticed an error themselves); they
+//                        edit and submit again when ready
 //   archived           — post-event terminal state
 // ---------------------------------------------------------------------------
 
@@ -66,10 +68,12 @@ export const VALID_CONFIGURATION_REVIEW_TRANSITIONS: Readonly<
   draft: ["submitted"],
   submitted: ["under_review", "withdrawn"],
   under_review: ["approved", "rejected", "changes_requested", "withdrawn"],
-  changes_requested: ["draft", "withdrawn"],
+  // A layout sent back, declined or withdrawn is the planner's again: they
+  // edit it and submit it once more, and the venue reviews the new version.
+  changes_requested: ["submitted", "draft", "withdrawn"],
   approved: ["archived"],
-  rejected: ["draft", "archived"],
-  withdrawn: [],
+  rejected: ["submitted", "draft", "archived"],
+  withdrawn: ["submitted"],
   archived: [],
 };
 
@@ -96,7 +100,9 @@ export function isTerminalReviewStatus(
 // Editable-by-planner set — states in which the planner can still mutate
 // the underlying configuration (placed-objects, metadata). Blocking
 // edits in `submitted` / `under_review` / `approved` keeps the snapshot
-// aligned with the hallkeeper's view until a re-submit handshake.
+// aligned with the hallkeeper's view until a re-submit handshake. Every
+// editable state but draft is one a submit leaves again (above), so an
+// edit made there always reaches the venue as a new version.
 //
 // Admins bypass this at the runtime layer (audit-logged).
 // ---------------------------------------------------------------------------
@@ -106,6 +112,7 @@ const PLANNER_EDITABLE_STATUSES: ReadonlySet<ConfigurationReviewStatus> =
     "draft",
     "changes_requested",
     "rejected",
+    "withdrawn",
   ]);
 
 /**

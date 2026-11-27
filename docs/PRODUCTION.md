@@ -162,6 +162,7 @@ Tick each box when done. After each one, **paste the credential(s) into chat wit
    - **Settings** → **CORS Policy** → JSON: allow `PUT`, `GET`, `HEAD` from `https://venviewer.com` and `https://www.venviewer.com` with header `Content-Type`, exposing `ETag`.
    - **Manage R2 API tokens** → **Create API token**: `Object Read & Write`, scoped to `omnitwin-private-uploads` only. Not an Admin token, and not the token above or any token kept in a developer `.env`.
    - In Railway `@omnitwin/api` production, enter `PRIVATE_UPLOADS_R2_ACCESS_KEY_ID` and `PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY` yourself. Claude sets `PRIVATE_UPLOADS_R2_ACCOUNT_ID` and `PRIVATE_UPLOADS_R2_BUCKET`.
+   - Right after the first deploy with this bucket, move the private uploads that reached the public bucket before it (from 11 November 2026) with `src/scripts/move-private-uploads.ts`: a dry run, then `--apply` ([how](operations/upload-access-policy.md#moving-what-reached-the-public-bucket-before-this-split)).
 
 
 ### 1.8 🧑 Neon production branch — `[BLAKE]` or 🤖 I can do this

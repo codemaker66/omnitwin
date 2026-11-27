@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Group, Scene } from "three";
 import {
+  CIRCULATION_OVERLAY_GROUP,
   SAVED_LAYOUT_FURNITURE_GROUP,
   TIMELINE_CAPTURE_FURNITURE_GROUP,
   TIMELINE_PREVIEW_FURNITURE_GROUP,
@@ -69,5 +70,40 @@ describe("timeline orthographic capture visibility", () => {
     expect(saved.visible).toBe(true);
     capture.restore();
     expect(saved.visible).toBe(false);
+  });
+
+  it("leaves the clearance lines out of every plan and puts them back", () => {
+    const scene = new Scene();
+    const circulation = new Group();
+    circulation.name = CIRCULATION_OVERLAY_GROUP;
+    scene.add(circulation);
+
+    const capture = prepareFurnitureForOrthographicCapture(scene);
+    expect(circulation.visible).toBe(false);
+    capture.restore();
+    expect(circulation.visible).toBe(true);
+  });
+
+  it("keeps a blocked door's warning in the plan while the clearance lines leave it", () => {
+    // Blake, 5 Nov 2026: the warm-gold warning of a piece standing in a door's
+    // clear space stays in the plan. Its group (DoorClearSpaceLayer.tsx) is not
+    // the clearance lines' and the capture leaves it as it is.
+    const scene = new Scene();
+    const circulation = new Group();
+    circulation.name = CIRCULATION_OVERLAY_GROUP;
+    const doors = new Group();
+    doors.name = "door-clear-spaces";
+    const blocked = new Group();
+    blocked.name = "door-clear-space-north";
+    doors.add(blocked);
+    scene.add(circulation, doors);
+
+    const capture = prepareFurnitureForOrthographicCapture(scene);
+    expect(circulation.visible).toBe(false);
+    expect(doors.visible).toBe(true);
+    expect(blocked.visible).toBe(true);
+    capture.restore();
+    expect(circulation.visible).toBe(true);
+    expect(blocked.visible).toBe(true);
   });
 });

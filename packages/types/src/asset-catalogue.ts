@@ -555,8 +555,10 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     slug: "chiavari-chair",
     name: "Chiavari Wedding Chair",
     category: "chair",
-    // Manufacturer-standard Chiavari envelope; the venue's own units are unmeasured.
-    widthM: 0.41, depthM: 0.41, heightM: 0.92,
+    // A UK hire supplier's Chiavari (43 × 41 × 92 cm, seat 44 cm; planner-qol
+    // research/chair-sizes.md, 26 Oct 2026). The venue's own make is unknown
+    // and its chairs unmeasured; Chiavari run 40 to 43 cm wide.
+    widthM: 0.43, depthM: 0.41, heightM: 0.92,
     dimensionStatus: "approximate",
     seatCount: 1, collisionType: "box", tableShape: null,
     maxCount: null, subtitle: "Ballroom chair · stackable", color: "#c9a227",
@@ -578,10 +580,16 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     slug: "pink-chair",
     name: "Pink Chair",
     category: "chair",
-    widthM: 0.45, depthM: 0.45, heightM: 0.90,
+    // The venue's pink chair is the Burgess Turini 18/3 (Blake, 26 Oct 2026),
+    // so it takes that maker's envelope. It stays approximate: the
+    // identification is Blake's, and no one has measured the venue's chairs.
+    // The stock import records the venue's count here; the planner sets the
+    // burgess-turini-18-3 entry, which the store limit counts against this
+    // record (web lib/card-stock).
+    widthM: 0.42, depthM: 0.58, heightM: 0.88,
     dimensionStatus: "approximate",
     seatCount: 1, collisionType: "box", tableShape: null,
-    maxCount: null, subtitle: "Padded · stackable", color: "#c98a9b",
+    maxCount: null, subtitle: "Padded · stackable · 42 × 58cm", color: "#c98a9b",
     equipmentTags: [],
   },
   // Four highchairs, kept as separate identities because the venue counts them
@@ -624,7 +632,9 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     slug: "highchair-wooden",
     name: "Wooden Highchair",
     category: "chair",
-    widthM: 0.50, depthM: 0.55, heightM: 0.95,
+    // A typical wooden commercial highchair (Bolero type: 51 × 51 × 75 cm,
+    // seat 50 cm; planner-qol research/chair-sizes.md). The make is unknown.
+    widthM: 0.51, depthM: 0.51, heightM: 0.75,
     dimensionStatus: "approximate",
     seatCount: 1, collisionType: "box", tableShape: null,
     maxCount: null, subtitle: "Child seat", color: "#8b6140",

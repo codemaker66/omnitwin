@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { memoryBackend, withBackend } from "../idb-cache.js";
-import { createEventDayQueue, type QueuedEventDayOp } from "../event-day-offline-queue.js";
+import { MAX_EARLIER_PRESS_KEYS } from "@omnitwin/types";
+import { memoryBackend, withBackend, type CacheBackend } from "../idb-cache.js";
+import {
+  createEventDayQueue,
+  MAX_EARLIER_PRESS_KEYS as QUEUE_MAX_EARLIER_PRESS_KEYS,
+  type QueuedEventDayOp,
+  type RequestStepInput,
+} from "../event-day-offline-queue.js";
 
 function queue() {
   return createEventDayQueue(withBackend<QueuedEventDayOp>(memoryBackend()));
@@ -97,6 +103,84 @@ describe("event-day offline queue", () => {
     expect(left.map((op) => op.kind)).toEqual(["task_status"]);
   });
 
+  // L9 — steps on a floor request through the queue: every press is kept,
+  // each under the key it was pressed with, in the order pressed, with who
+  // pressed it; the Day Board's provider replays them and leaves the rest.
+  const REQUEST = "00000000-0000-4000-8000-00000000d001";
+  const SEEN = "00000000-0000-4000-8000-00000000e001";
+  const TAKE = "00000000-0000-4000-8000-00000000e002";
+  const step = (commandId: string, transition: RequestStepInput["transition"]): RequestStepInput => ({
+    venueId: VENUE, requestId: REQUEST, bookingId: BOOKING, summary: "Chairs × 10", transition, expectedState: "sent", expectedOwnerUserId: null, commandId,
+    authorUserId: "00000000-0000-4000-8000-0000000000ff", authorName: "Elaine",
+  });
+
+  it("keeps every step on a request, each under its own key, in the order pressed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T18:40:00.000Z"));
+    const q = queue();
+    await q.enqueueRequestStep(step(SEEN, { to: "acknowledged" }));
+    vi.setSystemTime(new Date("2026-10-29T18:40:05.000Z"));
+    await q.enqueueRequestStep(step(TAKE, { to: "accepted" }));
+    // The same press stored again is one op, and keeps its first place.
+    vi.setSystemTime(new Date("2026-10-29T18:41:00.000Z"));
+    await q.enqueueRequestStep(step(SEEN, { to: "acknowledged" }));
+
+    const pending = await q.list();
+    expect(pending.map((op) => op.queueKey)).toEqual([`request:${SEEN}`, `request:${TAKE}`]);
+    expect(pending[0]).toMatchObject({
+      kind: "request_step", requestId: REQUEST, commandId: SEEN, transition: { to: "acknowledged" },
+      authorName: "Elaine", queuedAt: "2026-10-29T18:40:00.000Z",
+    });
+  });
+
+  it("keeps the order pressed when the clock stands still, steps back, or the page reloads", async () => {
+    const DONE = "00000000-0000-4000-8000-00000000e003";
+    const NOT_NEEDED = "00000000-0000-4000-8000-00000000e004";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T18:40:00.000Z"));
+    const backend = withBackend<QueuedEventDayOp>(memoryBackend());
+    const q = createEventDayQueue(backend);
+    // Two presses stored at once, under a clock that does not move.
+    await Promise.all([
+      q.enqueueRequestStep(step(SEEN, { to: "acknowledged" })),
+      q.enqueueRequestStep(step(TAKE, { to: "accepted" })),
+    ]);
+    // The clock steps back before the next press.
+    vi.setSystemTime(new Date("2026-10-29T18:39:00.000Z"));
+    await q.enqueueRequestStep(step(DONE, { to: "resolved", outcome: "done" }));
+    // The page reloads: a new queue over the same store, the clock still back.
+    const reloaded = createEventDayQueue(backend);
+    await reloaded.enqueueRequestStep(step(NOT_NEEDED, { to: "resolved", outcome: "no_longer_needed" }));
+
+    const pending = await reloaded.list();
+    expect(pending.map((op) => op.queueKey)).toEqual([SEEN, TAKE, DONE, NOT_NEEDED].map((id) => `request:${id}`));
+    const stamps = pending.map((op) => op.queuedAt);
+    expect(new Set(stamps).size).toBe(4);
+    expect(stamps[0]).toBe("2026-10-29T18:40:00.000Z");
+  });
+
+  it("replays steps in order, drops one the server refused, and keeps the rest for their drainer", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T18:40:00.000Z"));
+    const q = queue();
+    await q.enqueueRequestStep(step(SEEN, { to: "acknowledged" }));
+    vi.setSystemTime(new Date("2026-10-29T18:40:05.000Z"));
+    await q.enqueueObservationRecord(VENUE, DOORS_OPEN);
+    vi.setSystemTime(new Date("2026-10-29T18:40:10.000Z"));
+    await q.enqueueRequestStep(step(TAKE, { to: "accepted" }));
+
+    const sent: string[] = [];
+    const acked = await q.drain((op) => {
+      if (op.kind !== "request_step") return Promise.resolve("left" as const);
+      sent.push(op.commandId);
+      // Someone else took it first: refused for good, so it leaves the queue.
+      return Promise.resolve(op.commandId === TAKE ? ("refused" as const) : ("applied" as const));
+    });
+    expect(sent).toEqual([SEEN, TAKE]);
+    expect(acked.map((op) => op.queueKey)).toEqual([`request:${SEEN}`, `request:${TAKE}`]);
+    expect((await q.list()).map((op) => op.kind)).toEqual(["observation_record"]);
+  });
+
   it("keeps last task status intent per task", async () => {
     const q = queue();
     await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "a" });
@@ -109,6 +193,18 @@ describe("event-day offline queue", () => {
       opsTaskId: "task-1",
       input: { status: "done", idempotencyKey: "b" },
     });
+  });
+
+  // #418: the row keeps the status its press was made against, for the
+  // replay to carry; a row written before replays carried one has none.
+  it("keeps with a task status the status it was pressed against, and none where none was given", async () => {
+    const q = queue();
+    await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "b", expectedStatus: "in_progress" });
+    await q.enqueueTaskStatus("task-2", { status: "done", idempotencyKey: "c" });
+
+    const [withExpected, without] = await q.list();
+    expect(withExpected).toMatchObject({ opsTaskId: "task-1", input: { status: "done", idempotencyKey: "b", expectedStatus: "in_progress" } });
+    expect(without?.kind === "task_status" ? without.input : null).toEqual({ status: "done", idempotencyKey: "c" });
   });
 
   it("does not collapse separate issue reports", async () => {
@@ -136,5 +232,125 @@ describe("event-day offline queue", () => {
     expect(pending).toBeDefined();
     await q.ack(pending?.queueKey ?? "");
     expect(await q.list()).toEqual([]);
+  });
+
+  // #418 B2 and B1: a task keeps one row, so a later press writes over an
+  // earlier one's row. The earlier press's ack must not take the later one
+  // with it: ackIf deletes the row only while it still holds that press.
+  describe("acking a task status only while its row still holds that press", () => {
+    const statusesQueued = async (q: ReturnType<typeof queue>): Promise<readonly (string | undefined)[]> =>
+      (await q.list()).map((op) => (op.kind === "task_status" ? op.input.idempotencyKey : op.kind));
+
+    it("deletes the row while it still holds that press", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start" });
+      expect(await q.ackIf("task:task-1", "start")).toBe(true);
+      expect(await q.list()).toEqual([]);
+    });
+
+    it("keeps a row a later press has written since", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start" });
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done" });
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      expect(await statusesQueued(q)).toEqual(["done"]);
+    });
+
+    it("is no error when the row is already gone", async () => {
+      const q = queue();
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start" });
+      await q.ack("task:task-1");
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      expect(await q.list()).toEqual([]);
+    });
+
+    it("compares and deletes in the store's one conditional step, never a read and then a delete", async () => {
+      // A read and a delete made apart could let another tab's write fall
+      // between them. With the store's plain read and delete refused, the
+      // compare can only be its conditional delete: one readwrite
+      // transaction on IndexedDB.
+      const inner = memoryBackend();
+      const backend: CacheBackend = {
+        ...inner,
+        get: () => Promise.reject(new Error("a read apart from the delete")),
+        delete: () => Promise.reject(new Error("a delete without the compare")),
+      };
+      const q = createEventDayQueue(withBackend<QueuedEventDayOp>(backend));
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done" });
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      expect(await statusesQueued(q)).toEqual(["done"]);
+      expect(await q.ackIf("task:task-1", "done")).toBe(true);
+      expect(await q.list()).toEqual([]);
+    });
+
+    it("never deletes another kind of op that shares nothing but the call", async () => {
+      const q = queue();
+      await q.enqueueIssueCreate("event-1", { title: "Lift", detail: "Use the stair.", severity: "urgent" }, "issue-a");
+      expect(await q.ackIf("issue:issue-a", "issue-a")).toBe(false);
+      expect(await statusesQueued(q)).toEqual(["issue_create"]);
+    });
+  });
+
+  // #418 round four, ruling A: a later press that replaces the task's row
+  // keeps the replaced press's key, and the keys it carried, so its replay
+  // can follow the device's own earlier write (a lost answer, or a press
+  // that landed while it sat queued), whichever tab or mount wrote the row.
+  describe("keeping the device's earlier presses with the task's row", () => {
+    const earlierKeys = async (q: ReturnType<typeof queue>): Promise<readonly string[] | undefined> => {
+      const [row] = await q.list();
+      return row?.kind === "task_status" ? row.input.earlierPressKeys : undefined;
+    };
+
+    it("keeps the replaced press's key and the keys it carried, with the ones the page names", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start", expectedStatus: "todo" });
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done", expectedStatus: "todo", earlierPressKeys: ["sent-from-this-page"] });
+      expect(await earlierKeys(q)).toEqual(["start", "sent-from-this-page"]);
+
+      await q.enqueueTaskStatus("task-1", { status: "blocked", idempotencyKey: "block", expectedStatus: "todo", earlierPressKeys: ["start"] });
+      expect(await earlierKeys(q)).toEqual(["start", "sent-from-this-page", "done"]);
+    });
+
+    it("keeps the newest twenty, and never the row's own key", async () => {
+      const q = queue();
+      for (let press = 0; press < 25; press += 1) {
+        await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: `press-${String(press)}`, expectedStatus: "todo", earlierPressKeys: [`press-${String(press)}`] });
+      }
+      expect(await earlierKeys(q)).toEqual(Array.from({ length: 20 }, (_, index) => `press-${String(index + 4)}`));
+    });
+
+    // The queue keeps its own copy of the API's bound: a value import from
+    // @omnitwin/types would bring its event-day schemas into the Day Board
+    // route, which loads this queue (review DR7). The two must not part.
+    it("keeps as many earlier keys as the API accepts", () => {
+      expect(QUEUE_MAX_EARLIER_PRESS_KEYS).toBe(MAX_EARLIER_PRESS_KEYS);
+    });
+
+    it("writes a first press's row with no keys, as round three did, and keeps none for a row with no expectedStatus", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done", expectedStatus: "todo" });
+      expect(await earlierKeys(q)).toBeUndefined();
+      await q.enqueueTaskStatus("task-1", { status: "blocked", idempotencyKey: "older-page" });
+      expect((await q.list())[0]).toMatchObject({ input: { status: "blocked", idempotencyKey: "older-page" } });
+      expect(await earlierKeys(q)).toBeUndefined();
+    });
+
+    it("reads the replaced row and writes the new one in the store's one step, never a read and then a write", async () => {
+      // Another tab's write must not fall between reading the row it
+      // replaces and writing it: with the plain read and write refused,
+      // only the store's one-step update can do it (one readwrite
+      // transaction on IndexedDB).
+      const inner = memoryBackend();
+      const backend: CacheBackend = {
+        ...inner,
+        get: () => Promise.reject(new Error("a read apart from the write")),
+        put: () => Promise.reject(new Error("a write apart from the read")),
+      };
+      const q = createEventDayQueue(withBackend<QueuedEventDayOp>(backend));
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start", expectedStatus: "todo" });
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done", expectedStatus: "todo" });
+      expect(await earlierKeys(q)).toEqual(["start"]);
+    });
   });
 });

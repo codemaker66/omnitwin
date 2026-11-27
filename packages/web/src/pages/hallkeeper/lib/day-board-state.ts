@@ -17,7 +17,8 @@ import {
   observationMeansInUse,
   observationMeansOver,
 } from "@omnitwin/types";
-import { VENUE_TIME_ZONE, formatWallTime } from "../../diary/lib/board-time.js";
+import { VENUE_TIME_ZONE, formatWallDay, formatWallTime, msToWallInput } from "../../diary/lib/board-time.js";
+import { boardDate } from "./board-day-date.js";
 import { bookingStateLabel } from "../../diary/lib/board-overview.js";
 
 // ---------------------------------------------------------------------------
@@ -146,7 +147,8 @@ export interface DayBoardSlot {
   readonly icon: DayBoardIcon;
   /** The verb the slot reads aloud: "Organisers · 48 min", "LIVE · 1 h 12 elapsed". */
   readonly countdown: string;
-  /** Wall-clock range, venue-local: "13:00 – 17:00". */
+  /** Wall-clock range, venue-local: "13:00 – 17:00"; a booking that runs
+   *  for days names them ("Thu 12 Nov, 10:00 – Mon 16 Nov, 17:00"). */
   readonly timeRange: string;
   readonly exception: DayBoardException | null;
   readonly exceptionDetail: string | null;
@@ -467,6 +469,57 @@ export function resolveTurnaroundMinutes(
   return best?.minutes ?? null;
 }
 
+/** A booking runs for days once it lasts most of one or more: an
+ *  exhibition, or ten o'clock to ten o'clock the next day whether the clocks
+ *  change between (23 or 25 hours) or not; never a dinner that carries on
+ *  past midnight. */
+const MULTI_DAY_MS = 20 * 60 * MIN_MS;
+const DAY_MS = 24 * 60 * MIN_MS;
+
+/** Whether a booking from doors to end runs for days. */
+export function runsForDays(doorsAtMs: number, endsAtMs: number): boolean {
+  return endsAtMs - doorsAtMs >= MULTI_DAY_MS;
+}
+
+/** The venue's calendar date of an instant, as YYYY-MM-DD. */
+function wallDate(ms: number, timeZone: string): string {
+  return msToWallInput(ms, timeZone).slice(0, 10);
+}
+
+/** Whole calendar days from one YYYY-MM-DD to another. */
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T12:00:00.000Z`) - Date.parse(`${from}T12:00:00.000Z`)) / DAY_MS);
+}
+
+/** Which day of a multi-day booking `nowMs` falls on, venue-local: "day 3
+ *  of 5". Null for a booking of a day or less. Days are the board's own,
+ *  rolling at the venue's boundary hour (04:00 at Trades Hall) as the board's
+ *  heading does: at 01:00 on Sunday the board still shows Saturday, and so
+ *  does the count. An end at the boundary belongs to the day before it. */
+export function runningDays(
+  doorsAtMs: number,
+  endsAtMs: number,
+  nowMs: number,
+  timeZone: string = VENUE_TIME_ZONE,
+  dayBoundaryHour = 0,
+): { readonly day: number; readonly of: number } | null {
+  if (!runsForDays(doorsAtMs, endsAtMs)) return null;
+  const first = boardDate(doorsAtMs, dayBoundaryHour, timeZone);
+  const of = daysBetween(first, boardDate(endsAtMs - 1, dayBoundaryHour, timeZone)) + 1;
+  // A long booking inside one of the board's days is counted in hours, not days.
+  if (of < 2) return null;
+  const day = Math.min(of, Math.max(1, daysBetween(first, boardDate(nowMs, dayBoundaryHour, timeZone)) + 1));
+  return { day, of };
+}
+
+/** "13:00 – 17:00"; a booking that runs for days names them: "Thu 12 Nov,
+ *  10:00 – Mon 16 Nov, 17:00". */
+function slotTimeRange(startsAtMs: number, endsAtMs: number, timeZone: string): string {
+  const days = runsForDays(startsAtMs, endsAtMs) && wallDate(startsAtMs, timeZone) !== wallDate(endsAtMs - 1, timeZone);
+  if (!days) return `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
+  return `${formatWallDay(startsAtMs, timeZone)}, ${formatWallTime(startsAtMs, timeZone)} – ${formatWallDay(endsAtMs, timeZone)}, ${formatWallTime(endsAtMs, timeZone)}`;
+}
+
 interface TimedState {
   readonly state: DayBoardState;
   readonly stateLabel: string;
@@ -477,7 +530,7 @@ interface TimedState {
   readonly nextBoundaryMs: number | null;
 }
 
-function deriveTimedState(segments: SlotSegments, nowMs: number, timeZone: string): TimedState {
+function deriveTimedState(segments: SlotSegments, nowMs: number, timeZone: string, dayBoundaryHour: number): TimedState {
   const { setupStartsAtMs, doorsAtMs, endsAtMs, clearDownEndsAtMs } = segments;
   const organisersAtMs = setupStartsAtMs - ORGANISERS_WINDOW_MIN * MIN_MS;
   const guestsAtMs = doorsAtMs - GUESTS_WINDOW_MIN * MIN_MS;
@@ -496,10 +549,14 @@ function deriveTimedState(segments: SlotSegments, nowMs: number, timeZone: strin
     };
   }
   if (nowMs >= doorsAtMs) {
+    // A booking that runs for days (an exhibition) is counted in its days:
+    // "52 h 20 elapsed" says nothing a hallkeeper can use.
+    const days = runningDays(doorsAtMs, endsAtMs, nowMs, timeZone, dayBoundaryHour);
     const elapsed = Math.floor((nowMs - doorsAtMs) / MIN_MS);
     return {
       state: "live", stateLabel: "Live", tone: "live", motion: "live-breath", icon: "radio",
-      countdown: `LIVE · ${formatMinutes(elapsed)} elapsed`, nextBoundaryMs: endsAtMs,
+      countdown: days === null ? `LIVE · ${formatMinutes(elapsed)} elapsed` : `LIVE · day ${String(days.day)} of ${String(days.of)}`,
+      nextBoundaryMs: endsAtMs,
     };
   }
   if (nowMs >= imminentAtMs) {
@@ -599,6 +656,9 @@ export function deriveDayBoard(
   /** What hallkeepers have seen in the rooms (S5). Optional for the same
    *  reason: without facts the board is the schedule alone. */
   observations: readonly DayBoardSlotObservation[] = [],
+  /** The venue's day boundary hour (S8): a booking that runs for days counts
+   *  its days on the board's day, as the heading does. Midnight by default. */
+  dayBoundaryHour = 0,
 ): DayBoard {
   const requestsByBooking = groupRequestsByBooking(requests);
   const observationsByBooking = groupObservationsByBooking(observations);
@@ -675,12 +735,12 @@ export function deriveDayBoard(
       );
       const segments: SlotSegments = { setupStartsAtMs, doorsAtMs: startsAtMs, endsAtMs, clearDownEndsAtMs, turnaroundMinutes };
 
-      const timed = deriveTimedState(segments, nowMs, timeZone);
+      const timed = deriveTimedState(segments, nowMs, timeZone, dayBoundaryHour);
       const slotRequests = (requestsByBooking.get(entry.id) ?? []).filter(isOpenRequest);
       const requestSignal = deriveSlotRequestSignal(slotRequests, nowMs);
       const attention = deriveSlotAttention(slotRequests, nowMs);
       const blocking = blockingByBooking.get(entry.id);
-      const timeRange = `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
+      const timeRange = slotTimeRange(startsAtMs, endsAtMs, timeZone);
       const bookingLabel = entry.kind === "hold" || entry.kind === "viewing"
         ? bookingStateLabel(entry)
         : entry.kind === "internal_block" ? "House block" : "Confirmed booking";
@@ -701,7 +761,11 @@ export function deriveDayBoard(
       let gapBefore: LaneGap | null = null;
       let changeover: string | null = null;
       let changeoverFromMs: number | null = null;
-      if (previous !== undefined) {
+      // Two bookings at once in one room (a first and second option on the
+      // same evening; a talk inside a running exhibition) have no changeover
+      // between them: neither a turn-round to dimension nor a room to clear.
+      const concurrent = previous !== undefined && startsAtMs < Date.parse(previous.endsAt);
+      if (previous !== undefined && !concurrent) {
         const previousEnd = Date.parse(previous.endsAt);
         // After a viewing there is nothing to clear; before one, the room
         // still needs the previous function's changeover to be shown.
@@ -717,7 +781,12 @@ export function deriveDayBoard(
         if (needed !== null && previousSeen !== null && previousSeen.kind !== "cleaned" && nowMs < startsAtMs) {
           const riskFromMs = Math.max(previousEnd, setupStartsAtMs - needed * MIN_MS);
           if (nowMs >= riskFromMs) {
-            changeover = `${previous.title} not yet cleared · ${formatMinutes(minutesUntil(setupStartsAtMs, nowMs))} until setup, ${formatMinutes(needed)} needed`;
+            // Once setup was due, "0 min until setup" says nothing: the
+            // words name when it was due and when the doors open.
+            const untilSetup = minutesUntil(setupStartsAtMs, nowMs);
+            changeover = untilSetup > 0
+              ? `${previous.title} not yet cleared · ${formatMinutes(untilSetup)} until setup, ${formatMinutes(needed)} needed`
+              : `${previous.title} not yet cleared · setup was due ${formatWallTime(setupStartsAtMs, timeZone)}, doors ${formatWallTime(startsAtMs, timeZone)}`;
           } else {
             changeoverFromMs = riskFromMs;
           }

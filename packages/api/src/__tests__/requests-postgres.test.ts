@@ -10,6 +10,7 @@ import { STAFF_AUDIENCE_ROLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { EMAIL_RETRY_MS, planNextWake } from "../services/escalation-scheduler.js";
 import { notificationRoutes } from "../routes/event-plan-lifecycle.js";
+import { pushForRequestEscalated } from "../services/push-triggers.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import {
   createRequestCore,
@@ -18,6 +19,7 @@ import {
   readRequest,
   runEscalationEmailPass,
   runRequestEscalationPass,
+  serializeRequest,
   transitionRequestCore,
   type RequestActor,
   type RequestDeny,
@@ -338,6 +340,35 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect("code" in made && made.code).toBe("ROOM_NOT_IN_VENUE");
   });
 
+  it("refuses an event that belongs to a different venue, and names one of its own", async () => {
+    const f = await fixture();
+    const theirs = randomUUID(), ours = randomUUID();
+    await db.insert(schema.events).values([
+      { id: theirs, venueId: f.otherVenueId, createdBy: f.outsider.id, name: "Someone else's dinner" },
+      { id: ours, venueId: f.venueId, createdBy: f.admin.id, name: "The Smith wedding" },
+    ]);
+    const refused = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { bookingId: null, eventId: theirs }));
+    expect("status" in refused && refused.status).toBe(400);
+    expect("code" in refused && refused.code).toBe("EVENT_NOT_IN_VENUE");
+    expect(await db.select({ id: schema.requests.id }).from(schema.requests).where(eq(schema.requests.eventId, theirs))).toEqual([]);
+    const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { bookingId: null, eventId: ours }));
+    if (!("request" in made)) throw new Error("expected a request");
+    expect(made.request.eventId).toBe(ours);
+  });
+
+  it("refuses a booking that is not part of the event the request names", async () => {
+    const f = await fixture();
+    const [bound] = await db.select({ eventId: schema.bookings.eventId }).from(schema.bookings).where(eq(schema.bookings.id, f.bookingId));
+    if (bound?.eventId === null || bound?.eventId === undefined) throw new Error("the fixture booking is bound to its event");
+    const another = randomUUID();
+    await db.insert(schema.events).values({ id: another, venueId: f.venueId, createdBy: f.admin.id, name: "Another dinner" });
+    const refused = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { eventId: another }));
+    expect("code" in refused && refused.code).toBe("BOOKING_NOT_ON_EVENT");
+    const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { eventId: bound.eventId }));
+    if (!("request" in made)) throw new Error("expected a request");
+    expect(made.request.eventId).toBe(bound.eventId);
+  });
+
   it("walks the ladder and stamps each step", async () => {
     const f = await fixture();
     const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
@@ -621,6 +652,88 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(!refused.ok && refused.code).toBe("HANDOVER_TARGET");
     const still = await readRequest(db, f.staff, staffs.request.id);
     expect("state" in still && still.state).toBe("underway");
+  });
+
+  it("emails and pushes each escalation of a request to every duty admin once: unowned, then to a relief who never takes it, then again (supplier-requests-1)", async () => {
+    // The house email service itself, with no provider key: each send is
+    // recorded in email_sends as dev_mode under its key, and a repeated key
+    // is skipped, exactly as in production.
+    const resendKey = process.env["RESEND_API_KEY"];
+    delete process.env["RESEND_API_KEY"];
+    try {
+      const f = await fixture(180);
+      const secondAdminId = randomUUID();
+      const reliefId = randomUUID();
+      await db.insert(schema.users).values([
+        { id: secondAdminId, venueId: f.venueId, name: "Second administrator", email: `${secondAdminId}@lane9.invalid`, role: "admin" },
+        { id: reliefId, venueId: f.venueId, name: "Callum", email: `${reliefId}@lane9.invalid`, role: "hallkeeper" },
+      ]);
+      await pool.query(
+        `INSERT INTO push_subscriptions (user_id, venue_id, endpoint, p256dh, auth, device_kind)
+         VALUES ($1, $3, $4, 'k', 'a', 'phone'), ($2, $3, $5, 'k', 'a', 'desk')`,
+        [f.admin.id, secondAdminId, f.venueId, `https://push.example.test/${f.admin.id}`, `https://push.example.test/${secondAdminId}`],
+      );
+      const pushed: { endpoint: string; body: unknown }[] = [];
+      const pushDeps = {
+        send: (subscription: { readonly endpoint: string }, payload: string) => {
+          pushed.push({ endpoint: subscription.endpoint, body: (JSON.parse(payload) as { body: unknown }).body });
+          return Promise.resolve({ statusCode: 201 });
+        },
+      };
+      const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+      if (!("request" in made)) throw new Error("expected a request");
+      const id = made.request.id;
+      const keys = async (): Promise<readonly string[]> => (await pool.query<{ idempotency_key: string; status: string }>(
+        "SELECT idempotency_key, status FROM email_sends WHERE idempotency_key LIKE $1 ORDER BY idempotency_key", [`request-escalation:${id}:%`],
+      )).rows.map((row) => `${row.idempotency_key} ${row.status}`);
+
+      /** One escalation, at a January midday outside quiet hours, and its push. */
+      async function escalateAt(instant: string, due: "escalationDueAt" | "handoverDueAt"): Promise<string> {
+        const now = new Date(instant);
+        await db.update(schema.requests).set({ [due]: new Date(now.getTime() - 1000) }).where(eq(schema.requests.id, id));
+        const escalated = (await runRequestEscalationPass(db, { now })).filter((item) => item.request.id === id);
+        expect(escalated.map((item) => item.emailedAdmins)).toEqual([2]);
+        for (const item of escalated) await pushForRequestEscalated(db, item.request, item.recipientUserIds, pushDeps);
+        return escalated[0]?.reason ?? "none";
+      }
+
+      // 1. Nobody answers it.
+      expect(await escalateAt("2026-01-21T12:00:00.000Z", "escalationDueAt")).toBe("unowned");
+      // 2. Elaine takes it and hands it to Callum, who never takes it.
+      await transitionRequestCore(db, f.hallkeeper, id, { to: "accepted" });
+      await transitionRequestCore(db, f.hallkeeper, id, { to: "handed-over", toUserId: reliefId });
+      expect(await escalateAt("2026-01-21T12:10:00.000Z", "handoverDueAt")).toBe("handover");
+      // 3. She hands it on again, and again nobody takes it.
+      await transitionRequestCore(db, f.hallkeeper, id, { to: "handed-over", toUserId: f.staff.id });
+      expect(await escalateAt("2026-01-21T12:20:00.000Z", "handoverDueAt")).toBe("handover");
+
+      const episodes = ["2026-01-21T12:00:00.000Z", "2026-01-21T12:10:00.000Z", "2026-01-21T12:20:00.000Z"].map(Date.parse);
+      const expected = episodes.flatMap((ms) => [f.admin.id, secondAdminId].map((admin) => `request-escalation:${id}:${String(ms)}:${admin} dev_mode`)).sort();
+      expect(await keys()).toEqual(expected);
+      expect(pushed.map((push) => push.body)).toEqual([
+        "Nobody has this, Grand Hall.", "Nobody has this, Grand Hall.",
+        "Elaine handed this to Callum, who has not taken it yet, Grand Hall.", "Elaine handed this to Callum, who has not taken it yet, Grand Hall.",
+        "Elaine handed this to Fixture staff, who has not taken it yet, Grand Hall.", "Elaine handed this to Fixture staff, who has not taken it yet, Grand Hall.",
+      ]);
+
+      // Within one escalation nothing goes twice: the pass claims nothing
+      // more, and the email pass, made to retry the latest, sends no second copy.
+      const again = new Date("2026-01-21T12:21:00.000Z");
+      expect((await runRequestEscalationPass(db, { now: again })).filter((item) => item.request.id === id)).toEqual([]);
+      await db.update(schema.requests).set({ escalationEmailedAt: null }).where(eq(schema.requests.id, id));
+      const retried = (await runEscalationEmailPass(db, { now: again })).filter((item) => item.requestId === id);
+      expect(retried.map((item) => item.emailedAdmins)).toEqual([2]);
+      expect(await keys()).toEqual(expected);
+      const [latest] = await db.select().from(schema.requests).where(eq(schema.requests.id, id));
+      if (latest === undefined) throw new Error("expected the request");
+      const before = pushed.length;
+      await pushForRequestEscalated(db, serializeRequest(latest, "Grand Hall"), [f.admin.id, secondAdminId], pushDeps);
+      expect(pushed).toHaveLength(before);
+      // The relief takes it, leaving nothing waiting for the planner test.
+      expect((await transitionRequestCore(db, f.staff, id, { to: "accepted" })).ok).toBe(true);
+    } finally {
+      if (resendKey !== undefined) process.env["RESEND_API_KEY"] = resendKey;
+    }
   });
 
   it("an escalation email that failed to send is not marked sent; the email pass tries again later and marks it once it went (goal 19 S7)", async () => {

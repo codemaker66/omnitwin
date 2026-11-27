@@ -42,3 +42,18 @@ The code cannot see the bucket's dashboard settings, so these are checked by han
 - Cloudflare dashboard → R2 → `omnitwin-private-uploads` → Settings: Public Development URL **disabled**, Custom Domains **none**. Turning either on publishes every private upload.
 - Its token is `Object Read & Write`, scoped to this bucket only. An `Admin` R2 token reaches every bucket in the account, so no Admin token belongs in a developer `.env`.
 - Run the production probe recorded in `docs/sessions/2026-10-18.md` (T-668). An unsigned GET of the canary `private/_probe/signed-read-canary.txt` must fail in both URL styles while its signed URL returns it. The public token must be refused on this bucket, the public bucket must hold no `private/` keys, and CORS must admit only the app's origins.
+
+## Moving what reached the public bucket before this split
+
+Until the private bucket existed, every upload went to `R2_BUCKET_NAME`. From 11 November 2026 (`0bdb996a`, the checksum fix) uploads reached it again, so private uploads made between then and the deploy of the split sit in the public bucket under `private/…` keys. r2.dev serves them to anyone holding a key, and once the split is live the API signs those keys against the private bucket, where they are not yet.
+
+Right after the deploy that turns the split on, move them once, with the production settings injected by Railway so no value is typed or stored:
+
+```sh
+railway run --service @omnitwin/api --environment production -- \
+  pnpm --filter @omnitwin/api exec tsx src/scripts/move-private-uploads.ts          # dry run: counts only
+railway run --service @omnitwin/api --environment production -- \
+  pnpm --filter @omnitwin/api exec tsx src/scripts/move-private-uploads.ts --apply  # copies, checks, then deletes
+```
+
+Each object is copied under the same key and content type, its size is checked in the private bucket, and only then is the original deleted. A failure keeps the original, names the key and exits 1; a second run resumes without copying again. Nothing outside `private/` is touched. Then run the probe above: the public bucket must hold no `private/` keys. Guard test: `move-private-uploads.test.ts`.

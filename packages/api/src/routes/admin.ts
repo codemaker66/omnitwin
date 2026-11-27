@@ -12,6 +12,12 @@ import {
 import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
+import {
+  describePeopleRetentionStart,
+  eraseLapsedPeople,
+  PEOPLE_RETENTION_START_VARIABLE,
+  peopleRetentionSwitch,
+} from "../services/people-retention.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { runPageChecks } from "../services/competitor-watch-data.js";
 import { createHttpsPageFetcher, type PageFetcher } from "../services/page-check.js";
@@ -94,15 +100,23 @@ export async function adminRoutes(
     const deletedFiles = await cleanupOrphanedFiles(db);
     const dietaryNotes = await removeLapsedDietaryNotes(db);
     const rememberedNotes = await removeUnusedRememberedNotes(db);
+    const people = await eraseLapsedPeople(db);
     return {
       data: {
         deletedConfigs,
         deletedFiles,
         dietaryNotes,
         rememberedNotes,
+        people,
         message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `
           + `removed the allergy note from ${String(dietaryNotes.layouts)} layout(s) and ${String(dietaryNotes.sheets)} event sheet(s)`
-          + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`,
+          + ` past their retention, and from ${String(dietaryNotes.actionLog)} logged change(s)`
+          + `; removed the notes on single pieces from ${String(dietaryNotes.pieceNotes.layouts)} layout(s)`
+          + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`
+          + (people.off
+            ? `; the 24-month people pass is off (${describePeopleRetentionStart(process.env[PEOPLE_RETENTION_START_VARIABLE])})`
+            : `; erased ${String(people.people)} person(s) and ${String(people.enquiries)} enquiry(ies) 24 months after the last contact`
+              + `, leaving ${String(people.deferred.people + people.deferred.enquiries)} for another run`),
       },
     };
   });
@@ -116,6 +130,23 @@ export async function adminRoutes(
     const rememberedNotes = await removeUnusedRememberedNotes(db, { dryRun: true });
     return { data: { ...layoutNotes, rememberedNotes } };
   });
+
+  // POST /admin/retention/people — what the 24-month pass would do now,
+  // changing nothing: every step runs inside one transaction that is rolled
+  // back, so the counts are exactly the night's. It also lists, by id only,
+  // the people kept for a booking or a contract (the six-year rule is done by
+  // hand, docs/operations/erasure-requests.md); the nightly log carries counts.
+  server.post("/retention/people", {
+    preHandler: [authenticate, authorizePlatformAdmin()],
+  }, async () => ({
+    data: {
+      ...await eraseLapsedPeople(db, { dryRun: true }),
+      // POST /admin/cleanup's own setting, from the API's environment: the
+      // first day, whether a real run here erases now, and why. The nightly
+      // job reads the repository variable instead, and its log says its own.
+      firstDay: peopleRetentionSwitch(process.env[PEOPLE_RETENTION_START_VARIABLE], new Date()),
+    },
+  }));
 
   // -------------------------------------------------------------------------
   // POST /admin/prune-snapshots — retention for `configuration_sheet_snapshots`

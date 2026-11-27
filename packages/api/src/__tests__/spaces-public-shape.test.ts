@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Database } from "../db/client.js";
 import { referenceLoadouts, spaces } from "../db/schema.js";
-import { spaceRoutes } from "../routes/spaces.js";
+import { ROOM_ORDER, spaceRoutes } from "../routes/spaces.js";
 import { PUBLIC_SPACE_COLUMNS } from "../routes/venues.js";
 
 // GET /venues/:venueId/spaces and GET /venues/:venueId/spaces/:id are open to
@@ -139,9 +139,9 @@ describe("GET /venues/:venueId/spaces public shape", () => {
     expect(calls.every((call) => call.fields !== undefined)).toBe(true);
   });
 
-  it("still orders by sortOrder, which does not need the column selected", async () => {
+  it("orders by sortOrder, then name, then id (admin-venues-4), none of which needs selecting", async () => {
     await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/spaces` });
-    expect(orderings).toEqual([[spaces.sortOrder]]);
+    expect(orderings).toEqual([[...ROOM_ORDER]]);
   });
 
   it("still answers 400 for a venue id that is not a UUID", async () => {

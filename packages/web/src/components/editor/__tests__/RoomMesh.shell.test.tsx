@@ -13,6 +13,7 @@ import {
 } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { roomGeometries, type RoomGeometry } from "../../../data/room-geometries.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useVisibilityStore, type WallKey } from "../../../stores/visibility-store.js";
 import { mountFrameRoot, type FrameRoot } from "../../__tests__/r3f-frame-root.js";
@@ -80,6 +81,7 @@ afterEach(() => {
   textures.disposals.clear();
   useVisibilityStore.setState(initialVisibility, true);
   act(() => { useCockpitStore.setState({ cameraInteractionActive: false }); });
+  setPlannerFeaturesForTesting(null);
 });
 
 function mountRoom(element: React.ReactElement, width = 1440): FrameRoot {
@@ -243,6 +245,10 @@ describe("RoomMesh shells across camera gestures", () => {
   });
 
   it("keeps click animations in time behind a gesture without fading walls or requesting frames", () => {
+    // This and the next two step the 5 s brick-down frame by frame. The same
+    // code reads wallClickSeconds(); its 450 ms clock (wallsQuick, on for
+    // everyone) is pinned in walls-quick.test.ts and the wallsQuick case below.
+    setPlannerFeaturesForTesting({ wallsQuick: false });
     const root = mountRoom(<RoomMesh geometry={grandHall()} variant="generic" />);
     // Click the back wall away, let the disassembly finish, then start rebuilding it.
     act(() => { useVisibilityStore.getState().toggleWall("wall-back"); });
@@ -281,6 +287,7 @@ describe("RoomMesh shells across camera gestures", () => {
   });
 
   it("keeps a clicked-away wall away through gestures instead of replaying its disassembly", () => {
+    setPlannerFeaturesForTesting({ wallsQuick: false });
     const root = mountRoom(<RoomMesh geometry={grandHall()} variant="grand-hall" />);
     act(() => { useVisibilityStore.getState().toggleWall("wall-back"); });
     for (let i = 0; i < 120; i++) root.frame(0.05);
@@ -317,6 +324,7 @@ describe("RoomMesh shells across camera gestures", () => {
   });
 
   it("carries a clicked wall's animation through a gesture in step with its ornaments", () => {
+    setPlannerFeaturesForTesting({ wallsQuick: false });
     const root = mountRoom(<RoomMesh geometry={grandHall()} variant="grand-hall" />);
     const wall = brickWall(root.scene, "wall-back");
     const daylight = root.scene.getObjectByName("arched-window-daylight-pane-rect");
@@ -340,6 +348,35 @@ describe("RoomMesh shells across camera gestures", () => {
     expect(wall.visible).toBe(true);
 
     for (let i = 0; i < 20; i++) root.frame(0.05);
+    expect(wall.visible).toBe(false);
+    expect(root.scene.getObjectByName("window-wall-ornament-cluster")?.visible).toBe(false);
+  });
+
+  it("carries a clicked wall's 450 ms animation through a gesture in step with its ornaments (wallsQuick)", () => {
+    setPlannerFeaturesForTesting({ wallsQuick: true });
+    const root = mountRoom(<RoomMesh geometry={grandHall()} variant="grand-hall" />);
+    const wall = brickWall(root.scene, "wall-back");
+    const daylight = root.scene.getObjectByName("arched-window-daylight-pane-rect");
+    if (!(daylight instanceof Mesh) || !(daylight.material instanceof MeshStandardMaterial)) {
+      throw new Error("Missing window-wall ornament");
+    }
+    const ornamentOpacity = (): number => (daylight.material as MeshStandardMaterial).opacity;
+    const brickOpacity = (): number => (wall.material as MeshStandardMaterial).opacity;
+
+    act(() => { useVisibilityStore.getState().toggleWall("wall-back"); });
+    for (let i = 0; i < 4; i++) root.frame(0.03);
+    setCameraInteraction(root, true, 0);
+    for (let i = 0; i < 4; i++) root.frame(0.03);
+    setCameraInteraction(root, false, 0);
+    for (let i = 0; i < 4; i++) root.frame(0.03);
+    // 0.36 s into the 0.45 s brick-down for both: the progress (0.2) the case
+    // above reaches four seconds into five, so the bricks again resume where
+    // the ornaments are.
+    expect(ornamentOpacity()).toBeCloseTo(0.2, 9);
+    expect(brickOpacity()).toBeCloseTo(0.6, 9);
+    expect(wall.visible).toBe(true);
+
+    for (let i = 0; i < 4; i++) root.frame(0.03);
     expect(wall.visible).toBe(false);
     expect(root.scene.getObjectByName("window-wall-ornament-cluster")?.visible).toBe(false);
   });

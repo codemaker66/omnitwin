@@ -29,7 +29,8 @@
 
 import { BufferAttribute, BufferGeometry, FrontSide, ShapeUtils, Vector2, type Texture, type Vector3 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
-import { attribute, cameraPosition, dot, float, max, min, mrt, normalize, output, pmremTexture, positionWorld, pow, reflect, smoothstep, uniform, vec3, vec4 } from "three/tsl";
+import { attribute, cameraPosition, dot, float, max, min, normalize, output, pmremTexture, positionWorld, pow, reflect, smoothstep, uniform, vec3, vec4 } from "three/tsl";
+import { targetSafeMrt } from "../../lib/target-safe-mrt.js";
 import type { MeshBuilder, V2, V3 } from "./mesh-builder.js";
 import type { HallBuilders } from "./hall-builders.js";
 import { wallAtlasUv } from "./hall-atlas.js";
@@ -192,6 +193,35 @@ function pierceRing(b: MeshBuilder, wall: HallWall, centre: Point, fan: HallFanl
 
 type Section = { readonly width: number; readonly depth: number };
 
+/**
+ * How far the stiles reach past the light's edge, metres: they frame the
+ * light standing a centimetre over the atlas's glass where it meets the frame.
+ */
+export const STILE_INSET = 0.01;
+
+/** A window's sash as it stands toward the room (sashExtent). */
+export interface SashExtent {
+  /** Along the wall, its stiles' outer sides. */
+  readonly u0: number;
+  readonly u1: number;
+  /**
+   * Its members' room face (negative, behind the wall's plane): every member
+   * stands from the glass toward the room, none deeper than the frame.
+   */
+  readonly roomFace: number;
+}
+
+/** Where a window's modelled sash stands: what the body's board stops at (hall-wall-body.ts). */
+export function sashExtent(glazing: HallGlazing): SashExtent {
+  const { bar, rail, frame, fanlight } = HALL_GLAZING_SECTION;
+  const depth = Math.max(bar.depth, rail.depth, frame.depth, fanlight.depth);
+  return {
+    u0: glazing.centre - HALL_LIGHT_HALF_WIDTH - STILE_INSET,
+    u1: glazing.centre + HALL_LIGHT_HALF_WIDTH + STILE_INSET,
+    roomFace: glazing.glassDepth + depth,
+  };
+}
+
 /** The members of one window. */
 function buildWindowBars(b: MeshBuilder, wall: HallWall, glazing: HallGlazing): void {
   const back = glazing.glassDepth;
@@ -199,9 +229,9 @@ function buildWindowBars(b: MeshBuilder, wall: HallWall, glazing: HallGlazing): 
   const left = glazing.centre - HALL_LIGHT_HALF_WIDTH;
   const right = glazing.centre + HALL_LIGHT_HALF_WIDTH;
   const { sill, top } = glazing;
-  // The stiles and the bottom rail frame the light; they stand a centimetre
-  // inside its edge, over the atlas's glass where it meets the frame.
-  const inset = 0.01;
+  // The stiles and the bottom rail frame the light, the stiles STILE_INSET
+  // past its edge (sashExtent).
+  const inset = STILE_INSET;
   const stileLeft = left + frame.width / 2 - inset;
   const stileRight = right - frame.width / 2 + inset;
   straightMember(b, wall, [stileLeft, sill], [stileLeft, top], frame.width, back, back + frame.depth);
@@ -526,8 +556,9 @@ export function createGlassMaterial(options: GlassMaterialOptions): GlassMateria
   material.maskNode = positionWorld.y.lessThan(options.section.cuts[WINDOW_WALL_INDEX]);
   // The normal and velocity targets keep what lies behind (alpha 0 under the
   // pipeline's blend for them), so occlusion and the temporal resolve see the
-  // street through the glass, not the glass.
-  material.mrtNode = mrt({ output, normal: vec4(0, 0, 0, 0), velocity: vec4(0, 0, 0, 0) });
+  // street through the glass, not the glass. A snapshot's target takes the
+  // pane's colour alone (lib/target-safe-mrt.ts).
+  material.mrtNode = targetSafeMrt({ output, normal: vec4(0, 0, 0, 0), velocity: vec4(0, 0, 0, 0) });
   material.name = "grand-hall-glass";
   return { material, intensity };
 }

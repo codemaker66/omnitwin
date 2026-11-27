@@ -16,6 +16,7 @@ import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useHallTimeStore } from "../../stores/hall-time-store.js";
 import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
+import { nativePrecompileSettled } from "../../lib/native-precompile.js";
 import type { HallMoodName } from "../../components/grand-hall/hall-mood.js";
 import { grandHallDinner180 } from "./fixture.js";
 import type { AssemblyDirector } from "./GrandAssembly.js";
@@ -217,6 +218,9 @@ export function installAssemblyBridge(director: AssemblyDirector, get: () => Roo
       // frame's GPU work has not retired; the frame number then does not move,
       // and the same pose is drawn again a moment later.
       for (let attempt = 0; attempt < 6; attempt++) {
+        // Never through a precompile hold (R3F's advance ignores it): drawn
+        // then, the frame builds for the job's target and MRT (lib/native-precompile.ts).
+        if (native !== null) await nativePrecompileSettled(native);
         const state = get();
         if (state.frameloop !== "never") state.setFrameloop("never");
         const before = native === null ? null : rendererFrameId(native);

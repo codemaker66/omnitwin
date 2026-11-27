@@ -23,6 +23,7 @@ import {
 import {
   bookings,
   eventPlanNotifications,
+  events,
   requestStatusHistory,
   requests,
   spaces,
@@ -30,6 +31,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
+import { clipName } from "../utils/clip-name.js";
 import { canHandleRequests, canManageVenue } from "../utils/query.js";
 import { clientHoldsEventLink, createRequestThread, postSystemMessage } from "./conversations.js";
 import { sendEmail, type EmailPayload, type SendOptions } from "./email.js";
@@ -91,6 +93,9 @@ type RequestRow = typeof requests.$inferSelect;
 type AudienceRole = typeof eventPlanNotifications.$inferInsert["audienceRole"];
 /** The surface both a Database and a transaction expose. */
 type Conn = Pick<Database, "select" | "insert" | "update">;
+/** A database, or a transaction a caller already holds (L9: the command
+ *  ledger takes a request step and records it in one transaction). */
+export type RequestStepConn = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 function deny(status: number, code: string, error: string, ownerName?: string): RequestDeny {
   return ownerName === undefined ? { ok: false, status, code, error } : { ok: false, status, code, error, ownerName };
@@ -264,6 +269,9 @@ async function insertRequest(db: Database, actor: RequestActor, seed: RequestSee
   const settings = await readOperatingSettings(db, seed.venueId);
   const audienceRoles = audienceForNewRequest();
   const now = new Date();
+  // The asker's name as the request, its history and its thread keep it:
+  // a name longer than their columns is kept to them, never refused.
+  const actorName = clipName(actor.name);
   const escalationDueAt = settings === null
     ? null
     : new Date(now.getTime() + escalationWindowSeconds(settings, seed.urgency) * 1000);
@@ -281,7 +289,7 @@ async function insertRequest(db: Database, actor: RequestActor, seed: RequestSee
         urgency: seed.urgency,
         detail: seed.detail,
         requestedByUserId: actor.id,
-        requestedByName: actor.name,
+        requestedByName: actorName,
         requestedByRole: actor.role,
         audienceRoles,
         state: "sent",
@@ -310,7 +318,7 @@ async function insertRequest(db: Database, actor: RequestActor, seed: RequestSee
       fromState: null,
       toState: "sent",
       actorUserId: actor.id,
-      actorName: actor.name,
+      actorName,
       actorRole: actor.role,
       note: null,
       at: now,
@@ -335,7 +343,7 @@ async function insertRequest(db: Database, actor: RequestActor, seed: RequestSee
       bookingId: fresh.bookingId,
       eventId: fresh.eventId,
       title,
-      author: { userId: actor.id, name: actor.name, role: actor.role },
+      author: { userId: actor.id, name: actorName, role: actor.role },
       body: requestOpeningBody(fresh),
       idempotencyKey: seed.idempotencyKey,
     });
@@ -385,12 +393,27 @@ export async function createRequestCore(
   const bookingId = input.bookingId ?? null;
   if (bookingId !== null) {
     const [booking] = await db
-      .select({ id: bookings.id })
+      .select({ id: bookings.id, eventId: bookings.eventId })
       .from(bookings)
       .where(and(eq(bookings.id, bookingId), eq(bookings.venueId, venueId)))
       .limit(1);
     if (booking === undefined) {
       return deny(400, "BOOKING_NOT_IN_VENUE", "That booking is not in this venue's diary.");
+    }
+    if (input.eventId !== undefined && input.eventId !== null && booking.eventId !== input.eventId) {
+      return deny(400, "BOOKING_NOT_ON_EVENT", "That booking is not part of that event.");
+    }
+  }
+
+  const eventId = input.eventId ?? null;
+  if (eventId !== null) {
+    const [event] = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(and(eq(events.id, eventId), eq(events.venueId, venueId), isNull(events.deletedAt)))
+      .limit(1);
+    if (event === undefined) {
+      return deny(400, "EVENT_NOT_IN_VENUE", "That event is not one of this venue's events.");
     }
   }
 
@@ -399,7 +422,7 @@ export async function createRequestCore(
     roomId: room.id,
     roomName: room.name,
     bookingId,
-    eventId: input.eventId ?? null,
+    eventId,
     kind: input.kind,
     quantity: input.quantity ?? null,
     urgency: input.urgency,
@@ -490,7 +513,7 @@ function hasOwner(row: Pick<RequestRow, "state" | "ownerUserId" | "ownerName">):
 }
 
 export async function transitionRequestCore(
-  db: Database,
+  db: RequestStepConn,
   actor: RequestActor,
   requestId: string,
   transition: RequestTransition,
@@ -511,6 +534,20 @@ export async function transitionRequestCore(
   // name, whether it arrives a second or a minute after the first.
   if (transition.to === "accepted" && hasOwner(row) && row.ownerUserId !== actor.id) {
     return deny(409, "REQUEST_TAKEN", `${row.ownerName} has this.`, row.ownerName);
+  }
+
+  // A step pressed against a state the request has since left, or against
+  // an owner it no longer has (the offline queue's replay, L9), is refused,
+  // never applied to a request its sender did not see: a "Done" pressed with
+  // no signal must not close work a colleague took up in the meantime, even
+  // when the colleague's request reads "accepted" just as the sender's did.
+  const movedOn = transition.expectedState !== undefined && row.state !== transition.expectedState;
+  const changedHands = transition.expectedOwnerUserId !== undefined && row.ownerUserId !== transition.expectedOwnerUserId;
+  if (movedOn || changedHands) {
+    const holder = hasOwner(row) && row.ownerUserId !== actor.id ? row.ownerName : null;
+    return holder === null
+      ? deny(409, "REQUEST_STATE_CONFLICT", "This request moved on before this step arrived.")
+      : deny(409, "REQUEST_STATE_CONFLICT", `${holder} has this now.`, holder);
   }
 
   const check = nextRequestState(row.state, transition.to);
@@ -551,6 +588,9 @@ export async function transitionRequestCore(
   }
 
   const now = new Date();
+  // Who took the step, as the request and its history keep it: a name longer
+  // than their columns is kept to them, never refused.
+  const actorName = clipName(actor.name);
   const patch: Partial<typeof requests.$inferInsert> = { state: transition.to, updatedAt: now };
   switch (transition.to) {
     case "acknowledged":
@@ -559,7 +599,7 @@ export async function transitionRequestCore(
     case "accepted":
       patch.acceptedAt = now;
       patch.ownerUserId = actor.id;
-      patch.ownerName = actor.name;
+      patch.ownerName = actorName;
       patch.handoverToUserId = null;
       patch.handoverToName = null;
       patch.handoverDueAt = null;
@@ -570,7 +610,7 @@ export async function transitionRequestCore(
     case "handed-over": {
       patch.handedOverAt = now;
       patch.handoverToUserId = target?.id ?? null;
-      patch.handoverToName = target?.name ?? null;
+      patch.handoverToName = target === null ? null : clipName(target.name);
       // The relief has the venue's window to take it, or it escalates (S7);
       // a venue with no settings row sets no deadline, as with every window.
       const settings = await readOperatingSettings(db, row.venueId);
@@ -590,11 +630,18 @@ export async function transitionRequestCore(
       patch.handoverDueAt = null;
       if (row.ownerUserId === null) {
         patch.ownerUserId = actor.id;
-        patch.ownerName = actor.name;
+        patch.ownerName = actorName;
       }
       break;
-    case "reopened":
-      // The outcome is history now; the request needs an owner again.
+    case "reopened": {
+      // The outcome is history now; the request needs an owner again, and
+      // nobody has it, so it escalates like a new one if nobody takes it:
+      // the venue's window for its urgency, from now. An earlier escalation
+      // is spent, as on a handover; the email key is per escalation.
+      const settings = await readOperatingSettings(db, row.venueId);
+      patch.escalationDueAt = settings === null ? null : new Date(now.getTime() + escalationWindowSeconds(settings, row.urgency) * 1000);
+      patch.escalatedAt = null;
+      patch.escalationEmailedAt = null;
       patch.reopenedAt = now;
       patch.outcome = null;
       patch.outcomeNote = null;
@@ -607,6 +654,7 @@ export async function transitionRequestCore(
       patch.handoverToName = null;
       patch.handoverDueAt = null;
       break;
+    }
     default: {
       const exhausted: never = transition;
       throw new Error(`Unhandled transition ${String(exhausted)}`);
@@ -630,7 +678,7 @@ export async function transitionRequestCore(
       fromState: row.state,
       toState: transition.to,
       actorUserId: actor.id,
-      actorName: actor.name,
+      actorName,
       actorRole: actor.role,
       outcome: transition.to === "resolved" ? transition.outcome : null,
       note: transition.to === "resolved" || transition.to === "reopened" ? transition.note ?? null : null,
@@ -656,8 +704,8 @@ export async function transitionRequestCore(
     );
   }
 
-  // A handover sets a relief deadline to wake for (S7).
-  if (transition.to === "handed-over") pokeEscalationScheduler();
+  // A handover sets a relief deadline to wake for (S7), a reopen a window.
+  if (transition.to === "handed-over" || transition.to === "reopened") pokeEscalationScheduler();
   const roomName = await roomNameFor(db, updated.roomId);
   return { ok: true, request: serializeRequest(updated, roomName), fromState: row.state };
 }
@@ -800,7 +848,9 @@ export async function listRequestHandlers(
     const role = UserRoleSchema.safeParse(row.role);
     if (!role.success) continue;
     if (!canHandleRequests({ role: role.data, venueId, platformRole: "none" }, venueId)) continue;
-    handlers.push({ id: row.id, name: row.name, role: role.data });
+    // Kept to the picker's 160, as a handover keeps it: one long name must
+    // not refuse the whole list.
+    handlers.push({ id: row.id, name: clipName(row.name), role: role.data });
   }
   return handlers;
 }
@@ -818,6 +868,12 @@ export async function readRequest(
     .limit(1);
   if (row === undefined) return NOT_FOUND;
   if (!canSeeRequest(actor, row.request)) return FORBIDDEN;
+  // A client reads their own requests only while their link to the event is
+  // live, as for every other step they take on it (transitionRequestCore).
+  if (isClientSideRole(actor.role) && !isPlatformAdmin(actor)
+    && (row.request.eventId === null || !(await clientHoldsEventLink(db, actor.id, row.request.eventId)))) {
+    return FORBIDDEN;
+  }
   return serializeRequest(row.request, row.roomName);
 }
 
@@ -843,17 +899,25 @@ export interface EscalationCandidate {
   readonly handoverDueAt: Date | null;
 }
 
+/** The states nobody has picked up: SENT, and REOPENED after it was
+ *  finished (its owner is cleared). Each escalates at its own window. */
+export const UNOWNED_ESCALATING_STATES = ["sent", "reopened"] as const satisfies readonly RequestState[];
+
+function isUnownedEscalating(state: RequestState): boolean {
+  return UNOWNED_ESCALATING_STATES.some((unowned) => unowned === state);
+}
+
 /** Which candidates are due at `now`, never one escalated already: still
- *  only SENT (nobody has even said they have seen it) and past its own
- *  urgency's window, or HANDED OVER to a relief who has not taken it by the
- *  venue's relief window. */
+ *  only SENT or REOPENED (nobody has even said they have seen it) and past
+ *  its own urgency's window, or HANDED OVER to a relief who has not taken it
+ *  by the venue's relief window. */
 export function selectDueRequestEscalations<T extends EscalationCandidate>(
   candidates: readonly T[],
   now: Date,
 ): readonly T[] {
   const nowMs = now.getTime();
   return candidates.filter((candidate) => candidate.escalatedAt === null && (
-    (candidate.state === "sent" && candidate.escalationDueAt !== null && candidate.escalationDueAt.getTime() <= nowMs)
+    (isUnownedEscalating(candidate.state) && candidate.escalationDueAt !== null && candidate.escalationDueAt.getTime() <= nowMs)
     || (candidate.state === "handed-over" && candidate.handoverDueAt !== null && candidate.handoverDueAt.getTime() <= nowMs)
   ));
 }
@@ -917,10 +981,21 @@ interface EscalationEmailTarget {
   readonly roomName: string | null;
   readonly admins: readonly DutyAdmin[];
   readonly reason: EscalationReason;
+  /** When this escalation claimed the request (its escalated_at). */
+  readonly escalatedAt: Date;
 }
 
-/** The escalation email to each duty admin, one message per person however
- *  many times any pass runs (the key is the request and the person). */
+/** The email key for one escalation of a request to one person. A request
+ *  can escalate more than once (unowned, then to a relief who never takes
+ *  it), so the claim instant is part of the key: each escalation is emailed
+ *  once, however many times any pass runs, and a later one is not lost to
+ *  an earlier one's key. */
+export function requestEscalationEmailKey(requestId: string, escalatedAt: Date, adminId: string): string {
+  return `request-escalation:${requestId}:${String(escalatedAt.getTime())}:${adminId}`;
+}
+
+/** The escalation email to each duty admin, one message per person per
+ *  escalation however many times any pass runs. */
 async function sendEscalationEmails(
   db: Database,
   target: EscalationEmailTarget,
@@ -945,7 +1020,7 @@ async function sendEscalationEmails(
     });
     const sent = await send({ to: admin.email, subject, html }, {
       db,
-      idempotencyKey: `request-escalation:${target.row.id}:${admin.id}`,
+      idempotencyKey: requestEscalationEmailKey(target.row.id, target.escalatedAt, admin.id),
       logger: deps.logger,
     });
     if (sent) emailedAdmins += 1;
@@ -974,7 +1049,7 @@ export async function runRequestEscalationPass(
     .where(and(
       isNull(requests.escalatedAt),
       or(
-        and(eq(requests.state, "sent"), isNotNull(requests.escalationDueAt), lte(requests.escalationDueAt, now)),
+        and(inArray(requests.state, [...UNOWNED_ESCALATING_STATES]), isNotNull(requests.escalationDueAt), lte(requests.escalationDueAt, now)),
         and(eq(requests.state, "handed-over"), isNotNull(requests.handoverDueAt), lte(requests.handoverDueAt, now)),
       ),
     ))
@@ -994,6 +1069,7 @@ export async function runRequestEscalationPass(
       .returning();
     const row = claimed[0];
     if (row === undefined) continue;
+    const escalatedAt = row.escalatedAt ?? now;
 
     const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
     const roomName = await roomNameFor(db, row.roomId);
@@ -1007,7 +1083,9 @@ export async function runRequestEscalationPass(
     const title = `Still waiting: ${summariseRequest({ kind: row.kind, quantity: row.quantity, roomName })}`;
     const body = reason === "handover"
       ? `${row.ownerName ?? "A colleague"} handed this to ${row.handoverToName ?? "a colleague"}, who has not taken it yet.`
-      : `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
+      : row.state === "reopened"
+        ? `${row.requestedByName}'s request was reopened and nobody has picked it up yet.`
+        : `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
     const notificationIds = await insertNotifications(db, admins.map((admin) => ({
       venueId: row.venueId,
       eventId: row.eventId,
@@ -1027,7 +1105,7 @@ export async function runRequestEscalationPass(
     const emailDeferred = quiet !== null && withinQuietHours(now.getTime(), quiet);
     let emailedAdmins = 0;
     if (!emailDeferred) {
-      emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason }, now, deps, send);
+      emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
       if (emailedAdmins === admins.length) {
         await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
       }
@@ -1074,13 +1152,15 @@ export async function runEscalationEmailPass(
     .where(and(
       isNotNull(requests.escalatedAt),
       isNull(requests.escalationEmailedAt),
-      inArray(requests.state, ["sent", "handed-over"]),
+      inArray(requests.state, [...UNOWNED_ESCALATING_STATES, "handed-over"]),
     ))
     .limit(100);
 
   const sent: EscalationEmailSent[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
   for (const row of waiting) {
+    const escalatedAt = row.escalatedAt;
+    if (escalatedAt === null) continue;
     let settings = settingsByVenue.get(row.venueId);
     if (settings === undefined) {
       settings = await readOperatingSettings(db, row.venueId);
@@ -1095,7 +1175,7 @@ export async function runEscalationEmailPass(
     const roomName = await roomNameFor(db, row.roomId);
     const admins = await dutyAdminsFor(db, row.venueId, settings);
     const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
-    const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason }, now, deps, send);
+    const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
     if (emailedAdmins === admins.length) {
       await db.update(requests).set({ escalationEmailedAt: now }).where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)));
     }

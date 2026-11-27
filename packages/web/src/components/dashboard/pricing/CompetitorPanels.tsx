@@ -208,18 +208,63 @@ export function CompetitorPanel(props: {
   );
 }
 
-/** The kept screenshots' links, read once a venue with any is opened. */
+/** How long before a signed link lapses it is read again. */
+const LINK_RENEW_MARGIN_MS = 60_000;
+/** How often an open panel checks, by the wall clock, whether its links are due. */
+const LINK_CHECK_MS = 15_000;
+
+/** A signed link's lifetime in seconds from when it was signed (X-Amz-Expires,
+ *  as the uploads route signs a private file's link); null for any other link. */
+function linkLifeSeconds(url: string): number | null {
+  try {
+    const raw = new URL(url).searchParams.get("X-Amz-Expires");
+    const seconds = raw === null ? Number.NaN : Number(raw);
+    return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+  } catch {
+    return null;
+  }
+}
+
+/** When the soonest of these links lapses, counted on this device's clock
+ *  from when they were read; null when none of them lapses. */
+function linksLapseAt(links: ReadonlyMap<string, string | null>, readAtMs: number): number | null {
+  let soonest: number | null = null;
+  for (const url of links.values()) {
+    const seconds = url === null ? null : linkLifeSeconds(url);
+    if (seconds !== null) soonest = Math.min(soonest ?? Number.POSITIVE_INFINITY, readAtMs + seconds * 1000);
+  }
+  return soonest;
+}
+
+/** The kept screenshots' links, read once a venue with any is opened, and
+ *  read again before they lapse for as long as the venue stays open. */
 function useEvidenceLinks(competitor: Competitor): ReadonlyMap<string, string | null> | "unavailable" | null {
   const wanted = competitor.captures.some((capture) => capture.evidenceFileId !== null);
   const [links, setLinks] = useState<ReadonlyMap<string, string | null> | "unavailable" | null>(null);
+  const [lapsesAt, setLapsesAt] = useState<number | null>(null);
+  const [read, setRead] = useState(0);
   useEffect(() => {
     if (!wanted) return;
     const controller = new AbortController();
     getEvidenceLinks(competitor.id, controller.signal)
-      .then((found) => { setLinks(found); })
+      .then((found) => { setLinks(found); setLapsesAt(linksLapseAt(found, Date.now())); })
       .catch(() => { if (!controller.signal.aborted) setLinks("unavailable"); });
     return () => { controller.abort(); };
-  }, [competitor.id, wanted]);
+  }, [competitor.id, wanted, read]);
+  // Checked by the wall clock, not one long timer, so a tab held back in the
+  // background or a laptop woken from sleep reads them again within moments.
+  useEffect(() => {
+    if (lapsesAt === null) return;
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      if (now < lapsesAt - LINK_RENEW_MARGIN_MS) return;
+      // A link already lapsed is not offered while the new one is read.
+      if (now >= lapsesAt) setLinks(null);
+      setLapsesAt(null);
+      setRead((count) => count + 1);
+    }, LINK_CHECK_MS);
+    return () => { window.clearInterval(timer); };
+  }, [lapsesAt]);
   return links;
 }
 

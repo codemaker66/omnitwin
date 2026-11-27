@@ -11,6 +11,7 @@ import {
   rotaMondayOf,
   rotaNoticeHours,
   rotaPublishBlocks,
+  rotaRightToWorkRefusal,
   rotaSaveBlocks,
   rotaWeekBounds,
   rotaWeekStartOf,
@@ -322,7 +323,27 @@ describe("the law before the first shift", () => {
     }]);
     expect(rotaPublishBlocks(found.get(draft.id) ?? [])).toHaveLength(1);
     expect(rotaSaveBlocks(found.get(draft.id) ?? [])).toHaveLength(0);
-    expect(found.get(published.id)).toBeUndefined();
+  });
+
+  it("still says a published shift's missing check, so clearing the date does not hide it", () => {
+    const published = shift("2026-10-11", "09:00", "13:00", { status: "published" });
+    const found = check({ ...MORAG, rightToWorkCheckedOn: null }, [published]);
+    expect(found.get(published.id)).toEqual([{
+      code: "right_to_work_missing", severity: "block",
+      message: "Morag has no right-to-work check recorded. This shift is already published: record the check before Morag works it, or give it to someone else.",
+      short: "No right-to-work check",
+    }]);
+    expect(rotaSaveBlocks(found.get(published.id) ?? [])).toHaveLength(0);
+    expect(check(MORAG, [published]).get(published.id)).toBeUndefined();
+  });
+
+  it("refuses someone with no check for a published shift, and nobody with one", () => {
+    expect(rotaRightToWorkRefusal({ displayName: "Callum", rightToWorkCheckedOn: null })).toEqual({
+      code: "right_to_work_missing", severity: "block",
+      message: "Callum has no right-to-work check recorded, so cannot be put on a published shift until one is. Nothing has changed.",
+      short: "No right-to-work check",
+    });
+    expect(rotaRightToWorkRefusal({ displayName: "Morag", rightToWorkCheckedOn: "2025-02-01" })).toBeNull();
   });
 
   it("warns once the check has run out", () => {

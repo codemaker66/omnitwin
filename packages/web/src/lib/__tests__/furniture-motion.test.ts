@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Matrix4, Vector3 } from "three";
 import {
   CARRY_AT_REST,
+  DROP_HEIGHT,
   activeFurnitureSettleCount,
   beginFurnitureSettle,
   carryFurniture,
@@ -11,12 +12,16 @@ import {
   dropInFurniture,
   furnitureMotionPose,
   furnitureSettleOffset,
+  landingDelays,
+  massForCategory,
   measureCarry,
   publishFurnitureSettleFrame,
   releaseFurniture,
+  setFurnitureMassResolver,
   stepFurnitureSettles,
   subscribeFurnitureSettleFrames,
   type FurnitureMotionPose,
+  type LandingPiece,
 } from "../furniture-motion.js";
 import { SPRING_PRESETS, stepSpring, type SpringConfig } from "../springs.js";
 
@@ -144,7 +149,7 @@ describe("furniture settle springs", () => {
 });
 
 describe("the carry, the landing and the drop-in", () => {
-  it("leans a carried piece back from the way it travels, never more than about 4°", () => {
+  it("leans a carried piece back from the way it travels, never more than about 3°", () => {
     carryFurniture(["a"], 0.5, 0);
     for (let i = 0; i < 4; i++) stepFurnitureSettles(1 / 60);
     const gentle = furnitureMotionPose("a");
@@ -152,8 +157,8 @@ describe("the carry, the landing and the drop-in", () => {
     for (let i = 0; i < 4; i++) { carryFurniture(["a"], 6, 6); stepFurnitureSettles(1 / 60); }
     for (let i = 0; i < 60; i++) { carryFurniture(["a"], 6, 6); stepFurnitureSettles(1 / 60); }
     const fast = furnitureMotionPose("a");
-    expect(Math.hypot(fast?.leanX ?? 0, fast?.leanZ ?? 0)).toBeLessThan(0.0705);
-    expect(Math.hypot(fast?.leanX ?? 0, fast?.leanZ ?? 0)).toBeGreaterThan(0.06);
+    expect(Math.hypot(fast?.leanX ?? 0, fast?.leanZ ?? 0)).toBeLessThan(0.0505);
+    expect(Math.hypot(fast?.leanX ?? 0, fast?.leanZ ?? 0)).toBeGreaterThan(0.045);
   });
 
   it("stands a piece up again when the hand pauses", () => {
@@ -163,27 +168,34 @@ describe("the carry, the landing and the drop-in", () => {
     expect(Math.abs(furnitureMotionPose("a")?.leanX ?? 0)).toBeLessThan(0.004);
   });
 
-  it("swings a released piece through upright, squashes it once, and comes to rest", () => {
+  it("comes down and stands a released piece upright with one small swing, dips it once, and comes to rest", () => {
     carryFurniture(["a"], 2, 0);
     for (let i = 0; i < 30; i++) { carryFurniture(["a"], 2, 0); stepFurnitureSettles(1 / 60); }
+    const leanAtRelease = furnitureMotionPose("a")?.leanX ?? 0;
     releaseFurniture(["a"]);
     let lowestSquash = 0;
-    let swungThrough = false;
+    let mostSwing = 0;
+    let lowestLift = Infinity;
     let frames = 0;
     while (activeFurnitureSettleCount() > 0 && frames < 300) {
       stepFurnitureSettles(1 / 60);
       const pose = furnitureMotionPose("a");
       if (pose !== null) {
         lowestSquash = Math.min(lowestSquash, pose.squash);
-        if (pose.leanX > 0.002) swungThrough = true;
+        mostSwing = Math.max(mostSwing, pose.leanX);
+        lowestLift = Math.min(lowestLift, pose.lift);
       }
       frames += 1;
     }
-    expect(swungThrough).toBe(true);
-    expect(lowestSquash).toBeLessThan(-0.025);
-    expect(lowestSquash).toBeGreaterThan(-0.06);
-    // At rest within about a second: the demand loop goes back to sleep.
-    expect(frames).toBeLessThan(90);
+    // Through upright by a few per cent of its lean at most: a swing, never a rocking.
+    expect(leanAtRelease).toBeLessThan(-0.045);
+    expect(mostSwing).toBeLessThan(-leanAtRelease * 0.08);
+    // A throw at 2 m/s dips about one per cent as it takes its weight.
+    expect(lowestSquash).toBeLessThan(-0.008);
+    expect(lowestSquash).toBeGreaterThan(-0.013);
+    expect(lowestLift).toBeGreaterThanOrEqual(0);
+    // At rest within about 0.8 s (it rocked for 1.5 s): the demand loop goes back to sleep.
+    expect(frames).toBeLessThan(50);
   });
 
   it("brings a new piece down onto the floor without dipping through it", () => {
@@ -191,7 +203,7 @@ describe("the carry, the landing and the drop-in", () => {
     let lowestLift = Infinity;
     let frames = 0;
     let previous = furnitureMotionPose("a")?.lift ?? 0;
-    expect(previous).toBeGreaterThan(0.1);
+    expect(previous).toBeCloseTo(DROP_HEIGHT, 9);
     while (activeFurnitureSettleCount() > 0 && frames < 300) {
       stepFurnitureSettles(1 / 60);
       const lift = furnitureMotionPose("a")?.lift ?? 0;
@@ -201,7 +213,7 @@ describe("the carry, the landing and the drop-in", () => {
       frames += 1;
     }
     expect(lowestLift).toBeGreaterThanOrEqual(0);
-    expect(frames).toBeLessThan(120);
+    expect(frames).toBeLessThan(40);
   });
 
   it("pivots on the piece's base: the base stays put, the top moves, the volume holds", () => {
@@ -236,7 +248,7 @@ describe("the first step after the frame loop slept", () => {
 
   it.each([
     ["a drop-in", (): void => { dropInFurniture("a"); }],
-    ["a release's set-down and swing", (): void => { releaseFurniture(["a"]); }],
+    ["a release's set-down and swing", (): void => { carryFurniture(["a"], 1, 0); releaseFurniture(["a"]); }],
     ["a carry from rest", (): void => { carryFurniture(["a"], 1, 0); }],
     ["a grid settle", (): void => { beginFurnitureSettle("a", 0.25, -0.1); }],
   ])("starts %s the same however long the loop slept", (_name, begin) => {
@@ -246,13 +258,14 @@ describe("the first step after the frame loop slept", () => {
     expect(poseAfterWaking(begin, 4)).toEqual(afterOneFrame);
   });
 
-  it("brings a drop-in down from its full height on the waking frame, not most of the way", () => {
-    dropInFurniture("a", 0.14);
+  it("brings a drop-in down from its full height on the waking frame, not all the way", () => {
+    dropInFurniture("a");
     stepFurnitureSettles(3);
     const lift = furnitureMotionPose("a")?.lift ?? 0;
-    expect(lift).toBeCloseTo(springAfter(0.14, 0, 0, [1 / 60], SPRING_PRESETS.furnitureDrop), 12);
-    // A quarter-second first step would have left under a fifth of the drop.
-    expect(lift).toBeGreaterThan(0.13);
+    // Aimed 3 cm below the floor, it stops at contact.
+    expect(lift).toBeCloseTo(springAfter(DROP_HEIGHT, 0, -0.03, [1 / 60], SPRING_PRESETS.furnitureSetDown), 12);
+    // A quarter-second first step would already have landed it.
+    expect(lift).toBeGreaterThan(0.04);
   });
 
   it("then steps by the real frame delta, capped as a dropped frame", () => {
@@ -306,5 +319,164 @@ describe("the carrying hand's speed", () => {
     const first = measureCarry(CARRY_AT_REST, 0, 0, 5_000);
     expect(measureCarry(first, 0.05, 0, 9_000).vx).toBeCloseTo(0.5, 9);
     expect(measureCarry(first, 0.002, 0, 5_001).vx).toBeCloseTo(0.5, 9);
+  });
+});
+
+// T-674 craft (Blake, 27 Oct 2026: "the most subtle of animations on placing or hovering an asset"): a piece is set
+// down, not floated. The numbers are the craft audit's (craft/scene-feel.md SF-09, SF-12, SF-14, SF-15), measured
+// here on the shipped integrator at 60 frames a second.
+describe("set down, not floated", () => {
+  /** Frames at 60 a second until `done`, or `limit`. */
+  function framesUntil(done: () => boolean, limit = 300): number {
+    let frames = 0;
+    while (!done() && frames < limit) {
+      stepFurnitureSettles(1 / 60);
+      frames += 1;
+    }
+    return frames;
+  }
+
+  /** The deepest squash, the lowest lift and the frames to rest of whatever moves from here. */
+  function playOut(id: string): { readonly squash: number; readonly lift: number; readonly frames: number } {
+    let squash = 0;
+    let lift = Infinity;
+    const frames = framesUntil(() => {
+      const pose = furnitureMotionPose(id);
+      if (pose !== null) {
+        squash = Math.min(squash, pose.squash);
+        lift = Math.min(lift, pose.lift);
+      }
+      return activeFurnitureSettleCount() === 0;
+    });
+    return { squash, lift, frames };
+  }
+
+  it("sets a new piece down at speed within a tenth of a second, with one dip of about one per cent", () => {
+    dropInFurniture("a");
+    const touchdown = framesUntil(() => (furnitureMotionPose("a")?.lift ?? 0) === 0);
+    expect(touchdown).toBeLessThanOrEqual(6);
+    const after = playOut("a");
+    expect(after.squash).toBeLessThan(-0.008);
+    expect(after.squash).toBeGreaterThan(-0.014);
+    // At rest within two thirds of a second of the click.
+    expect(touchdown + after.frames).toBeLessThan(40);
+  });
+
+  it("lifts a carried piece into the hand within a fifth of a second, and sets it down when the hand rests", () => {
+    for (let i = 0; i < 12; i++) { carryFurniture(["a"], 1, 0); stepFurnitureSettles(1 / 60); }
+    expect(furnitureMotionPose("a")?.lift).toBeGreaterThan(0.027);
+    expect(furnitureMotionPose("a")?.lift).toBeLessThan(0.0305);
+    // The hand rests: a hesitation keeps it in hand, a held-still hand sets it down and the loop sleeps.
+    for (let i = 0; i < 12; i++) stepFurnitureSettles(1 / 60);
+    expect(furnitureMotionPose("a")?.lift).toBeGreaterThan(0.025);
+    const after = playOut("a");
+    expect(after.lift).toBeGreaterThanOrEqual(0);
+    expect(after.frames).toBeLessThan(60);
+  });
+
+  it("dips a let-go piece only as hard as it was moving: none for a careful nudge, about one per cent for a throw", () => {
+    for (let i = 0; i < 20; i++) { carryFurniture(["slow"], 0.05, 0); carryFurniture(["fast"], 3, 0); stepFurnitureSettles(1 / 60); }
+    releaseFurniture(["slow", "fast"]);
+    let slowest = 0;
+    let fastest = 0;
+    framesUntil(() => {
+      slowest = Math.min(slowest, furnitureMotionPose("slow")?.squash ?? 0);
+      fastest = Math.min(fastest, furnitureMotionPose("fast")?.squash ?? 0);
+      return activeFurnitureSettleCount() === 0;
+    });
+    expect(slowest).toBeGreaterThan(-0.0005);
+    expect(fastest).toBeLessThan(-0.008);
+    expect(fastest).toBeGreaterThan(-0.013);
+  });
+
+  it("settles a snap onto the grid without a visible overshoot", () => {
+    beginFurnitureSettle("a", 0.5, 0);
+    let lowest = Infinity;
+    const frames = framesUntil(() => {
+      lowest = Math.min(lowest, furnitureSettleOffset("a")?.x ?? 0);
+      return activeFurnitureSettleCount() === 0;
+    });
+    // Past the snap by under a millimetre (it was 2.2 cm), and done within half a second.
+    expect(lowest).toBeGreaterThan(-0.001);
+    expect(frames).toBeLessThan(32);
+  });
+
+  it("lets staging, the dance floor and AV neither lean nor dip, and a table lean barely", () => {
+    const uninstall = setFurnitureMassResolver((id) => (id === "stage" ? "heavy" : id === "table" ? "table" : "light"));
+    try {
+      for (let i = 0; i < 30; i++) { carryFurniture(["stage", "table", "chair"], 4, 0); stepFurnitureSettles(1 / 60); }
+      expect(furnitureMotionPose("stage")?.leanX).toBeCloseTo(0, 12);
+      expect(furnitureMotionPose("stage")?.lift).toBeLessThan(0.0155);
+      expect(Math.abs(furnitureMotionPose("table")?.leanX ?? 0)).toBeLessThan(0.0305);
+      expect(Math.abs(furnitureMotionPose("chair")?.leanX ?? 0)).toBeGreaterThan(0.045);
+      releaseFurniture(["stage", "table", "chair"]);
+      let stageSquash = 0;
+      framesUntil(() => {
+        stageSquash = Math.min(stageSquash, furnitureMotionPose("stage")?.squash ?? 0);
+        return activeFurnitureSettleCount() === 0;
+      });
+      expect(stageSquash).toBeCloseTo(0, 12);
+      clearAllFurnitureSettles();
+      dropInFurniture("stage");
+      expect(playOut("stage").squash).toBeCloseTo(0, 12);
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("holds a waiting drop-in just above the floor for its turn, then sets it down", () => {
+    dropInFurniture("a", DROP_HEIGHT, 0.1);
+    for (let i = 0; i < 5; i++) stepFurnitureSettles(1 / 60);
+    expect(furnitureMotionPose("a")?.lift).toBeCloseTo(DROP_HEIGHT, 9);
+    const touchdown = framesUntil(() => (furnitureMotionPose("a")?.lift ?? 0) === 0);
+    expect(touchdown).toBeLessThanOrEqual(8);
+  });
+
+  it("weighs a catalogue category: staging, AV and lighting are heavy; tables and lecterns barely lean", () => {
+    expect(massForCategory("stage")).toBe("heavy");
+    expect(massForCategory("av")).toBe("heavy");
+    expect(massForCategory("lighting")).toBe("heavy");
+    expect(massForCategory("table")).toBe("table");
+    expect(massForCategory("lectern")).toBe("table");
+    expect(massForCategory("chair")).toBe("light");
+    expect(massForCategory(undefined)).toBe("light");
+  });
+});
+
+describe("the order a set and a layout land in", () => {
+  /** A round of ten at (x, z): its table, then chairs round it in a scrambled order. */
+  function round(group: string, x: number, z: number): LandingPiece[] {
+    const chairs = [3, 7, 0, 9, 5, 1, 8, 2, 6, 4].map((seat): LandingPiece => {
+      const angle = (seat / 10) * Math.PI * 2;
+      return { id: `${group}-chair-${String(seat)}`, x: x + Math.cos(angle) * 1.2, z: z + Math.sin(angle) * 1.2, groupId: group, isTable: false };
+    });
+    return [{ id: `${group}-table`, x, z, groupId: group, isTable: true }, ...chairs];
+  }
+
+  it("lands a set in order: its table at once, then its chairs round it, 12 ms apart", () => {
+    const delays = landingDelays(round("t1", 4, -2));
+    expect(delays.get("t1-table")).toBe(0);
+    const chairs = [...delays.entries()].filter(([id]) => id.includes("chair")).sort((a, b) => a[1] - b[1]);
+    expect(chairs.map(([, delay]) => delay)).toEqual(chairs.map((_, index) => (index + 1) * 0.012));
+    // Round the ring: each next chair stands next to the one before.
+    const seats = chairs.map(([id]) => Number(id.split("-").pop()));
+    for (let i = 1; i < seats.length; i++) expect(((seats[i] ?? 0) - (seats[i - 1] ?? 0) + 10) % 10).toBe(1);
+  });
+
+  it("ripples a whole layout out from its middle: the outermost set starts 240 ms after the middle", () => {
+    const pieces = [...round("middle", 0, 0), ...round("near", 3, 0), ...round("far", 6, 0), ...round("west", -6, 0)];
+    const delays = landingDelays(pieces);
+    const middle = delays.get("middle-table") ?? -1;
+    const near = delays.get("near-table") ?? -1;
+    const far = delays.get("far-table") ?? -1;
+    expect(middle).toBeLessThan(near);
+    expect(near).toBeLessThan(far);
+    expect(Math.max(far, delays.get("west-table") ?? -1)).toBeCloseTo(0.24, 9);
+    // Everything starts down within 240 ms plus one set's chairs.
+    expect(Math.max(...delays.values())).toBeLessThanOrEqual(0.24 + 10 * 0.012 + 1e-9);
+  });
+
+  it("starts a single piece at once", () => {
+    expect(landingDelays([{ id: "lectern", x: 2, z: 1, groupId: null, isTable: false }]).get("lectern")).toBe(0);
   });
 });

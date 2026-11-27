@@ -1,8 +1,10 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import {
+  EVENT_ENDED_STATUSES,
   RoomLayoutTimelineQuerySchema,
   RoomLayoutTimelineResponseSchema,
+  eventDisplayName,
   type RoomLayoutTimelineQuery,
   type RoomLayoutTimelineRange,
   type RoomLayoutTimelineResponse,
@@ -187,6 +189,9 @@ export async function roomLayoutTimelineRoutes(
 
     const range = await resolveRoomLayoutTimelineRange(db, query, room.timeZone);
     const { from, to } = range;
+    // An event that ended (cancelled; lost: every option went) will not
+    // happen and occupies no room, as on the Diary: its phases, layouts,
+    // guest counts and revenue estimates stay off the room's timeline.
     const phaseRows = await db
       .select({
         phaseId: eventPhases.id,
@@ -205,6 +210,7 @@ export async function roomLayoutTimelineRoutes(
         eventId: events.id,
         eventName: events.name,
         eventType: events.eventType,
+        eventStartsAt: events.startsAt,
         eventStatus: events.status,
         eventGuestCount: events.guestCount,
       })
@@ -213,6 +219,7 @@ export async function roomLayoutTimelineRoutes(
       .where(and(
         eq(events.venueId, query.venueId),
         isNull(events.deletedAt),
+        notInArray(events.status, [...EVENT_ENDED_STATUSES]),
         eq(eventPhases.spaceId, query.spaceId),
         isNotNull(eventPhases.startsAt),
         gt(eventPhases.durationMinutes, 0),
@@ -341,7 +348,10 @@ export async function roomLayoutTimelineRoutes(
         id: row.phaseId,
         kind: isRoomFlip ? "room_flip" : "phase",
         eventId: row.eventId,
-        eventName: row.eventName,
+        // An event stored without a name (made before eventNameFor named
+        // every new one) is named by its occasion and the venue's day, for
+        // display only: the frame does not carry the event's start.
+        eventName: eventDisplayName({ name: row.eventName, eventType: row.eventType, startsAt: row.eventStartsAt }, room.timeZone),
         eventType: row.eventType,
         eventStatus: row.eventStatus,
         eventGuestCount: row.eventGuestCount,

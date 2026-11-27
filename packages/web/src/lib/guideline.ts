@@ -1,3 +1,4 @@
+import type { SpaceDimensions } from "@omnitwin/types";
 import { toRealWorld, GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import type { Point3 } from "./measurement.js";
 
@@ -95,12 +96,17 @@ export function detectWallHit(
  *
  * The guideline runs perpendicular to the wall, across the full width/length
  * of the room, at the Z (or X) coordinate where the user clicked.
+ *
+ * @param roomDims - The active room's render-space dimensions (the planner's
+ *   useRoomDimensionsStore), so a line spans the walls actually drawn and reads
+ *   their distance. Defaults to the Grand Hall for tests.
  */
 export function computeGuideline(
   wallHit: WallHit,
   id: number,
+  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
 ): GuidelineData {
-  const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;
+  const { width, length } = roomDims;
   const halfWidth = width / 2;
   const halfLength = length / 2;
 
@@ -125,8 +131,11 @@ export function computeGuideline(
  * For left/right walls (axis="x"): distance from the nearest X wall edge.
  * For front/back walls (axis="z"): distance from the nearest Z wall edge.
  */
-export function computeWallOffset(wallHit: WallHit): number {
-  const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;
+export function computeWallOffset(
+  wallHit: WallHit,
+  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+): number {
+  const { width, length } = roomDims;
   const halfWidth = width / 2;
   const halfLength = length / 2;
 

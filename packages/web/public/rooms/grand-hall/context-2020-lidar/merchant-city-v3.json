@@ -1,0 +1,409 @@
+{
+ "schema": "venviewer.context-model.v1",
+ "title": "Architect's contour model of the city around Trades Hall, Glasgow",
+ "generated": "2026-11-04",
+ "licence": {
+  "attribution": "Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0",
+  "licence": "Open Government Licence v3.0",
+  "note": "Geometry derived only from the Scottish LiDAR Phase 5 50 cm DSM. No OpenStreetMap data."
+ },
+ "frame": {
+  "name": "planner hall frame (metres, y up, right-handed)",
+  "origin": "hall floor centre = local (E 3.0, N 8.0) m from E259329 N665183, 3.79 m above the pavement",
+  "minus_z_grid_bearing_deg": 102.96,
+  "plus_x_unit_EN": [
+   -0.22427,
+   -0.97453
+  ],
+  "plus_z_unit_EN": [
+   -0.97453,
+   0.22427
+  ],
+  "from_local": "dx=e-3.0, dn=n-8.0; x=XH.(dx,dn); z=ZH.(dx,dn); y=(DSM+0.30)-3.79",
+  "true_bearing": "true = grid - 1.861 deg",
+  "y_odn": "y = ODN - 14.19 (DSM datum 10.7 m ODN; pavement 10.40 m ODN at y=-3.79)"
+ },
+ "encoding": {
+  "file": "merchant-city-v3.bin",
+  "header": "16 bytes: 'VVCX', uint32 version=1, uint32 vertexCount, uint32 indexCount (little-endian)",
+  "vertices": "int16 x, y, z per vertex, centimetres (value/100 = metres)",
+  "indices": "uint32, triangles, counter-clockwise seen from outside (right-hand normal points out of the solid)",
+  "runs": {
+   "caps": {
+    "vertices": [
+     0,
+     34464
+    ],
+    "indices": [
+     0,
+     81417
+    ]
+   },
+   "walls": {
+    "vertices": [
+     34464,
+     69264
+    ],
+    "indices": [
+     81417,
+     207786
+    ]
+   }
+  },
+  "shading": "flat (derivative normals); caps and walls do not share vertices"
+ },
+ "method": "Architect's contour model of the city around Trades Hall, from the Scottish LiDAR Phase 5 DSM only.\n\nPipeline (all in this file, no OSM):\n  1. crop the 50 cm DSM around the hall centre, 3x3 median (drops single-cell LiDAR spikes, poles, chimneys)\n  2. planner height y = DSM + 0.30 - 3.79; inside the clamp radius y = min(y, 0) (section at the hall floor)\n  3. quantise to terrace bands (levels anchored at the hall floor, every SPACING m; band 0 = ground disc)\n  4. connected area filter on the band image (max-tree opening = drop small blobs, min-tree = fill small\n     holes) with an area threshold that grows with the component's distance from the centre\n  5. stamp OUT (beyond the radius) and CUT (the hall rectangle), remove diagonal pixel pinches\n  6. raster -> planar topology: boundary chains between 4-connected regions, split at junction nodes\n  7. Douglas-Peucker per chain with fixed end nodes (shared chains are simplified once, so stacked walls\n     stay coincident); rim chains snap to the exact circle, cut chains to the exact rectangle\n  8. faces -> cap polygons (validity loop halves a chain's tolerance until every face is valid),\n     constrained Delaunay caps, ladder-triangulated walls split at every level a neighbour uses (no T-junctions)\n  9. write VVCX v1 binary + provenance JSON\nv3 (--front-cut), on top of the above, in v2's frame and registration:\n  5b. FRONT: x and z inside the modelled front's footprint plus 2.7 cm (front_cut_x, front_cut_z), less the hall's\n      cut, is ground (band 0, y = ground_y); its chains snap to the exact rectangle as the cut's do, and where it\n      meets the cut, to the two rectangles' crossing points\n  5c. on the street front beside it (street_front_x, street_front_z, inside the clamp), band-1 components of at\n      most street_front_sliver_m2 lying between the street and a band-2 block join the block: they are the\n      wall's foot sharing its 0.5 m cells with the pavement, not a step\n  7b. each run of chains between the street and the blocks beside the front is fitted, on its raster boundary\n      sampled along its length, with the fewest straight segments (each at least street_front_min_m long and within\n      street_front_max_angle_deg of the street) whose line stays within street_front_tol_m of the boundary averaged\n      over street_front_window_m; segments meet at their lines' crossing within street_front_junction_m, else by a\n      square jog (lines nearer than street_front_min_jog_m share one vertex); a run ending on FRONT ends where its\n      line crosses the rectangle, one ending on another chain moves that node onto its line (pinning the segment\n      through it instead if it would move more than street_front_end_move_m); the run's own nodes move onto the\n      segments and its chains become them, so shared chains stay coincident and the validity loop runs as before on\n      everything else",
+ "parameters": {
+  "radius": 260.0,
+  "spacing": 3.0,
+  "level_anchor_y": 0.0,
+  "ground_y": -3.79,
+  "dsm_to_y": -3.49,
+  "median_px": 3,
+  "clamp_radius": 45.0,
+  "clamp_inner_radius": 26.0,
+  "clamp_front_z": -24.0,
+  "clamp_y": 0.0,
+  "rect_half_x": 11.2,
+  "rect_half_z": 5.95,
+  "rect_front_z": -6.24,
+  "tol_near": 0.5,
+  "tol_far": 2.0,
+  "area_near": 6.0,
+  "area_far": 40.0,
+  "near_r": 80.0,
+  "far_r": 260.0,
+  "rim_step_deg": 1.5,
+  "terrain_cut_y": -1.0,
+  "terrain_sigma": 3.0,
+  "tree_max_area": 1000.0,
+  "tree_min_residual": 0.2,
+  "tree_max_height": 22.0,
+  "frame_bearing_deg": 102.96,
+  "centre_local": [
+   3.0,
+   8.0
+  ],
+  "front_cut_x": [
+   -15.35,
+   15.3
+  ],
+  "front_cut_z": [
+   -12.0,
+   -5.29
+  ],
+  "street_front_x": [
+   15.3,
+   45.0
+  ],
+  "street_front_z": [
+   -12.0,
+   -3.0
+  ],
+  "street_front_sliver_m2": 3.0,
+  "street_front_tol_m": 0.25,
+  "street_front_window_m": 3.0,
+  "street_front_min_m": 2.0,
+  "street_front_junction_m": 1.0,
+  "street_front_max_angle_deg": 5.0,
+  "street_front_end_move_m": 0.35,
+  "street_front_min_jog_m": 0.04
+ },
+ "bands": {
+  "spacing_m": 3.0,
+  "anchor_y": 0.0,
+  "ground_disc_y": -3.79,
+  "first_level_y": -3.0,
+  "levels_y_present": [
+   -3.79,
+   -3.0,
+   0.0,
+   3.0,
+   6.0,
+   9.0,
+   12.0,
+   15.0,
+   18.0,
+   21.0,
+   24.0,
+   27.0,
+   30.0,
+   33.0,
+   36.0,
+   39.0,
+   42.0,
+   45.0,
+   48.0,
+   51.0,
+   54.0,
+   57.0,
+   60.0,
+   63.0
+  ],
+  "rule": "band b>=1 is where the smoothed DSM (planner y) >= first_level_y + (b-1)*spacing; caps sit at that level; band 0 is the ground disc at the hall pavement level (terrain below it is flattened onto it)"
+ },
+ "site_cut": "nothing emitted inside |x|<=11.2, -6.24<=z<=5.95 (the street face: the hall's window wall's outer face); the solids cut by it are left open there (the hall model fills it)",
+ "clamp": "within 26.0 m of the origin, and within 45.0 m where planner z > -24.0 (all but the blocks across Glassford Street), y = min(y, 0) before banding",
+ "rim": "solids crossing the 260 m circle are closed with section walls on the circle; the ground disc rim is open",
+ "registration": {
+  "centre_local": [
+   3.0,
+   8.0
+  ],
+  "note": "unchanged from merchant-city-v2: the hall's own E57 scan (the planner's frame), ranging through the front door and the windows to the walls across Glassford, Garth and Hutcheson Streets and matched to the DSM's edges of them, puts the planner's origin at local (E 3.018, N 7.981), sigma 0.06 / 0.12 m: in register to about 2 cm. The DSM's own Trades Hall front stands 1.0-1.2 m out from the scanned faces (it faces away from the aircraft; its LiDAR shadow is filled), and the DSM's dome-drum ring 0.44 m streetward of the interior dome, so neither registers the city"
+ },
+ "front_cut": "Trades Hall's street front is the planner's own model (hall-exterior-spec.ts: x -15.323..15.273, z -5.295 out to about -7.54, on the pavement): -15.35<=x<=15.3, -12.0<=z<=-5.29, less the site cut, is ground at the ground disc's level (y -3.79), its edges on the exact rectangle; the blocks beside it end there in section walls",
+ "street_fronts": {
+  "rule": "the fronts of the blocks beside the front cut on Glassford Street (|x| 15.3..45.0, z -12.0..-3.0, inside the clamp) are straight segments fitted to the DSM's raster boundary; raw_boundary_m is that boundary's spread about each segment's line (+ = behind it), averaged_max_m its largest offset averaged over 3.0 m, at most street_front_tol_m; walls.max_deviation_m is the written walls' largest offset from the line, after rounding to centimetres",
+  "slivers_joined": 8,
+  "runs": [
+   {
+    "side": "south",
+    "chains": 1,
+    "ends": {
+     "start": "node moved onto the line",
+     "end": "on the front cut"
+    },
+    "junctions": [
+     "jog 0.56 m",
+     "jog 0.63 m"
+    ],
+    "nodes_moved": {
+     "count": 2,
+     "max_m": 0.285
+    },
+    "segments": [
+     {
+      "id": "south-1",
+      "line": {
+       "point": [
+        38.0852,
+        -8.2058
+       ],
+       "direction": [
+        0.999382,
+        -0.035147
+       ]
+      },
+      "ends": [
+       [
+        44.197,
+        -8.421
+       ],
+       [
+        32.415,
+        -8.006
+       ]
+      ],
+      "length_m": 11.79,
+      "angle_to_x_deg": -2.014,
+      "pinned_through_node": null,
+      "raw_boundary_m": {
+       "samples_m": 14.0,
+       "rms_m": 0.15,
+       "max_m": 0.456,
+       "mean_m": 0.0,
+       "averaged_max_m": 0.136
+      },
+      "walls": {
+       "triangles": 2,
+       "max_deviation_m": 0.0038
+      }
+     },
+     {
+      "id": "south-2",
+      "line": {
+       "point": [
+        31.4668,
+        -8.6268
+       ],
+       "direction": [
+        0.998124,
+        0.061225
+       ]
+      },
+      "ends": [
+       [
+        32.403,
+        -8.569
+       ],
+       [
+        30.378,
+        -8.694
+       ]
+      ],
+      "length_m": 2.029,
+      "angle_to_x_deg": 3.51,
+      "pinned_through_node": null,
+      "raw_boundary_m": {
+       "samples_m": 2.5,
+       "rms_m": 0.138,
+       "max_m": 0.25,
+       "mean_m": 0.0,
+       "averaged_max_m": 0.058
+      },
+      "walls": {
+       "triangles": 2,
+       "max_deviation_m": 0.0035
+      }
+     },
+     {
+      "id": "south-3",
+      "line": {
+       "point": [
+        23.1672,
+        -7.9791
+       ],
+       "direction": [
+        0.999926,
+        -0.012205
+       ]
+      },
+      "ends": [
+       [
+        30.372,
+        -8.067
+       ],
+       [
+        15.3,
+        -7.883
+       ]
+      ],
+      "length_m": 15.073,
+      "angle_to_x_deg": -0.699,
+      "pinned_through_node": null,
+      "raw_boundary_m": {
+       "samples_m": 18.4,
+       "rms_m": 0.156,
+       "max_m": 0.437,
+       "mean_m": 0.0,
+       "averaged_max_m": 0.097
+      },
+      "walls": {
+       "triangles": 2,
+       "max_deviation_m": 0.0031
+      }
+     }
+    ]
+   },
+   {
+    "side": "north",
+    "chains": 1,
+    "ends": {
+     "start": "on the front cut",
+     "end": "node moved onto the line"
+    },
+    "junctions": [
+     "jog 0.44 m"
+    ],
+    "nodes_moved": {
+     "count": 2,
+     "max_m": 0.094
+    },
+    "segments": [
+     {
+      "id": "north-1",
+      "line": {
+       "point": [
+        -26.0605,
+        -8.6754
+       ],
+       "direction": [
+        1.0,
+        -0.000874
+       ]
+      },
+      "ends": [
+       [
+        -15.35,
+        -8.685
+       ],
+       [
+        -36.859,
+        -8.666
+       ]
+      ],
+      "length_m": 21.509,
+      "angle_to_x_deg": -0.05,
+      "pinned_through_node": null,
+      "raw_boundary_m": {
+       "samples_m": 25.5,
+       "rms_m": 0.152,
+       "max_m": 0.341,
+       "mean_m": 0.0,
+       "averaged_max_m": 0.117
+      },
+      "walls": {
+       "triangles": 2,
+       "max_deviation_m": 0.0048
+      }
+     },
+     {
+      "id": "north-2",
+      "line": {
+       "point": [
+        -40.7508,
+        -8.1945
+       ],
+       "direction": [
+        0.999963,
+        -0.008613
+       ]
+      },
+      "ends": [
+       [
+        -36.857,
+        -8.228
+       ],
+       [
+        -44.479,
+        -8.162
+       ]
+      ],
+      "length_m": 7.623,
+      "angle_to_x_deg": -0.493,
+      "pinned_through_node": null,
+      "raw_boundary_m": {
+       "samples_m": 9.0,
+       "rms_m": 0.209,
+       "max_m": 0.467,
+       "mean_m": 0.0,
+       "averaged_max_m": 0.242
+      },
+      "walls": {
+       "triangles": 2,
+       "max_deviation_m": 0.0024
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "bbox_m": {
+  "min": [
+   -260.0,
+   -3.79,
+   -260.0
+  ],
+  "max": [
+   260.0,
+   57.0,
+   260.0
+  ],
+  "order": "x, y, z"
+ },
+ "counts": {
+  "triangles": 69262,
+  "cap_triangles": 27139,
+  "wall_triangles": 42123,
+  "vertices": 69264,
+  "bytes_raw": 1246744,
+  "bytes_gzip": 569723
+ },
+ "terrain": "cells not in a raised blob are replaced by a normalised-convolution Gaussian (sigma terrain_sigma) of ground cells only, so street-level contours follow the terrain, not LiDAR noise; low walls/railings narrower than ~1 m vanish",
+ "generator": "tools/grand-hall-survey/context/build_context.py, run on the grid cut by tools/grand-hall-survey/context/fetch_dsm.py",
+ "sources": {
+  "dsm": "Scottish LiDAR Phase 5 50 cm DSM, tiles NS56NE, NS56SE, NS66NW, NS66SW (2020), cropped at its native 0.5 m cells (no resampling) to the 3 km square around HES NGR E259329 N665183 by fetch_dsm.py",
+  "facade_frame": "Trades Hall facade fit to the same DSM (front at grid bearing 12.96 deg)"
+ }
+}

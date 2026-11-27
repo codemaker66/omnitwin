@@ -26,7 +26,7 @@ describe("new imported seating defaults preserve saved furniture", () => {
     }
   });
 
-  it("preserves mixed saved chair identities on resize and assigns Turini only to new slots", () => {
+  it("preserves mixed saved chair identities on resize and gives new slots the table's own planner chair", () => {
     const tableAsset = catalogue("round-table-6ft");
     const legacy = catalogue("banquet-chair");
     const checked = catalogue("checked-banquet-chair");
@@ -43,7 +43,9 @@ describe("new imported seating defaults preserve saved furniture", () => {
     expect(grown.find((item) => item.id === second.id)).toMatchObject({ catalogueItemId: checked.id, label: "Checked seat" });
     const added = grown.filter((item) => !snapshot.some((old) => old.id === item.id));
     expect(added).toHaveLength(2);
-    expect(added.every((item) => item.catalogueItemId === turini.id)).toBe(true);
+    // The checked chair is one of the planner's own since 28 Oct (the Grand Hall's chair order), so the table's
+    // own planner chair decides its new seats (newSeatChairSlug); the legacy chair is kept and never copied.
+    expect(added.every((item) => item.catalogueItemId === checked.id)).toBe(true);
     const maxDepth = Math.max(legacy.depth * 1.4, checked.depth, turini.depth);
     for (const chair of grown.filter((item) => item.id !== table.id)) {
       expect(Math.hypot(chair.x, chair.z)).toBeCloseTo(toRenderSpace(tableAsset.width / 2 + maxDepth / 2 + 0.05));

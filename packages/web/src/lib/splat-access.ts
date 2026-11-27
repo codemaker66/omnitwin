@@ -5,7 +5,13 @@
  * preview deployments may show them so he can judge the Real Hall on his own
  * devices. Production builds always return false, and so does the product
  * domain itself whatever the build: a preview build aliased to venviewer.com
- * must not lift the hold there. */
+ * must not lift the hold there.
+ *
+ * Blake, 26 October 2026: "no hold, we are meant to be building this as a full
+ * release". Lifting this hold generally is the release lead's to sequence; until
+ * then one narrow exemption stands outside this function: the allowlisted
+ * device-day timing cuts named by `?splatBundle=` for their own room
+ * (data/device-day-splat-bundles.ts), which the planner draws in any build. */
 export interface SplatAccessEnv {
   readonly DEV: boolean;
   /** Vercel's VERCEL_ENV baked in at build time: "production", "preview" or

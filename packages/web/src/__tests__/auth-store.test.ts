@@ -35,6 +35,38 @@ describe("setUser", () => {
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
+
+  it("installs the very object it is given, even for the same person: a new sign-in is a new object", () => {
+    useAuthStore.getState().setUser(mockUser);
+    const again = { ...mockUser };
+    useAuthStore.getState().setUser(again);
+    expect(useAuthStore.getState().user).toBe(again);
+  });
+});
+
+describe("confirmUser", () => {
+  it("keeps the person it holds when the bridge's answer names them field for field, and takes any changed answer", () => {
+    useAuthStore.getState().setUser(mockUser);
+    const held = useAuthStore.getState().user;
+    useAuthStore.getState().confirmUser({ ...mockUser });
+    expect(useAuthStore.getState().user).toBe(held);
+    expect(useAuthStore.getState()).toMatchObject({ isAuthenticated: true, isLoading: false, accessStatus: "ready" });
+
+    for (const changed of [{ id: "u2" }, { email: "other@test.com" }, { role: "hallkeeper" },
+      { platformRole: "admin" as const }, { venueId: "venue-2" }, { name: "Other" }]) {
+      useAuthStore.getState().setUser(mockUser);
+      const answer = { ...mockUser, ...changed };
+      useAuthStore.getState().confirmUser(answer);
+      expect(useAuthStore.getState().user).toBe(answer);
+    }
+  });
+
+  it("installs the answer when nobody is held", () => {
+    useAuthStore.getState().setUser(null);
+    const answer = { ...mockUser };
+    useAuthStore.getState().confirmUser(answer);
+    expect(useAuthStore.getState().user).toBe(answer);
+  });
 });
 
 describe("setLoading", () => {

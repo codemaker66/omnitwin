@@ -10,15 +10,50 @@ import {
   computeSurfaceHeight,
   snapToWallEdge,
   getPlacementViolations,
+  withTableNumbers,
+  computeRotatedFootprint,
 } from "../lib/placement.js";
+import { plannerFeatureEnabled } from "../lib/planner-features.js";
+import { DANCE_FLOOR_PANELS, cardIsWholeSet, placesAsCard, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, diningTablesAmong, rearrangeTableGroup, tableGroupChairFootprint, ungroupedKeepingTables } from "../lib/table-group.js";
-import { planBanquetFill, planTheatreFill, type BanquetFillPlan, type TheatreFillPlan } from "../lib/auto-fill.js";
+import {
+  FILL_AISLE_RULE,
+  fillOverReceipt,
+  planBanquetFill,
+  planRoomFill,
+  planTheatreFill,
+  plannerChairSupply,
+  refillPieces,
+  type BanquetFillPlan,
+  type RoomExit,
+  type TheatreFillPlan,
+} from "../lib/auto-fill.js";
 import { applySeatShortfallFix, type SeatShortfallFixResult } from "../lib/seat-shortfall.js";
 import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
+import {
+  currentCarriedNoteIds,
+  currentHeldNoteIds,
+  danceFloorNotResizedLine,
+  heldNotePieceNamed,
+  heldNotePieceToName,
+  namesNoPiece,
+  noSeatRemovedLine,
+  nothingClearedLine,
+  nothingFilledLine,
+  noteStillSavingLine,
+  nothingRemovedLine,
+  nothingReplacedLine,
+  stayedForNotesLine,
+} from "../lib/guest-plan-notes.js";
+import { describePieces } from "../lib/editor-save-status.js";
+import type { ChangedPiece } from "../lib/layout-change-summary.js";
 import { postPlacementNotice } from "./placement-notice-store.js";
+import { currentStoreStock, storeShortfallBetween, storeShortfallWords } from "../lib/card-stock.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { useRoomDimensionsStore } from "./room-dimensions-store.js";
+import { useCatalogueStore } from "./catalogue-store.js";
+import { createGhostWorld, judgeGhost, refusalChip } from "../lib/ghost-truth.js";
 import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
 import { computeChairBrushSummary } from "../lib/chair-brush.js";
 import {
@@ -30,12 +65,30 @@ import {
   isTableDressingApplicator,
 } from "../lib/table-dressing.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
+import { doorKeepOuts, keptClearLine, type DoorClearSpace } from "../lib/door-clear-spaces.js";
+import { doorsBlockedBy } from "../lib/keep-doors-clear.js";
+import type { LayoutRect } from "../lib/auto-layout.js";
+import { useDoorClearSpaceStore } from "./door-clear-space-store.js";
+import { piecesLabel } from "../lib/pieces-label.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture and ghost state. Undo/redo for
 // placement changes lives on the editor-store history timeline; EditorBridge
 // mirrors placedItems into editor objects (and back on undo).
+//
+// Doors (Blake, 28 Oct 2026, revising 27 Oct's "Keep them clear
+// automatically": "keep firedoors clean. let people place tables within the
+// red zone but have a warning on it (an aesthetic warning of some kind, not
+// something annoying or makes it look bad)"): the automatic layouts (Fill,
+// the seat shortfall, the chair brush) keep the open room's door clear
+// spaces; a piece placed by hand stands where it was put, and the floor and
+// DoorClearNotice say quietly that it is in front of a door.
 // ---------------------------------------------------------------------------
+
+/** The open room's door clear spaces as the layout engines' keep-outs; none when its doors are not recorded. */
+function roomDoorKeepOuts(): readonly LayoutRect[] {
+  return doorKeepOuts(useDoorClearSpaceStore.getState().spaces);
+}
 
 function candidateSurfaceHeight(
   catalogueItemId: string,
@@ -47,6 +100,12 @@ function candidateSurfaceHeight(
   const candidate = getCatalogueItem(catalogueItemId);
   if (candidate === undefined) return 0;
   return computeSurfaceHeight(x, z, candidate, placedItems, excludeIds);
+}
+
+/** A table's chairs to be set to `seats`. */
+export interface SeatChange {
+  readonly tableId: string;
+  readonly seats: number;
 }
 
 export interface PlacementState {
@@ -108,8 +167,40 @@ export interface PlacementState {
   readonly clearAll: () => void;
   /** Place a table with auto-arranged chairs as a group. */
   readonly placeTableGroup: (catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => void;
+  /**
+   * Sets a card's stamped set down exactly as it stands (the ghost's
+   * resolved pose; no snapping), as one undo step: every piece settled on
+   * the surface under it, new tables numbered (tableNumbers). Refused, with
+   * a notice, when any piece is at the venue's cap. The ids placed.
+   */
+  readonly placeSetup: (pieces: readonly PlacedItem[]) => readonly string[];
+  /**
+   * An edit set down as one write, so one undo step (Line up, Move, Replace;
+   * lib/placement-edit, lib/replace): the pieces in `removeIds` go, each
+   * piece of `add` already placed changes in place (keeping its id), and the
+   * rest join, exactly as they stand. Tables that join are numbered, and a
+   * table changed in place is numbered on its first edit (tableNumbers).
+   * Refused, with a notice, when it would take any kind of piece past the
+   * venue's cap. The ids of the pieces that changed or joined.
+   */
+  readonly applyEdit: (edit: { readonly removeIds?: ReadonlySet<string>; readonly add: readonly PlacedItem[] }) => readonly string[];
+  /**
+   * A placed dance floor set to `cols` × `rows` whole panels (2 to 12 a
+   * side), the anchored edge holding still, as one undo step (Q-08a): the
+   * panels in place keep their ids, new ones join the floor's group. False
+   * when the group is not one floor's grid, the size is unchanged, or the
+   * venue's cap refuses the panels it adds.
+   */
+  readonly resizeArea: (groupId: string, cols: number, rows: number, anchor?: ResizeAnchor) => boolean;
   /** Re-arrange chairs for an existing table group. */
   readonly rearrangeGroup: (tableId: string, newChairCount: number) => void;
+  /**
+   * Re-arrange chairs for several table groups as one change. A table whose
+   * chair that would go holds a note this browser is not shown keeps its
+   * seats while the others change, and one line says so: "No seat was
+   * removed" only when no table lost one.
+   */
+  readonly rearrangeGroups: (changes: readonly SeatChange[]) => void;
   /**
    * Auto-fill the room with an even, circulation-safe arrangement of table
    * groups for a target guest count, at the banquet spacing (lib/auto-fill).
@@ -117,7 +208,13 @@ export interface PlacementState {
    * what it placed, including the seats the room takes at this spacing, or
    * null when it placed nothing.
    */
-  readonly autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => BanquetFillPlan | null;
+  readonly autoArrangeBanquet: (
+    catalogueItemId: string,
+    targetGuests: number,
+    chairsPerTable: number,
+    /** The room's ways out (lib/auto-fill roomExits), for Fill's gangways behind fillKeepOuts; null when not recorded. */
+    exits?: readonly RoomExit[] | null,
+  ) => BanquetFillPlan | null;
   /**
    * Auto-fill the room with theatre-style rows of chairs facing a stage at one
    * end. A target of 0 fills the room. Replaces the current layout. Returns
@@ -160,6 +257,174 @@ export function subscribeFurniturePlaced(listener: FurniturePlacedListener): () 
 function announcePlaced(ids: readonly string[]): void {
   if (ids.length === 0) return;
   for (const listener of furniturePlacedListeners) listener(ids);
+}
+
+/** The venue's cap a change would pass, counting every kind of piece before and after it: its notice, or null. */
+function capPassedBy(before: readonly PlacedItem[], after: readonly PlacedItem[]): string | null {
+  const count = (items: readonly PlacedItem[]): Map<string, number> => {
+    const counts = new Map<string, number>();
+    for (const item of items) counts.set(item.catalogueItemId, (counts.get(item.catalogueItemId) ?? 0) + 1);
+    return counts;
+  };
+  const was = count(before);
+  for (const [catalogueItemId, now] of count(after)) {
+    if (now <= (was.get(catalogueItemId) ?? 0)) continue;
+    // One fewer than there would be is already at the cap: the last one passes it.
+    const atCap = capReachedFor(catalogueItemId, Array.from({ length: now - 1 }, () => catalogueItemId));
+    if (atCap !== null) return atCap;
+  }
+  return null;
+}
+
+/**
+ * Furniture the person removed (Delete, the caption's Remove), as distinct
+ * from a layout replaced, restored or undone: the removed ids and what they
+ * were in a receipt's words (lib/pieces-label), for planner-qol's receipt host:
+ * "Removed Table 3 and 10 chairs · Undo".
+ */
+type FurnitureRemovedListener = (ids: readonly string[], label: string) => void;
+
+const furnitureRemovedListeners = new Set<FurnitureRemovedListener>();
+
+/** Hear each removal's ids and words. Returns the unsubscribe. */
+export function subscribeFurnitureRemoved(listener: FurnitureRemovedListener): () => void {
+  furnitureRemovedListeners.add(listener);
+  return () => { furnitureRemovedListeners.delete(listener); };
+}
+
+/** How far past a just-placed piece's footprint the pointer must go before the hand's ghost returns, metres. */
+export const JUST_PLACED_MARGIN_M = 0.2;
+
+/**
+ * The floor the hand just set pieces down on, render units, and those pieces
+ * (planner-qol's craft backlog, items 1 and 2): the ghost stands aside there
+ * until the pointer leaves it, so a success is never followed by a red ghost
+ * on the piece just placed, and a double-click never sets a second piece down
+ * on the first. Each piece's rotated footprint, grown by JUST_PLACED_MARGIN_M,
+ * so a row of chairs still places chair by chair.
+ */
+let justPlaced: {
+  readonly ids: ReadonlySet<string>;
+  readonly rects: readonly { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number }[];
+} | null = null;
+
+/** The ghost stands aside from `pieces` until the pointer leaves their floor (updateGhost). */
+export function markJustPlaced(pieces: readonly PlacedItem[]): void {
+  const margin = toRenderSpace(JUST_PLACED_MARGIN_M);
+  const rects = [];
+  for (const piece of pieces) {
+    const item = isSceneFurniturePlacement(piece) ? getCatalogueItem(piece.catalogueItemId) : undefined;
+    if (item === undefined) continue;
+    const { halfW, halfD } = computeRotatedFootprint(item, piece.rotationY, piece.scale);
+    rects.push({ minX: piece.x - halfW - margin, maxX: piece.x + halfW + margin, minZ: piece.z - halfD - margin, maxZ: piece.z + halfD + margin });
+  }
+  justPlaced = rects.length === 0 ? null : { ids: new Set(pieces.map((piece) => piece.id)), rects };
+}
+
+/** Whether the pointer at (x, z), render units, is still on the floor just set; once it leaves, or the pieces are gone, the ghost is back for good. */
+function ghostStandsAside(x: number, z: number, placedItems: readonly PlacedItem[]): boolean {
+  if (justPlaced === null) return false;
+  const { ids, rects } = justPlaced;
+  if (placedItems.some((piece) => ids.has(piece.id)) && rects.some((rect) => x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ)) return true;
+  justPlaced = null;
+  return false;
+}
+
+function announceRemoved(removed: readonly PlacedItem[]): void {
+  if (removed.length === 0 || furnitureRemovedListeners.size === 0) return;
+  const ids = removed.map((piece) => piece.id);
+  const label = piecesLabel(removed);
+  for (const listener of furnitureRemovedListeners) listener(ids, label);
+}
+
+/**
+ * Blake's B2, hard: whether writing `after` over `before` would take a piece
+ * past the store's stock (lib/card-stock currentStoreStock, registered for
+ * staff); when it would, the refusal is posted in the store's words and the
+ * caller writes nothing. Unknown stock never refuses.
+ */
+function refusedByStore(before: readonly PlacedItem[], after: readonly PlacedItem[]): boolean {
+  const shortfall = storeShortfallBetween(currentStoreStock(), before, after);
+  if (shortfall === null) return false;
+  postPlacementNotice(storeShortfallWords(shortfall));
+  return true;
+}
+
+/**
+ * Someone who cannot see a note never destroys it. A piece holding a note this
+ * browser is not shown does not leave the floor: its note would go with it
+ * unseen, and Undo cannot bring a note back (lib/guest-plan-notes). Whether
+ * writing `after` over `before` would drop such a piece: when it would, the
+ * reason is posted in `words`, given the piece's name, and the caller writes
+ * nothing. No piece is held in a plan read with its notes, in a layout that is
+ * not a guest plan, or from an API that marks none.
+ */
+function refusedForHeldNote(before: readonly PlacedItem[], after: readonly PlacedItem[], words: (name: string) => string): boolean {
+  const going = heldPieceGoing(before, after);
+  if (going === undefined) return false;
+  const named = heldNotePieceNamed(going, before);
+  postPlacementNotice(words(describePieces([named])), { namesNoPiece: namesNoPiece([named]) });
+  return true;
+}
+
+/** The piece a line names when writing `after` over `before` would drop a piece holding such a note; undefined when none would go. */
+function heldPieceGoing(before: readonly PlacedItem[], after: readonly PlacedItem[]): PlacedItem | undefined {
+  const held = currentHeldNoteIds();
+  if (held.size === 0) return undefined;
+  const staying = new Set(after.map((piece) => piece.id));
+  return heldNotePieceToName(before.filter((piece) => held.has(piece.id) && !staying.has(piece.id)));
+}
+
+/**
+ * Of the pieces a person asked to remove, those that stay: each piece holding
+ * a note this browser is not shown, with the rest of its group, since a table
+ * keeps its chairs. `names` has one entry for each such piece or group.
+ * `saving` says every note in the way is the person's own, carried and not
+ * yet confirmed by a save (lib/guest-plan-notes carriedNoteIds): they can read
+ * it, so a refusal says it is still being saved.
+ */
+function keptForHeldNotes(removing: readonly PlacedItem[], placedItems: readonly PlacedItem[]): {
+  readonly ids: ReadonlySet<string>;
+  readonly names: readonly ChangedPiece[];
+  readonly saving: boolean;
+} {
+  const held = currentHeldNoteIds();
+  const ids = new Set<string>();
+  const names: ChangedPiece[] = [];
+  if (held.size === 0) return { ids, names, saving: false };
+  const carried = currentCarriedNoteIds();
+  let saving = true;
+  const units = new Map<string, PlacedItem[]>();
+  for (const piece of removing) {
+    const key = piece.groupId ?? `piece:${piece.id}`;
+    const unit = units.get(key);
+    if (unit === undefined) units.set(key, [piece]);
+    else unit.push(piece);
+  }
+  for (const unit of units.values()) {
+    const holders = unit.filter((piece) => held.has(piece.id));
+    const holder = heldNotePieceToName(holders);
+    if (holder === undefined) continue;
+    if (!holders.every((piece) => carried.has(piece.id))) saving = false;
+    for (const piece of unit) ids.add(piece.id);
+    names.push(heldNotePieceNamed(holder, placedItems));
+  }
+  return { ids, names, saving: saving && names.length > 0 };
+}
+
+/** New tables take the lowest free numbers (Q-46), behind tableNumbers. */
+function numberNew(placedItems: readonly PlacedItem[], pieces: readonly PlacedItem[]): readonly PlacedItem[] {
+  return plannerFeatureEnabled("tableNumbers") ? withTableNumbers(placedItems, pieces) : pieces;
+}
+
+/** A table placed before numbering is numbered the first time it is moved or its seats change (Q-46). */
+function numberEdited(items: readonly PlacedItem[], editedIds: ReadonlySet<string>): readonly PlacedItem[] {
+  if (!plannerFeatureEnabled("tableNumbers")) return items;
+  const edited = items.filter((item) => editedIds.has(item.id));
+  const numbered = withTableNumbers(items.filter((item) => !editedIds.has(item.id)), edited);
+  if (numbered === edited) return items;
+  const byId = new Map(numbered.map((item) => [item.id, item]));
+  return items.map((item) => byId.get(item.id) ?? item);
 }
 
 export const usePlacementStore = create<PlacementState>()((set, get) => ({
@@ -207,8 +472,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       state.placedItems,
       new Set(),
     );
-    const item = createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY);
-    set({ placedItems: [...state.placedItems, item] });
+    const [item] = numberNew(state.placedItems, [createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY)]);
+    if (item === undefined) return;
+    const next = [...state.placedItems, item];
+    if (refusedByStore(state.placedItems, next)) return;
+    set({ placedItems: next });
     announcePlaced([item.id]);
   },
 
@@ -247,9 +515,23 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return createPlacedItem(catalogueItemId, point.x, point.z, point.rotationY, null, surfaceY);
     });
-    if (newItems.length === 0) return [];
-    set({ placedItems: [...state.placedItems, ...newItems] });
-    const ids = newItems.map((item) => item.id);
+    // A row brushed across a doorway leaves the door's clear space empty.
+    const spaces = useDoorClearSpaceStore.getState().spaces;
+    const doorsKept = new Set<DoorClearSpace>();
+    const clearItems = newItems.filter((item) => {
+      const doors = doorsBlockedBy(item, spaces);
+      for (const door of doors) doorsKept.add(door);
+      return doors.length === 0;
+    });
+    if (clearItems.length === 0) {
+      if (doorsKept.size > 0) postPlacementNotice(keptClearLine(spaces.filter((space) => doorsKept.has(space))));
+      return [];
+    }
+    const next = [...state.placedItems, ...clearItems];
+    if (refusedByStore(state.placedItems, next)) return [];
+    set({ placedItems: next });
+    if (doorsKept.size > 0) postPlacementNotice(keptClearLine(spaces.filter((space) => doorsKept.has(space))));
+    const ids = clearItems.map((item) => item.id);
     announcePlaced(ids);
     return ids;
   },
@@ -257,7 +539,18 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   removeItem: (id: string) => {
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
-    set({ placedItems: state.placedItems.filter((item) => item.id !== id) });
+    const next = state.placedItems.filter((item) => item.id !== id);
+    // The piece stays if it holds such a note, and so does a piece whose group holds one: a table keeps its chairs.
+    const going = state.placedItems.find((item) => item.id === id);
+    const unit = going === undefined ? [] : state.placedItems.filter((item) => item.id === id || (going.groupId !== null && item.groupId === going.groupId));
+    const kept = keptForHeldNotes(unit, state.placedItems);
+    const [name] = kept.names;
+    if (name !== undefined) {
+      postPlacementNotice(kept.saving ? noteStillSavingLine([name]) : nothingRemovedLine(describePieces([name])), { namesNoPiece: namesNoPiece([name]) });
+      return;
+    }
+    set({ placedItems: next });
+    announceRemoved(state.placedItems.filter((item) => item.id === id));
   },
 
   removeItems: (ids: ReadonlySet<string>) => {
@@ -265,7 +558,32 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (ids.size === 0) return;
     const state = get();
     const allIds = expandIdsToGroupMembers(ids, state.placedItems);
-    set({ placedItems: state.placedItems.filter((item) => !allIds.has(item.id)) });
+    const removing = state.placedItems.filter((item) => allIds.has(item.id));
+    const kept = keptForHeldNotes(removing, state.placedItems);
+    if (kept.names.length === 0) {
+      set({ placedItems: state.placedItems.filter((item) => !allIds.has(item.id)) });
+      announceRemoved(removing);
+      return;
+    }
+    // Someone who cannot see a note never destroys it: those pieces stay, and whatever else was selected goes.
+    const going = removing.filter((item) => !kept.ids.has(item.id));
+    // Nothing goes, and every note in the way is their own, still on its way to the server: say that, not "cannot be shown".
+    if (going.length === 0 && kept.saving) {
+      postPlacementNotice(noteStillSavingLine(kept.names), { namesNoPiece: namesNoPiece(kept.names) });
+      return;
+    }
+    const [only] = kept.names;
+    if (going.length === 0 && kept.names.length === 1 && only !== undefined) {
+      postPlacementNotice(nothingRemovedLine(describePieces([only])), { namesNoPiece: namesNoPiece([only]) });
+      return;
+    }
+    if (going.length > 0) {
+      const goingIds = new Set(going.map((item) => item.id));
+      set({ placedItems: state.placedItems.filter((item) => !goingIds.has(item.id)) });
+      announceRemoved(going);
+    }
+    const stayed = stayedForNotesLine(kept.names);
+    if (stayed !== null) postPlacementNotice(stayed, { namesNoPiece: namesNoPiece(kept.names) });
   },
 
   moveItem: (id: string, x: number, z: number) => {
@@ -314,9 +632,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
           new Set([id]),
         );
     set({
-      placedItems: state.placedItems.map((item) =>
+      placedItems: numberEdited(state.placedItems.map((item) =>
         item.id === id ? { ...item, x: finalX, z: finalZ, y: surfaceY } : item,
-      ),
+      ), new Set([id])),
     });
   },
 
@@ -324,9 +642,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     set({
-      placedItems: state.placedItems.map((item) =>
+      placedItems: numberEdited(state.placedItems.map((item) =>
         item.id === id ? { ...item, rotationY } : item,
-      ),
+      ), new Set([id])),
     });
   },
 
@@ -336,10 +654,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (rotations.size === 0) return;
     const state = get();
     set({
-      placedItems: state.placedItems.map((item) => {
+      placedItems: numberEdited(state.placedItems.map((item) => {
         const rotationY = rotations.get(item.id);
         return rotationY === undefined ? item : { ...item, rotationY };
-      }),
+      }), new Set(rotations.keys())),
     });
   },
 
@@ -347,16 +665,21 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (scales.size === 0) return;
     const state = get();
     set({
-      placedItems: state.placedItems.map((item) => {
+      placedItems: numberEdited(state.placedItems.map((item) => {
         const scale = scales.get(item.id);
         return scale === undefined ? item : { ...item, scale };
-      }),
+      }), new Set(scales.keys())),
     });
   },
 
   updateGhost: (x: number, z: number, catalogueItemId: string) => {
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
+    // Over the piece just set down, no ghost: no red on a success, and nothing for a second click to set down.
+    if (ghostStandsAside(x, z, state.placedItems)) {
+      if (state.ghostPosition !== null) set({ ghostPosition: null, ghostValid: false, ghostInvalidReason: null });
+      return;
+    }
     const rot = state.ghostRotation;
     const gridPos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     const catalogueItem = getCatalogueItem(catalogueItemId);
@@ -364,7 +687,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     let finalX = gridPos[0];
     let finalZ = gridPos[2];
     const roomDims = useRoomDimensionsStore.getState().dimensions;
-    if (catalogueItem !== undefined) {
+    // A card's whole set (placesAsCard) takes the grid only: the edge, wall and line snaps are one
+    // piece's, and would pull the set's chairs through a wall. The truthful ghost pushes the set clear.
+    const card = useCatalogueStore.getState().cardParams;
+    const wholeSet = card !== null && placesAsCard(card) && cardIsWholeSet(card);
+    if (catalogueItem !== undefined && !wholeSet) {
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catalogueItem, rot, state.placedItems, new Set());
       finalX = edgeSnap.x;
       finalZ = edgeSnap.z;
@@ -419,7 +746,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const catalogueItem = getCatalogueItem(target.catalogueItemId);
     if (catalogueItem === undefined || !canApplyTableLinenToItem(catalogueItem)) return;
     set({
-      placedItems: state.placedItems.map((item) =>
+      placedItems: numberEdited(state.placedItems.map((item) =>
         item.id === id
           ? {
               ...item,
@@ -427,7 +754,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
               clothStyle: item.clothed ? null : "black",
             }
           : item,
-      ),
+      ), new Set([id])),
     });
   },
 
@@ -448,7 +775,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       if (!targetIds.has(item.id)) return item;
       return { ...item, clothed: true, clothStyle: style };
     });
-    set({ placedItems });
+    set({ placedItems: numberEdited(placedItems, targetIds) });
   },
 
   applyTableSetting: (ids, setting) => {
@@ -468,7 +795,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       if (!targetIds.has(item.id)) return item;
       return { ...item, tableSetting: setting };
     });
-    set({ placedItems });
+    set({ placedItems: numberEdited(placedItems, targetIds) });
   },
 
   clearTableSetting: (id: string) => {
@@ -506,6 +833,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     if (state.placedItems.length === 0) return;
+    if (refusedForHeldNote(state.placedItems, [], nothingClearedLine)) return;
     set({ placedItems: [], ghostPosition: null, ghostValid: false, ghostInvalidReason: null });
   },
 
@@ -556,39 +884,185 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return chairY !== item.y ? { ...item, y: chairY } : item;
     });
-    set({ placedItems: [...state.placedItems, ...adjusted] });
-    announcePlaced(adjusted.map((item) => item.id));
+    const numbered = numberNew(state.placedItems, adjusted);
+    const next = [...state.placedItems, ...numbered];
+    if (refusedByStore(state.placedItems, next)) return;
+    set({ placedItems: next });
+    announcePlaced(numbered.map((item) => item.id));
+  },
+
+  placeSetup: (pieces: readonly PlacedItem[]) => {
+    if (isLayoutTimelineMutationLocked() || pieces.length === 0) return [];
+    const state = get();
+    // The venue's caps, for every kind of piece the set holds.
+    const counted = state.placedItems.map((p) => p.catalogueItemId);
+    for (const piece of pieces) {
+      const atCap = capReachedFor(piece.catalogueItemId, counted);
+      if (atCap !== null) {
+        postPlacementNotice(atCap);
+        return [];
+      }
+      counted.push(piece.catalogueItemId);
+    }
+    // As they stand: a card's set comes settled where it was judged (lib/place-in-hand), a copy at its original's heights.
+    const numbered = numberNew(state.placedItems, pieces);
+    const next = [...state.placedItems, ...numbered];
+    if (refusedByStore(state.placedItems, next)) return [];
+    set({ placedItems: next });
+    const ids = numbered.map((piece) => piece.id);
+    announcePlaced(ids);
+    return ids;
+  },
+
+  applyEdit: ({ removeIds = new Set<string>(), add }) => {
+    if (isLayoutTimelineMutationLocked() || (removeIds.size === 0 && add.length === 0)) return [];
+    const state = get();
+    const kept = state.placedItems.filter((piece) => !removeIds.has(piece.id));
+    const keptIds = new Set(kept.map((piece) => piece.id));
+    const changes = new Map(add.filter((piece) => keptIds.has(piece.id)).map((piece) => [piece.id, piece]));
+    const joining = add.filter((piece) => !keptIds.has(piece.id));
+    const changed = kept.map((piece) => changes.get(piece.id) ?? piece);
+    // Replace is the one edit that takes pieces away, and its plan refuses a held note first (lib/replace).
+    if (refusedForHeldNote(state.placedItems, [...changed, ...joining], nothingReplacedLine)) return [];
+    const atCap = capPassedBy(state.placedItems, [...changed, ...joining]);
+    if (atCap !== null) {
+      postPlacementNotice(atCap);
+      return [];
+    }
+    if (refusedByStore(state.placedItems, [...changed, ...joining])) return [];
+    const edited = numberEdited(changed, new Set(changes.keys()));
+    const numbered = numberNew(edited, joining);
+    set({ placedItems: [...edited, ...numbered] });
+    announcePlaced(numbered.map((piece) => piece.id));
+    return [...changes.keys(), ...numbered.map((piece) => piece.id)];
+  },
+
+  resizeArea: (groupId: string, cols: number, rows: number, anchor?: ResizeAnchor) => {
+    if (isLayoutTimelineMutationLocked()) return false;
+    const state = get();
+    const panels = state.placedItems.filter((piece) => piece.groupId === groupId);
+    const side = (n: number): number => Math.min(DANCE_FLOOR_PANELS.max, Math.max(DANCE_FLOOR_PANELS.min, Math.round(n)));
+    const resized = resizeDanceFloor(panels, side(cols), side(rows), anchor);
+    if (resized === null) return false;
+    if (resized.length === panels.length && resized.every((piece) => panels.includes(piece))) return false;
+    const kept = new Set(panels.map((piece) => piece.id));
+    const added = resized.filter((piece) => !kept.has(piece.id));
+    // The venue's cap for each panel added, counted against everything that stays.
+    const counted = [
+      ...state.placedItems.filter((piece) => piece.groupId !== groupId),
+      ...resized.filter((piece) => kept.has(piece.id)),
+    ].map((piece) => piece.catalogueItemId);
+    for (const piece of added) {
+      const atCap = capReachedFor(piece.catalogueItemId, counted);
+      if (atCap !== null) {
+        postPlacementNotice(atCap);
+        return false;
+      }
+      counted.push(piece.catalogueItemId);
+    }
+    // A floor grown through a wall or into a piece is refused with the ghost's reason, never moved (Q-05).
+    const others = state.placedItems.filter((piece) => piece.groupId !== groupId);
+    const verdict = judgeGhost(resized, createGhostWorld(others, useRoomDimensionsStore.getState().dimensions));
+    if (verdict.state !== "fits") {
+      postPlacementNotice(refusalChip(verdict.obstacle));
+      return false;
+    }
+    const next = [...state.placedItems.filter((piece) => piece.groupId !== groupId), ...resized];
+    if (refusedForHeldNote(state.placedItems, next, danceFloorNotResizedLine)) return false;
+    if (refusedByStore(state.placedItems, next)) return false;
+    set({ placedItems: next });
+    announcePlaced(added.map((piece) => piece.id));
+    return true;
   },
 
   rearrangeGroup: (tableId: string, newChairCount: number) => {
-    if (isLayoutTimelineMutationLocked()) return;
-    const state = get();
-    const newItems = rearrangeTableGroup(tableId, newChairCount, state.placedItems);
-    // Recompute individual surface heights for rearranged chairs
-    const adjusted = newItems.map((item) => {
-      if (!isSceneFurniturePlacement(item)) return item;
-      const surfaceY = candidateSurfaceHeight(
-        item.catalogueItemId,
-        item.x,
-        item.z,
-        newItems,
-        new Set([item.id]),
-      );
-      return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
-    });
-    set({ placedItems: adjusted });
+    get().rearrangeGroups([{ tableId, seats: newChairCount }]);
   },
 
-  autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => {
+  rearrangeGroups: (changes: readonly SeatChange[]) => {
+    if (isLayoutTimelineMutationLocked()) return;
+    let placed = get().placedItems;
+    let changed = false;
+    // The tables that keep their seats for a held note, said once at the end (review of #388, D2).
+    const kept: ChangedPiece[] = [];
+    for (const change of changes) {
+      const newItems = rearrangeTableGroup(change.tableId, change.seats, placed);
+      // Recompute individual surface heights for rearranged chairs
+      const adjusted = newItems.map((item) => {
+        if (!isSceneFurniturePlacement(item)) return item;
+        const surfaceY = candidateSurfaceHeight(
+          item.catalogueItemId,
+          item.x,
+          item.z,
+          newItems,
+          new Set([item.id]),
+        );
+        return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
+      });
+      // Fewer seats takes the table's last chairs away.
+      const going = heldPieceGoing(placed, adjusted);
+      if (going !== undefined) {
+        kept.push(heldNotePieceNamed(going, placed));
+        continue;
+      }
+      if (refusedByStore(placed, adjusted)) continue;
+      placed = numberEdited(adjusted, new Set([change.tableId]));
+      changed = true;
+    }
+    if (changed) set({ placedItems: placed });
+    const [only] = kept;
+    if (!changed && kept.length === 1 && only !== undefined) {
+      postPlacementNotice(noSeatRemovedLine(describePieces([only])), { namesNoPiece: namesNoPiece([only]) });
+      return;
+    }
+    // Another table lost a seat, or several kept theirs: say which stayed, as a removal of several does.
+    const stayed = stayedForNotesLine(kept);
+    if (stayed !== null) postPlacementNotice(stayed, { namesNoPiece: namesNoPiece(kept) });
+  },
+
+  autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number, exits: readonly RoomExit[] | null = null) => {
     if (isLayoutTimelineMutationLocked()) return null;
     const tableItem = getCatalogueItem(catalogueItemId);
     if (tableItem === undefined || !isDiningTableItem(tableItem)) return null;
     const state = get();
 
     const dims = useRoomDimensionsStore.getState().dimensions;
+    // Fill over the layout (Q-10): only round groups of this kind are set anew, at the gangways' design;
+    // every other piece stays exactly where it is, ids and all, and keeps the aisle rule round it.
+    if (plannerFeatureEnabled("fillKeepOuts")) {
+      const doorSpaces = roomDoorKeepOuts();
+      // A round with a note this browser is not shown stays where it stands (planRoomFill), as the prompt's preview said.
+      const heldNotes = currentHeldNoteIds();
+      const fill = planRoomFill({
+        table: tableItem,
+        seatsPerTable: chairsPerTable,
+        guests: targetGuests,
+        roomWidthM: toRealWorld(dims.width),
+        roomLengthM: toRealWorld(dims.length),
+        exits,
+        rule: FILL_AISLE_RULE,
+        // The same doors the prompt's preview kept clear (AutoFillPrompt), so what it said is what lands.
+        doorSpaces,
+      }, state.placedItems, (id) => heldNotes.has(id));
+      if (fill.plan === null) return null;
+      // A kept chair the planner never sets takes the plan's chair where it would reach a door.
+      const refilled = refillPieces(state.placedItems, fill.refillIds, fill.plan, undefined, { doorSpaces });
+      if (refilled.length === 0) return null;
+      const kept = state.placedItems.filter((item) => !fill.refillIds.has(item.id));
+      // The new tables take the lowest numbers the kept ones leave free (Q-46).
+      const numbered = numberNew(kept, refilled);
+      if (refusedForHeldNote(state.placedItems, [...kept, ...numbered], nothingFilledLine)) return null;
+      // The store's limit holds here too (B2): a fill that needs more than the store has sets down nothing.
+      if (refusedByStore(state.placedItems, [...kept, ...numbered])) return null;
+      set({ placedItems: [...kept, ...numbered] });
+      announcePlaced(numbered.map((item) => item.id));
+      // A receipt one Undo takes back (planner-qol C-02): it may have moved and taken away rounds.
+      postPlacementNotice(fillOverReceipt(fill.plan), { undo: true });
+      return fill.plan;
+    }
     // Room dimensions are render-space; the plan works in metres. Spacing runs
     // between the backs of the chairs (lib/auto-fill).
-    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length));
+    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts() });
     if (plan === null) return null;
 
     // Map each planned table (metres, room-centred) back to render space and
@@ -609,8 +1083,12 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const retainedApplicators = state.placedItems.filter(
       (item) => !isSceneFurniturePlacement(item),
     );
-    set({ placedItems: [...retainedApplicators, ...placedItems] });
-    announcePlaced(placedItems.map((item) => item.id));
+    const numbered = numberNew(retainedApplicators, placedItems);
+    // This fill clears the floor first. The planner offers it on an empty floor only (lib/auto-fill canLayOut); the rule holds here whoever calls.
+    if (refusedForHeldNote(state.placedItems, [...retainedApplicators, ...numbered], nothingFilledLine)) return null;
+    if (refusedByStore(state.placedItems, [...retainedApplicators, ...numbered])) return null;
+    set({ placedItems: [...retainedApplicators, ...numbered] });
+    announcePlaced(numbered.map((item) => item.id));
     return plan;
   },
 
@@ -620,18 +1098,25 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (chairItem === undefined || chairItem.category !== "chair") return null;
 
     const dims = useRoomDimensionsStore.getState().dimensions;
-    // Room dimensions are render-space; the plan works in metres.
-    const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length));
+    // Room dimensions are render-space; the plan works in metres. The rows start with this chair and
+    // go on in the hall's order as each kind runs out (Blake, 28 Oct 2026), as the prompt previewed.
+    const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length), {
+      doorSpaces: roomDoorKeepOuts(),
+      chairSupply: plannerChairSupply(chairItem.slug),
+    });
     if (plan === null) return null;
 
     // Each planned seat (metres, room-centred, facing the stage) → a floor-level
-    // chair in render space. No groups — theatre chairs stand alone.
+    // chair of its row's kind in render space. No groups — theatre chairs stand alone.
     const placedItems = plan.seats.map((s) =>
-      createPlacedItem(chairItemId, toRenderSpace(s.xM), toRenderSpace(s.zM), s.rotationY, null, 0),
+      createPlacedItem(s.chairItemId, toRenderSpace(s.xM), toRenderSpace(s.zM), s.rotationY, null, 0),
     );
     const retainedApplicators = get().placedItems.filter(
       (item) => !isSceneFurniturePlacement(item),
     );
+    // Theatre rows replace the whole floor (canLayOut offers them on an empty one): never a piece with a held note.
+    if (refusedForHeldNote(get().placedItems, [...retainedApplicators, ...placedItems], nothingFilledLine)) return null;
+    if (refusedByStore(get().placedItems, [...retainedApplicators, ...placedItems])) return null;
     set({ placedItems: [...retainedApplicators, ...placedItems] });
     announcePlaced(placedItems.map((item) => item.id));
     return plan;
@@ -645,9 +1130,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       guests,
       roomWidthM: toRealWorld(dims.width),
       roomLengthM: toRealWorld(dims.length),
+      doorSpaces: roomDoorKeepOuts(),
     });
     if (fix === null) return null;
     // One write, so the editor history records one step and one undo takes it back.
+    if (refusedByStore(get().placedItems, fix.placedItems)) return null;
     set({ placedItems: [...fix.placedItems] });
     announcePlaced(fix.addedIds);
     return fix;
@@ -668,7 +1155,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const state = get();
     const memberIds = getGroupMemberIds(itemId, state.placedItems);
     set({
-      placedItems: state.placedItems.map((item) => {
+      placedItems: numberEdited(state.placedItems.map((item) => {
         if (!memberIds.has(item.id)) return item;
         const newX = item.x + dx;
         const newZ = item.z + dz;
@@ -680,7 +1167,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
           memberIds,
         );
         return { ...item, x: newX, z: newZ, y: surfaceY };
-      }),
+      }), memberIds),
     });
   },
 
@@ -693,7 +1180,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     // layout for every moving item (30 ms per pointer move at 1,287 items).
     const stationary = state.placedItems.filter((item) => !ids.has(item.id));
     set({
-      placedItems: state.placedItems.map((item) => {
+      placedItems: numberEdited(state.placedItems.map((item) => {
         if (!ids.has(item.id)) return item;
         const newX = item.x + dx;
         const newZ = item.z + dz;
@@ -705,7 +1192,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
           ids,
         );
         return { ...item, x: newX, z: newZ, y: surfaceY };
-      }),
+      }), ids),
     });
   },
 

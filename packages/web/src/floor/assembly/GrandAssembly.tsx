@@ -1,8 +1,10 @@
 // ---------------------------------------------------------------------------
 // GrandAssembly — plays the Grand Assembly (Accio) in the drawn Grand Hall.
 //
-// PlannerScene mounts it only where this device asks for it (`?assembly=accio`,
-// flag.ts) and the drawn hall is on screen. When a saved layout opens (or a
+// PlannerScene mounts it where the Assembly may play (flag.ts: by default the
+// first time a layout opens on a device) and the drawn hall is on screen. A
+// press, or the Skip, plays the show on at speed; a second press, or Escape,
+// goes straight to the end. When a saved layout opens (or a
 // replay is asked for, recall.ts) it holds the room empty with the camera at
 // the Assembly's opening view, waits a beat for the hall's surfaces, then
 // plays: every frame it draws the show's frame through the presentation
@@ -36,14 +38,19 @@ import { presentedPiece, publishFurniturePresentation, type PresentationFrame } 
 import { ACCIO_CAMERA_LANDSCAPE, ACCIO_CAMERA_PORTRAIT, accioWindows, type AccioWindow } from "./accio.js";
 import { assemblySeed, createAssemblyShow, sameLayout, type AssemblyShow } from "./show.js";
 import type { CameraPose } from "./engine.js";
-import { EMPTY_ROOM, consumeAssemblyRequest, releaseHold, takeHold, useAssemblyRecallStore, type AssemblyRequest } from "./recall.js";
+import { EMPTY_ROOM, consumeAssemblyRequest, markLayoutSeen, releaseHold, speedUpAssembly, takeHold, useAssemblyRecallStore, type AssemblyRequest } from "./recall.js";
 
 /** A beat of the empty hall before the first piece comes, ms. */
 const EMPTY_BEAT_MS = 450;
 /** The longest the Assembly waits for the hall's surfaces before it plays anyway, ms. */
 const SURFACES_WAIT_MS = 4500;
-/** The longest step a frame advances the show, seconds: a dropped frame, never a pause. */
-const LONGEST_STEP = 0.1;
+/**
+ * The longest step a frame advances the show, seconds: a dropped frame, never a pause. Generous enough that
+ * a slow renderer (4 fps) still plays the show in about its own time rather than in slow motion.
+ */
+const LONGEST_STEP = 0.25;
+/** How much faster the show plays once the Skip is pressed (Blake: "a visible skip which speeds it up"). */
+const FAST_RATE = 4;
 /** Below this landscape aspect the Assembly frames the hall down its length, as the planner does. */
 const PORTRAIT_BELOW = 1.2;
 /** A show that plays to its end holds its last frame this long before the planner's working layers return, seconds of show time. */
@@ -182,7 +189,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   const returnPlanner = useCallback((): void => {
     ending.current = null;
     useCockpitStore.getState().setCameraInteractionActive(false);
-    useAssemblyRecallStore.setState({ active: false });
+    useAssemblyRecallStore.setState({ active: false, fast: false, restedAt: performance.now() });
   }, []);
   const onCameraRef = useRef(onCamera);
   onCameraRef.current = onCamera;
@@ -305,6 +312,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     }
     if (current.kind === "holding") {
       consumeAssemblyRequest(current.request);
+      if (current.request.reason === "open" && current.configId !== null) markLayoutSeen(current.configId);
       finish(finalFraming(current.portrait));
       return;
     }
@@ -329,7 +337,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     useSelectionStore.getState().clearSelection();
     // The planner's working overlays and chrome step back, as for a camera move.
     useCockpitStore.getState().setCameraInteractionActive(true);
-    useAssemblyRecallStore.setState({ active: true });
+    useAssemblyRecallStore.setState({ active: true, fast: false });
     onCameraRef.current(true);
   }, []);
 
@@ -374,8 +382,13 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     invalidate();
   }, [begin, invalidate, isPortrait, moveGroups, placeCamera, request]);
 
-  // Skip: Escape (as an operation in the planner's Escape order), a click or a tap.
+  // Escape (as an operation in the planner's Escape order) goes straight to the end; so does the Skip's second press.
   useEscapeLayer("operation", { open: () => stage.current.kind !== "idle" || ending.current !== null, onEscape: skip });
+  useEffect(() => useAssemblyRecallStore.subscribe((state, previous) => {
+    if (state.skipNonce !== previous.skipNonce) skip();
+    // Hurrying a show that has already played to its end (its held ending) ends it there.
+    else if (state.fast && !previous.fast && stage.current.kind === "idle") skip();
+  }), [skip]);
   useEffect(() => {
     const canvasHost = (): HTMLElement | null => get().gl.domElement.parentElement;
     let swallowing: number | null = null;
@@ -385,12 +398,17 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
       event.preventDefault();
     };
     const down = (event: PointerEvent): void => {
+      // The Skip control answers its own presses, in the held ending too: taken here first, a press on it
+      // brought the planner back and left the control, now at rest, to read its click as a replay.
+      if (event.target instanceof Element && event.target.closest(".assembly-replay") !== null) return;
       if (stage.current.kind === "idle") {
         // A press during the held ending brings the planner back and is the planner's own.
         if (ending.current !== null) returnPlanner();
         return;
       }
-      skip();
+      // A press is a skip: the first plays the show on at speed, a second goes straight to the end.
+      if (useAssemblyRecallStore.getState().fast) skip();
+      else speedUpAssembly();
       // A press on the room only skips: it does not also select or start a drag.
       const host = canvasHost();
       if (host !== null && event.target instanceof Node && host.contains(event.target)) {
@@ -427,7 +445,12 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    // On its stage until it leaves: a replay asked for meanwhile (Present) is taken up here.
+    useAssemblyRecallStore.setState({ onStage: true });
+    return () => {
+      mounted.current = false;
+      useAssemblyRecallStore.setState({ onStage: false });
+    };
   }, []);
   useEffect(() => () => {
     const pending = useAssemblyRecallStore.getState().request;
@@ -473,6 +496,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
 
   useFrame((_state, delta) => {
     framesDrawn.current += 1;
+    const rate = useAssemblyRecallStore.getState().fast ? FAST_RATE : 1;
     if (warmFrames.current > 0) {
       warmFrames.current -= 1;
       // Additive light at level 0 adds nothing to the picture.
@@ -491,7 +515,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     }
     const closing = ending.current;
     if (current.kind === "idle" && closing !== null) {
-      if (!closing.manual) closing.time += Math.min(delta, LONGEST_STEP);
+      if (!closing.manual) closing.time += Math.min(delta, LONGEST_STEP) * rate;
       if (closing.time >= closing.until) {
         returnPlanner();
       } else {
@@ -520,6 +544,8 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
         && ((surfacesIn && waited >= EMPTY_BEAT_MS) || waited >= SURFACES_WAIT_MS);
       if (ready) {
         consumeAssemblyRequest(current.request);
+        // Seen here from now on: by default it opens as placed next time.
+        if (current.request.reason === "open" && current.configId !== null) markLayoutSeen(current.configId);
         play({ seed: assemblySeed(current.configId), manual: false, portrait: current.portrait });
       }
       invalidate();
@@ -538,7 +564,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     }
     if (!current.manual) {
       // The waking frame's delta is the idle gap before it, not time the show has played.
-      current.time += current.fresh ? 0 : Math.min(delta, LONGEST_STEP);
+      current.time += current.fresh ? 0 : Math.min(delta, LONGEST_STEP) * rate;
     }
     current.fresh = false;
     show.advanceTo(current.time);

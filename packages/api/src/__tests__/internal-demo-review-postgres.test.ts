@@ -4,10 +4,11 @@ import { resolve } from "node:path";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
 import { configurationReviewRoutes } from "../routes/configuration-reviews.js";
+import { configurationRoutes } from "../routes/configurations.js";
 import { hallkeeperSheetRoutes } from "../routes/hallkeeper-sheet.js";
 import { InternalDemoNameSchema } from "../services/internal-demo-review.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
@@ -46,6 +47,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
     server = Fastify();
+    await server.register(configurationRoutes, { db, prefix: "/configurations" });
     await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
     await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
     await server.ready();
@@ -81,8 +83,11 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
   async function state(f: Fixture) {
     const [config] = await db.select().from(schema.configurations).where(eq(schema.configurations.id, f.configId));
     const snapshots = await db.select().from(schema.configurationSheetSnapshots).where(eq(schema.configurationSheetSnapshots.configurationId, f.configId));
-    const history = await db.select().from(schema.configurationReviewHistory).where(eq(schema.configurationReviewHistory.configurationId, f.configId));
-    const audit = await db.select().from(schema.generalAuditLog).where(eq(schema.generalAuditLog.targetId, f.configId));
+    // In the order written: without an order, PostgreSQL may return rows in any.
+    const history = await db.select().from(schema.configurationReviewHistory).where(eq(schema.configurationReviewHistory.configurationId, f.configId))
+      .orderBy(asc(schema.configurationReviewHistory.createdAt));
+    const audit = await db.select().from(schema.generalAuditLog).where(eq(schema.generalAuditLog.targetId, f.configId))
+      .orderBy(asc(schema.generalAuditLog.createdAt));
     return { config, snapshots, history, audit };
   }
 
@@ -119,8 +124,102 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(email).not.toHaveBeenCalled();
   });
 
-  async function approvedFixture() {
+  it("freezes the layout's gangway review into the submitted snapshot, as the venue's reviewer reads it (QoL E-03)", async () => {
     const f = await fixture();
+    const pinch = {
+      id: "gangway:zMin:group-1+wall:zMin",
+      widthM: 0.95,
+      guidance: { thresholdM: 1.1, source: "Scottish Government, Practical fire safety guidance for existing non-residential premises, ch. 7" },
+      gangway: "the window wall",
+      location: { kind: "segment", from: { x: -1, z: -5 }, to: { x: 1, z: -5 } },
+      pieceIds: ["p-1"],
+      sides: ["the window wall", "Table 4's chairs"],
+      status: "open",
+    };
+    await db.update(schema.configurations).set({ metadata: { gangwayReview: { items: [pinch] } } })
+      .where(eq(schema.configurations.id, f.configId));
+    expect((await post(f, "submit", { notifyTeam: false })).statusCode).toBe(200);
+    // A later change to the live layout's review leaves what was submitted as it was.
+    await db.update(schema.configurations).set({ metadata: { gangwayReview: { items: [] } } })
+      .where(eq(schema.configurations.id, f.configId));
+    const [snapshot] = (await state(f)).snapshots;
+    const frozen = snapshot?.payload as { readonly gangwayReview?: { readonly items: readonly unknown[] } | null } | undefined;
+    expect(frozen?.gangwayReview?.items).toEqual([pinch]);
+  });
+
+  /** The fixture's layout, owned instead by someone on another venue's team.
+   *  Anyone may plan in a venue's room, so another venue's team can. */
+  async function ownedElsewhere(f: Fixture, role: string): Promise<Fixture> {
+    const elsewhere = randomUUID(), owner = randomUUID();
+    await db.insert(schema.venues).values({ id: elsewhere, name: "Another venue", slug: elsewhere, address: "Test only" });
+    await db.insert(schema.users).values({ id: owner, venueId: elsewhere, name: "Another team", email: `${owner}@demo.invalid`, role });
+    await db.update(schema.configurations).set({ userId: owner }).where(eq(schema.configurations.id, f.configId));
+    const token = { id: owner, name: "Another team", email: `${owner}@demo.invalid`, role, venueId: elsewhere };
+    return { ...f, userId: owner, headers: { authorization: `Bearer ${JSON.stringify(token)}` } };
+  }
+
+  it.each(["staff", "manager", "admin", "hallkeeper", "sales"])("leaves the venue's side of a review to the venue when another venue's %s owns the layout", async role => {
+    const venue = await fixture();
+    const owner = await ownedElsewhere(venue, role);
+    // The owner submits as its planner; taking it into review, deciding and
+    // archiving are the venue's.
+    expect((await post(owner, "submit")).statusCode).toBe(200);
+    expect((await post(owner, "start-review")).statusCode).toBe(409);
+    expect((await post(venue, "start-review")).statusCode).toBe(200);
+    for (const [action, payload] of [["approve", {}], ["reject", { note: "Not this one." }], ["request-changes", { note: "Move the bar." }]] as const) {
+      expect((await post(owner, action, payload)).statusCode, action).toBe(409);
+    }
+    expect((await post(venue, "approve")).statusCode).toBe(200);
+    expect((await post(owner, "archive")).statusCode).toBe(409);
+    const saved = await state(venue);
+    expect(saved.config?.reviewStatus).toBe("approved");
+    expect(saved.snapshots[0]?.approvedBy).toBe(venue.userId);
+    expect(saved.history.map(row => [row.toStatus, row.changedBy])).toEqual([
+      ["submitted", owner.userId], ["under_review", venue.userId], ["approved", venue.userId],
+    ]);
+  });
+
+  it("shows the venue's manager the plan submitted for the review they decide", async () => {
+    const f = await fixture();
+    expect((await post(f, "submit")).statusCode).toBe(200);
+    const manager = randomUUID();
+    const token = { id: manager, name: "Test manager", email: `${manager}@demo.invalid`, role: "manager", venueId: f.venueId };
+    const latest = await server.inject({ method: "GET", url: `/configurations/${f.configId}/snapshot/latest`,
+      headers: { authorization: `Bearer ${JSON.stringify(token)}` } });
+    expect(latest.statusCode).toBe(200);
+    expect(latest.json<{ data: { version: number; approvedAt: string | null } }>().data).toMatchObject({ version: 1, approvedAt: null });
+  });
+
+  it("holds a submitted layout against another venue's admin who owns it, and leaves this venue's admin its fix", async () => {
+    const venue = await fixture();
+    const owner = await ownedElsewhere(venue, "admin");
+    expect((await post(owner, "submit")).statusCode).toBe(200);
+    const rename = (who: Fixture, name: string) => server.inject({ method: "PATCH", url: `/configurations/${venue.configId}`, headers: who.headers, payload: { name } });
+    const held = await rename(owner, "Changed behind the review");
+    expect(held.statusCode).toBe(409);
+    expect(held.json()).toMatchObject({ code: "CONFIG_LOCKED", reviewStatus: "submitted" });
+    // Someone with no part in the layout is refused, and not told its state.
+    for (const role of ["admin", "staff"]) {
+      const stranger = randomUUID();
+      const token = { id: stranger, name: "Stranger", email: `${stranger}@demo.invalid`, role, venueId: randomUUID() };
+      const refused = await rename({ ...venue, headers: { authorization: `Bearer ${JSON.stringify(token)}` } }, "Not theirs");
+      expect(refused.statusCode, role).toBe(403);
+      expect(refused.body, role).not.toContain("submitted");
+    }
+    // This venue's admin can still make an emergency fix.
+    expect((await rename(venue, "Fixed by the venue")).statusCode).toBe(200);
+    expect((await state(venue)).config?.name).toBe("Fixed by the venue");
+  });
+
+  /** An approved sheet; `booked` books its room from 08:00 with a Setup phase there from 07:00 first. */
+  async function approvedFixture(options: { booked?: boolean } = {}) {
+    const f = await fixture();
+    if (options.booked === true) {
+      await db.insert(schema.bookings).values({ venueId: f.venueId, spaceId: f.roomId, eventId: f.eventId, kind: "ink", status: "active",
+        title: "DEMO ONLY — booked rehearsal", startsAt: new Date("2026-11-14T08:00:00.000Z"), endsAt: new Date("2026-11-14T10:00:00.000Z") });
+      await db.insert(schema.eventPhases).values({ eventId: f.eventId, spaceId: f.roomId, name: "Setup", sortOrder: 0, durationMinutes: 60,
+        startsAt: new Date("2026-11-14T07:00:00.000Z") });
+    }
     expect((await post(f, "submit", { notifyTeam: false })).statusCode).toBe(200);
     expect((await post(f, "start-review")).statusCode).toBe(200);
     expect((await post(f, "approve", { notifyTeam: false })).statusCode).toBe(200);
@@ -265,7 +364,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
   });
 
   it("counts the approved sheet's rows and marks for the Day Board, whatever the live layout now holds", async () => {
-    const f = await approvedFixture();
+    const f = await approvedFixture({ booked: true });
     const rows = f.frozen.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows));
     const [first] = rows;
     if (first === undefined) throw new Error("The approved fixture must have a row");
@@ -275,15 +374,34 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
       { configId: f.configId, eventId: f.eventId, rowKey: first.key, checkedBy: f.userId },
       { configId: f.configId, eventId: f.eventId, rowKey: "furniture|Centre|Removed trestle|0", checkedBy: f.userId },
     ]);
-    const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}`, headers: f.headers });
+    const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}&setupFrom=true`, headers: f.headers });
     expect(response.statusCode).toBe(200);
     expect(response.json<{ data: unknown }>().data).toEqual({
       configId: f.configId,
-      readyBy: f.frozen.timing?.setupBy ?? null,
-      eventStart: f.frozen.timing?.eventStart ?? null,
+      // The booking's start is when guests come in, and with no planner's final
+      // time the room is ready then: never at 07:00, when the Setup phase opens
+      // the window (timing.setupBy), which the summary carries as setupFrom
+      // when the Day Board asks for it.
+      readyBy: "2026-11-14T08:00:00.000Z",
+      eventStart: "2026-11-14T08:00:00.000Z",
+      setupFrom: "2026-11-14T07:00:00.000Z",
       total: rows.length,
       checked: 1,
     });
+    // Unasked, or asked in words the route does not read, it answers in the
+    // shape older web code knows, key for key: that code's summary schema is
+    // strict, and a Day Board left open would otherwise freeze its line.
+    for (const query of ["", "&setupFrom=false", "&setupFrom=yes"]) {
+      const older = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}${query}`, headers: f.headers });
+      expect(older.statusCode, query).toBe(200);
+      expect(older.json<{ data: unknown }>().data, query).toEqual({
+        configId: f.configId,
+        readyBy: "2026-11-14T08:00:00.000Z",
+        eventStart: "2026-11-14T08:00:00.000Z",
+        total: rows.length,
+        checked: 1,
+      });
+    }
   });
 
   it("preserves authentication and tenant denial ahead of unavailable approved evidence", async () => {

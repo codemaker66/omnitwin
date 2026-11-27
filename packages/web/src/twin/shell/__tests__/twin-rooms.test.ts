@@ -4,6 +4,7 @@ import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_ROOM_DIMENSIONS,
+  TRADES_HALL_WITHHELD_ROOM_DIMENSIONS,
   type PublishedRoomSlug,
   type RoomDimensions,
 } from "@omnitwin/types";
@@ -12,6 +13,7 @@ import {
   VERIFIED_ROOM_NODES,
   formatRoomDimensions,
   lookUpRoom,
+  metres,
 } from "../twin-rooms.js";
 
 // -----------------------------------------------------------------------------
@@ -40,6 +42,17 @@ function publishedDimensions(slug: PublishedRoomSlug): RoomDimensions {
   const dimensions = TRADES_HALL_ROOM_DIMENSIONS[slug];
   if (dimensions === undefined) {
     throw new Error(`venue truth publishes no dimensions for ${slug}`);
+  }
+  return dimensions;
+}
+
+/** The dimensions of a room given as a whole: one extent, with a height.
+ *  Fails loudly if the room is ever published in sections or loses its height,
+ *  so an expectation built from it cannot quietly print "undefined". */
+function wholeRoom(slug: PublishedRoomSlug): RoomDimensions {
+  const dimensions = publishedDimensions(slug);
+  if (dimensions.extents.length !== 1 || dimensions.extents[0].heightM === undefined) {
+    throw new Error(`venue truth no longer gives ${slug} as one extent with a height`);
   }
   return dimensions;
 }
@@ -146,44 +159,94 @@ describe("lookUpRoom", () => {
   });
 });
 
+describe("metres", () => {
+  // Literal outputs, not a second formatter: the tour's text checks rebuild
+  // every figure line through metres() (e2e/support/twin-hud-text.ts), so a
+  // change to its rounding has to fail here rather than agree everywhere.
+  it("keeps a published figure as the venue prints it", () => {
+    expect(metres(21)).toBe("21");
+    expect(metres(5.4)).toBe("5.4");
+    expect(metres(2.18)).toBe("2.18");
+    expect(metres(10.59)).toBe("10.59");
+    expect(metres(6.7)).toBe("6.7");
+  });
+
+  it("rounds a finer figure to two decimals, with no trailing zero", () => {
+    expect(metres(21.135)).toBe("21.14");
+    expect(metres(7.6049)).toBe("7.6");
+  });
+});
+
 describe("formatRoomDimensions", () => {
   it("renders the published extent, joined from venue truth", () => {
-    const truth = publishedDimensions("saloon");
+    const [whole] = wholeRoom("saloon").extents;
     expect(formatRoomDimensions("saloon")).toBe(
-      `${String(truth.lengthM)} × ${String(truth.widthM)} × ${String(truth.heightM)} m`,
+      `${String(whole.lengthM)} × ${String(whole.widthM)} × ${String(whole.heightM)} m`,
     );
   });
 
-  it("keeps fractional metres intact rather than rounding a room away", () => {
+  it("gives a room published in sections each section, named, in the venue's order", () => {
+    // The Robert Adam Room is one room on two levels. Its line never carries
+    // one section's figures as the room's, and never a figure for the two
+    // together, because the venue publishes none.
     const truth = publishedDimensions("robert-adam-room");
-    const line = formatRoomDimensions("robert-adam-room");
-    expect(line).toContain(String(truth.lengthM));
-    expect(line).toContain(String(truth.heightM));
+    expect(truth.extents.length).toBeGreaterThan(1);
+    const expected = truth.extents.map((extent) => {
+      if (extent.section === undefined || extent.heightM === undefined) {
+        throw new Error("a Robert Adam Room section lost its name or its height");
+      }
+      // Fractional metres stay intact: String(), not a rounding of our own.
+      return `${extent.section} section ${String(extent.lengthM)} × ${String(extent.widthM)} × ${String(extent.heightM)} m`;
+    });
+    expect(formatRoomDimensions("robert-adam-room")).toBe(expected.join("; "));
   });
 
-  it("renders the published note when the venue publishes one", () => {
-    const truth = publishedDimensions("grand-hall");
-    // The Grand Hall is the room carrying a qualifier today — its dome.
-    expect(truth.note).toBeDefined();
-    const note = truth.note ?? "";
+  it("renders the note and the remark when a room carries them", () => {
+    const truth = wholeRoom("grand-hall");
+    const [whole] = truth.extents;
+    // The Grand Hall is the room carrying a qualifier today: what its height is
+    // measured to, then the remark that the dome rises above part of the hall.
+    expect(whole.note).toBeDefined();
+    expect(truth.remark).toBeDefined();
+    const note = whole.note ?? "";
+    const remark = truth.remark ?? "";
     expect(formatRoomDimensions("grand-hall")).toBe(
-      `${String(truth.lengthM)} × ${String(truth.widthM)} × ${String(truth.heightM)} m — ${note}`,
+      `${String(whole.lengthM)} × ${String(whole.widthM)} × ${String(whole.heightM)} m — ${note}. ${remark}`,
     );
   });
 
-  it("appends nothing when there is no published note", () => {
-    const truth = publishedDimensions("reception-room");
-    expect(truth.note).toBeUndefined();
-    expect(formatRoomDimensions("reception-room")).not.toContain("—");
+  it("appends nothing when there is no published note or remark", () => {
+    const truth = wholeRoom("saloon");
+    const [whole] = truth.extents;
+    expect(whole.note).toBeUndefined();
+    expect(truth.remark).toBeUndefined();
+    expect(formatRoomDimensions("saloon")).toBe(
+      `${String(whole.lengthM)} × ${String(whole.widthM)} × ${String(whole.heightM)} m`,
+    );
   });
 
-  it("omits dimensions entirely for rooms the venue publishes none for", () => {
-    // The galleries publish no dimensions. If the venue ever does publish them,
-    // this fails on purpose — someone should look at the new figures.
-    expect(TRADES_HALL_ROOM_DIMENSIONS["north-gallery"]).toBeUndefined();
-    expect(TRADES_HALL_ROOM_DIMENSIONS["south-gallery"]).toBeUndefined();
-    expect(formatRoomDimensions("north-gallery")).toBeNull();
-    expect(formatRoomDimensions("south-gallery")).toBeNull();
+  it("gives no line and no dimensions for a room whose size is withheld", () => {
+    // The Reception Room's published size is on record but not shown, so
+    // nothing reaches a surface through this module: not the line, and not
+    // the figures behind it.
+    expect(TRADES_HALL_WITHHELD_ROOM_DIMENSIONS["reception-room"]).toBeDefined();
+    expect(formatRoomDimensions("reception-room")).toBeNull();
+    const room = lookUpRoom("scan_126");
+    expect(room?.slug).toBe("reception-room");
+    expect(room?.dimensions).toBeNull();
+    expect(room?.dimensionLine).toBeNull();
+  });
+
+  it("gives a room with no stated height its length and width alone", () => {
+    // The galleries carry the venue's floor size and no height. Their line must
+    // not print a third figure, the word "undefined" or a dangling separator.
+    for (const slug of ["north-gallery", "south-gallery"] as const) {
+      const truth = publishedDimensions(slug);
+      expect(truth.extents).toHaveLength(1);
+      const [floor] = truth.extents;
+      expect(floor.heightM).toBeUndefined();
+      expect(formatRoomDimensions(slug)).toBe(`${String(floor.lengthM)} × ${String(floor.widthM)} m`);
+    }
   });
 
   it("surfaces the same line through lookUpRoom", () => {

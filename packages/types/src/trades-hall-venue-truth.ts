@@ -66,25 +66,90 @@ export function isPublishedRoomSlug(slug: string): slug is PublishedRoomSlug {
   return Object.prototype.hasOwnProperty.call(TRADES_HALL_ROOM_CAPACITIES, slug);
 }
 
-export interface RoomDimensions {
-  /** Metres, as published on the venue's own website. */
+/** One stated extent of a room: the whole room, or one section of a room the
+ *  venue publishes in sections. */
+export interface RoomExtent {
+  /** Which section this is, as the venue names it ("Lower", "Upper"), for a
+   *  room published in sections. Absent when the figures are the whole room's. */
+  readonly section?: string;
+  /** Metres: the venue's own published figures, except the Grand Hall's,
+   *  which are measured from the hall's laser scan. */
   readonly lengthM: number;
   readonly widthM: number;
-  readonly heightM: number;
-  /** Published qualifier, e.g. the Grand Hall's further height under the dome. */
+  /** Absent where no height is stated for the room (the galleries). A surface
+   *  then shows the length and width alone, never a blank or a guess. */
+  readonly heightM?: number;
+  /** Qualifier shown with the height, e.g. what the Grand Hall's is measured
+   *  to. A few words, because it sits beside the figure in a narrow stat
+   *  column (the tour's room dossier); anything longer belongs in `remark`. */
   readonly note?: string;
 }
 
-/** Room dimensions as published on the official Trades Hall website —
- *  the four rooms the site lists. The galleries publish no dimensions,
- *  so none are stated for them. */
+export interface RoomDimensions {
+  /** The room's stated extents, in the venue's order: one for a room given as
+   *  a whole, one per section for a room published in sections. Never empty,
+   *  and a sectioned room has no whole-room figure for a surface to print. */
+  readonly extents: readonly [RoomExtent, ...RoomExtent[]];
+  /** A full sentence about the room's height that a surface shows apart from
+   *  the figure, in its footnote or secondary line: the Grand Hall's dome.
+   *  Never a height of its own. */
+  readonly remark?: string;
+}
+
+/** Room dimensions for the rooms on the official Trades Hall website's rooms
+ *  page, read again on 22 November 2026, that a public surface may show. The
+ *  Saloon is as the venue publishes it. The Robert Adam Room is published in two
+ *  sections, lower and upper, and both are given here in that order: it is one
+ *  room on two levels, and neither section's figures are the whole room's.
+ *  The North and South Galleries are each published at 11.5 × 4 m; no height
+ *  is stated for them here, because the page gives one for the North Gallery
+ *  only and does not say what it is measured to (Blake's decisions, 22 November
+ *  2026). The Reception Room has no entry: its published size is withheld
+ *  (TRADES_HALL_WITHHELD_ROOM_DIMENSIONS below), so a surface shows its
+ *  capacities alone.
+ *
+ *  The Grand Hall is its panelled interior as the Matterport E57 capture of
+ *  11 July 2026 measures it, 21.135 m by 10.59 m to about 2 cm, shown as
+ *  21.14 × 10.59 m (Blake's decision, 11 November 2026: the measured size);
+ *  its height is the clear 6.7 m to the underside of the coffered ceiling. The
+ *  dome rises above part of the hall and is never given as the room's height:
+ *  the height's note says what it is measured to, and the dome is a separate
+ *  remark, shown in a footnote rather than beside the figure. The planner
+ *  draws and places in the same interior
+ *  (packages/web/src/components/grand-hall/hall-spec.ts). */
 export const TRADES_HALL_ROOM_DIMENSIONS: Readonly<
   Partial<Record<PublishedRoomSlug, RoomDimensions>>
 > = {
-  "grand-hall": { lengthM: 21, widthM: 10, heightM: 7, note: "a further 7 m under the dome" },
-  saloon: { lengthM: 12, widthM: 7, heightM: 5.4 },
-  "robert-adam-room": { lengthM: 9.7, widthM: 5.6, heightM: 2.18 },
-  "reception-room": { lengthM: 13.4, widthM: 11.2, heightM: 3.2 },
+  "grand-hall": {
+    extents: [{ lengthM: 21.14, widthM: 10.59, heightM: 6.7, note: "to the coffered ceiling" }],
+    remark: "The dome rises above part of the hall.",
+  },
+  saloon: { extents: [{ lengthM: 12, widthM: 7, heightM: 5.4 }] },
+  "robert-adam-room": {
+    extents: [
+      { section: "Lower", lengthM: 11.2, widthM: 7.6, heightM: 2.8 },
+      { section: "Upper", lengthM: 9.7, widthM: 5.6, heightM: 2.18 },
+    ],
+  },
+  "north-gallery": { extents: [{ lengthM: 11.5, widthM: 4 }] },
+  "south-gallery": { extents: [{ lengthM: 11.5, widthM: 4 }] },
+} as const;
+
+/** Dimensions the venue publishes that no public surface shows, kept here so
+ *  the venue's own statement is not lost. Nothing that a visitor reads may
+ *  take a figure from this record; a room is in it or in
+ *  TRADES_HALL_ROOM_DIMENSIONS, never both.
+ *
+ *  The Reception Room: the venue's rooms page gives the figures below. The
+ *  building survey traces an L-shaped room about a third smaller in area, and
+ *  the planner's own outline of the room agrees with the survey
+ *  (packages/web/src/data/room-geometries.ts). Blake's decision, 24 November
+ *  2026: show the room's capacities and no size until the venue confirms
+ *  one. */
+export const TRADES_HALL_WITHHELD_ROOM_DIMENSIONS: Readonly<
+  Partial<Record<PublishedRoomSlug, RoomDimensions>>
+> = {
+  "reception-room": { extents: [{ lengthM: 13.4, widthM: 11.2, heightM: 3.2 }] },
 } as const;
 
 export interface WeddingRate {

@@ -8,7 +8,18 @@ import {
   type ReactElement,
 } from "react";
 import { prefersReducedMotion } from "../reduced-motion.js";
-import { lookUpRoom, metres, ROOM_TRUTH_PROVENANCE, type VerifiedRoom } from "./twin-rooms.js";
+import { formatExtentPlan, lookUpRoom, metres, type VerifiedRoom } from "./twin-rooms.js";
+import {
+  STAT_LABEL_CEILING,
+  STAT_LABEL_DIMENSIONS,
+  STAT_LABEL_DINNER,
+  STAT_LABEL_RECEPTION,
+  TWIN_DOSSIER_COLLAPSE_LABEL,
+  TWIN_DOSSIER_EXPAND_LABEL,
+  TWIN_DOSSIER_FOOTNOTE,
+  twinDossierArrival,
+  twinDossierActionLabel,
+} from "./room-dossier-copy.js";
 import "./room-dossier.css";
 
 // -----------------------------------------------------------------------------
@@ -86,11 +97,6 @@ import "./room-dossier.css";
 // only AFTER it has added them. See the toggle handler.
 // -----------------------------------------------------------------------------
 
-/** Toggle labels, phrased as the action the press will take — the house idiom
- *  from TWIN_FULLSCREEN_ENTER / TWIN_FULLSCREEN_EXIT. */
-export const TWIN_DOSSIER_COLLAPSE_LABEL = "Hide room details";
-export const TWIN_DOSSIER_EXPAND_LABEL = "Show room details";
-
 /**
  * How long the panel stays on screen after the walk leaves the room it named.
  *
@@ -161,81 +167,26 @@ const DOSSIER_FRAME_STYLE = {
   "--vv-dossier-leave": `${String(TWIN_DOSSIER_LEAVE_MS)}ms`,
 } as CSSProperties;
 
-/** The honest qualifier beneath the figures: who confirmed them, when, and what
- *  still moves them.
- *
- *  Taken verbatim from the venue-truth module rather than reworded, so this
- *  panel and the public room cards make byte-identical provenance claims. A
- *  paraphrase is a second claim about someone else's data: it can quietly firm
- *  up "planning guide", or outlive the date it cites, and no test would catch
- *  either. */
-export const TWIN_DOSSIER_FOOTNOTE = ROOM_TRUTH_PROVENANCE;
-
-/**
- * Primary action, rendered only when the host wires `onCompose` — so the label
- * can promise something the twin actually does.
- *
- * It names the room in its VISIBLE text rather than hiding the room in an
- * aria-label over a generic "Enquire about this room". A hidden name that
- * disagrees with the visible one fails Label in Name (WCAG 2.5.3): a speech-input
- * user who says what they can read would miss the control entirely. It is also
- * simply better copy — the button says what it does when the card is skimmed.
- */
-export function twinDossierActionLabel(roomName: string): string {
-  return `Enquire about the ${roomName}`;
-}
-
-/** Polite arrival line. The room leads, because the room is the news; the venue
- *  follows so the announcement stands alone if it is all a visitor hears. */
-export function twinDossierArrival(roomName: string, venueName: string): string {
-  return `${roomName}, ${venueName}`;
-}
-
-/** Quiet labels for the four published facts, in the venue's own vocabulary —
- *  "Reception" and "Dinner" are the venue's format names (CAPACITY_FORMATS),
- *  not our paraphrase of them. */
-const STAT_LABEL_DIMENSIONS = "Dimensions";
-const STAT_LABEL_RECEPTION = "Reception";
-const STAT_LABEL_DINNER = "Dinner";
-/** Exported so a test can locate the ceiling row by its label and assert the
- *  COMPOSED value — figure plus the venue's qualifier plus the separator
- *  between them, which is the part that silently broke. */
-export const STAT_LABEL_CEILING = "Ceiling";
-
-/** A published figure, the quiet word for it, and the venue's own qualifier
- *  where one exists (the Grand Hall's further height inside the dome). */
-interface DossierStat {
-  readonly key: string;
-  readonly label: string;
+/** One line of a stat: a figure, the section it belongs to when the room is
+ *  published in sections (the Robert Adam Room's "Lower" and "Upper"), and its
+ *  qualifier where one exists (what the Grand Hall's measured height is to).
+ *  The qualifier stays a few words: the stat column is narrow, and a longer
+ *  note wrapped to four lines on a desktop and was cut through by the
+ *  landscape-phone fold. The room's remark (the Grand Hall's dome) is a
+ *  sentence, so it leads the footnote instead. */
+interface DossierStatLine {
+  readonly section?: string;
   readonly value: string;
   readonly note?: string;
 }
 
-/**
- * Every user-facing string this panel can render, for the copy-claim sweep in
- * shell/__tests__/shell-copy-claims.test.ts. That guard is the repo's only
- * enforcement of the banned certainty phrases, and it can only check strings it
- * is handed — a surface that keeps its copy to itself is simply unguarded.
- *
- * It is swept there rather than being spliced into twin-copy.ts's allTwinCopy()
- * because that module is pure data: importing this component into it would
- * invert the dependency and drag React and a stylesheet into the copy graph.
- *
- * The two parameterised lines are sampled with a real room name so the sweep
- * sees the sentence a visitor sees, not a template.
- */
-export function allRoomDossierCopy(): readonly string[] {
-  return [
-    TWIN_DOSSIER_COLLAPSE_LABEL,
-    TWIN_DOSSIER_EXPAND_LABEL,
-    TWIN_DOSSIER_FOOTNOTE,
-    STAT_LABEL_DIMENSIONS,
-    STAT_LABEL_RECEPTION,
-    STAT_LABEL_DINNER,
-    STAT_LABEL_CEILING,
-    twinDossierActionLabel("Grand Hall"),
-    twinDossierArrival("Grand Hall", "Trades Hall Glasgow"),
-  ];
+/** The quiet word for a fact and its lines: one for a room given as a whole,
+ *  one per section for a room published in sections. Never a line that adds
+ *  the sections up, because the venue publishes no figure for the two together. */
+interface DossierStat {
+  readonly key: string;
+  readonly label: string;
+  readonly lines: readonly DossierStatLine[];
 }
 
 export interface RoomDossierProps {
@@ -441,39 +392,46 @@ export function RoomDossier({
     setCollapsed(true);
   };
 
-  // The galleries publish no dimensions. A room without them shows its two
-  // capacity figures alone rather than an em-dash where a measurement should be.
+  // A room with no stated dimensions shows its two capacity figures alone
+  // rather than an em-dash where a measurement should be, and a room with a
+  // floor size but no stated height (the galleries) shows no Ceiling stat for
+  // the same reason. A room published in sections gets one line per section
+  // under each stat, named, in the venue's order.
   //
   // Note this reads `dimensions`, not the ready-made `dimensionLine`: that line
   // folds height into the extent, which would state the ceiling twice now that
   // Ceiling has a stat of its own.
   const dimensions = shown.dimensions;
+  const extents = dimensions?.extents ?? [];
+  const ceilings = extents.flatMap((extent): DossierStatLine[] =>
+    extent.heightM === undefined
+      ? []
+      : [{ section: extent.section, value: `${metres(extent.heightM)} m`, note: extent.note }],
+  );
   const stats: DossierStat[] = [];
-  if (dimensions !== null) {
+  if (extents.length > 0) {
     stats.push({
       key: "dimensions",
       label: STAT_LABEL_DIMENSIONS,
-      value: `${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} m`,
+      lines: extents.map((extent) => ({ section: extent.section, value: formatExtentPlan(extent) })),
     });
   }
   stats.push({
     key: "reception",
     label: STAT_LABEL_RECEPTION,
-    value: `${String(shown.capacities.reception)} standing`,
+    lines: [{ value: `${String(shown.capacities.reception)} standing` }],
   });
   stats.push({
     key: "dinner",
     label: STAT_LABEL_DINNER,
-    value: `${String(shown.capacities.dinner)} seated`,
+    lines: [{ value: `${String(shown.capacities.dinner)} seated` }],
   });
-  if (dimensions !== null) {
-    stats.push({
-      key: "ceiling",
-      label: STAT_LABEL_CEILING,
-      value: `${metres(dimensions.heightM)} m`,
-      note: dimensions.note,
-    });
+  if (ceilings.length > 0) {
+    stats.push({ key: "ceiling", label: STAT_LABEL_CEILING, lines: ceilings });
   }
+  // The sentence that goes with the figures but not beside them: the Grand
+  // Hall's dome. It leads the footnote, straight under the Ceiling stat.
+  const remark = dimensions?.remark;
 
   const cardClass = [
     "vv-twin-dossier-card",
@@ -573,23 +531,55 @@ export function RoomDossier({
             <>
               <dl className="vv-twin-dossier-stats">
                 {stats.map((stat) => (
-                  <div className="vv-twin-dossier-stat" key={stat.key}>
+                  <div
+                    // A stat with a line per section says so, so room-dossier.css
+                    // can give it the card's full width where a half-width column
+                    // (a phone) is too narrow for "Lower" and a figure on one line.
+                    className={
+                      stat.lines.some((line) => line.section !== undefined)
+                        ? "vv-twin-dossier-stat vv-twin-dossier-stat--sections"
+                        : "vv-twin-dossier-stat"
+                    }
+                    key={stat.key}
+                  >
                     <dt className="vv-twin-dossier-stat-label">{stat.label}</dt>
-                    <dd className="vv-twin-dossier-stat-value">
-                      {stat.value}
-                      {/* The separator is DOM text, not a CSS margin: a span is
-                          inline with no default whitespace, so styling alone
-                          would read "7 ma further 7 m under the dome" to anyone
-                          whose stylesheet had not loaded — and to every screen
-                          reader, which hears the concatenation regardless. */}
-                      {stat.note !== undefined && (
-                        <span className="vv-twin-dossier-stat-note">{` — ${stat.note}`}</span>
-                      )}
-                    </dd>
+                    {/* One <dd> per line: a term with several descriptions is
+                        what a room published in sections is, and each section
+                        is then read out as its own item under the one label. */}
+                    {stat.lines.map((line) => (
+                      <dd className="vv-twin-dossier-stat-value" key={line.section ?? stat.key}>
+                        {/* Both separators are DOM text, not CSS margins: a span
+                            is inline with no default whitespace, so styling
+                            alone would run a section's name into its figure,
+                            and read "6.7 mto the coffered ceiling", to anyone
+                            whose stylesheet had not
+                            loaded — and to every screen reader, which hears the
+                            concatenation regardless. */}
+                        {line.section !== undefined && (
+                          <span className="vv-twin-dossier-stat-section">{`${line.section} `}</span>
+                        )}
+                        {line.value}
+                        {line.note !== undefined && (
+                          <span className="vv-twin-dossier-stat-note">{` — ${line.note}`}</span>
+                        )}
+                      </dd>
+                    ))}
                   </div>
                 ))}
               </dl>
-              <p className="vv-twin-dossier-footnote">{TWIN_DOSSIER_FOOTNOTE}</p>
+              <p className="vv-twin-dossier-footnote">
+                {/* The remark is its own element, set on a line of its own by
+                    room-dossier.css, so the provenance after it stays the
+                    venue-truth constant, verbatim, and wraps as it does in a
+                    room with no remark. The space between them is DOM text for
+                    the same reason as the stat note's separator above. */}
+                {remark !== undefined && (
+                  <>
+                    <span className="vv-twin-dossier-footnote-remark">{remark}</span>{" "}
+                  </>
+                )}
+                {TWIN_DOSSIER_FOOTNOTE}
+              </p>
               {onCompose !== undefined && (
                 <button
                   type="button"

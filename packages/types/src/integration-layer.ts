@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  boundedJsonObjectSchema,
   CanonicalJsonValueSchema,
   sha256Hex,
   stableCanonicalJson,
@@ -85,6 +86,11 @@ export type IntegrationEventId = z.infer<typeof IntegrationEventIdSchema>;
 export const IntegrationConfigSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export type IntegrationConfig = z.infer<typeof IntegrationConfigSchema>;
 
+/** The most an integration's config, or a webhook test payload, may hold as
+ *  JSON when a client sends one. */
+export const INTEGRATION_CONFIG_MAX_BYTES = 32 * 1024;
+const IntegrationConfigInputSchema = boundedJsonObjectSchema(INTEGRATION_CONFIG_MAX_BYTES);
+
 export const IntegrationConnectionRecordSchema = z.object({
   id: IntegrationConnectionIdSchema,
   venueId: VenueIdSchema,
@@ -116,7 +122,7 @@ export const CreateIntegrationConnectionSchema = z.object({
   status: IntegrationConnectionStatusSchema.default("pending_setup"),
   credentialMode: IntegrationCredentialModeSchema.default("not_configured"),
   credentialRef: z.string().trim().min(1).max(200).nullable().optional(),
-  config: IntegrationConfigSchema.default({}),
+  config: IntegrationConfigInputSchema.default({}),
 }).strict();
 export type CreateIntegrationConnection = z.infer<typeof CreateIntegrationConnectionSchema>;
 
@@ -125,7 +131,7 @@ export const UpdateIntegrationConnectionSchema = z.object({
   status: IntegrationConnectionStatusSchema.optional(),
   credentialMode: IntegrationCredentialModeSchema.optional(),
   credentialRef: z.string().trim().min(1).max(200).nullable().optional(),
-  config: IntegrationConfigSchema.optional(),
+  config: IntegrationConfigInputSchema.optional(),
 }).strict();
 export type UpdateIntegrationConnection = z.infer<typeof UpdateIntegrationConnectionSchema>;
 
@@ -239,7 +245,7 @@ export type IntegrationEvent = z.infer<typeof IntegrationEventSchema>;
 export const WebhookOutboundTestInputSchema = z.object({
   venueId: VenueIdSchema,
   eventType: z.string().trim().min(1).max(120),
-  payload: IntegrationConfigSchema,
+  payload: IntegrationConfigInputSchema,
   signingSecretRef: z.string().trim().min(1).max(200).nullable().optional(),
 }).strict();
 export type WebhookOutboundTestInput = z.infer<typeof WebhookOutboundTestInputSchema>;

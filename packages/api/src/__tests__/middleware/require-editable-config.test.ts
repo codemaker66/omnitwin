@@ -8,7 +8,9 @@ import {
 // `checkConfigEditable` — the fail-closed post-validation helper
 //
 // Contract under test:
-//   1. Admin role bypasses without a DB round-trip.
+//   1. A platform admin bypasses without a DB round-trip; the layout's own
+//      venue admin bypasses once its venue is read, and another venue's
+//      admin is held like a planner.
 //   2. DB error → { ok: false, status: 503, code: CONFIG_LOCK_UNAVAILABLE }.
 //   3. Unknown config (row undefined) → { ok: true } so the route's own
 //      404 path handles it.
@@ -26,10 +28,10 @@ import {
  */
 function fakeDb(behavior: "error" | "not-found" | { reviewStatus: string }): ConfigReviewStatusReader {
   // eslint-disable-next-line @typescript-eslint/require-await -- thenable shape required by Drizzle query chain
-  const limit = async (): Promise<{ reviewStatus: string }[]> => {
+  const limit = async (): Promise<{ reviewStatus: string; venueId: string }[]> => {
     if (behavior === "error") throw new Error("simulated DB outage");
     if (behavior === "not-found") return [];
-    return [behavior];
+    return [{ ...behavior, venueId: VENUE_ID }];
   };
   const where = (): { limit: typeof limit } => ({ limit });
   const from = (): { where: typeof where } => ({ where });
@@ -38,18 +40,28 @@ function fakeDb(behavior: "error" | "not-found" | { reviewStatus: string }): Con
 }
 
 const CONFIG_ID = "11111111-1111-4111-8111-111111111111";
+const VENUE_ID = "22222222-2222-4222-8222-222222222222";
+const PLANNER = { role: "planner", venueId: null, platformRole: "none" } as const;
+const VENUE_ADMIN = { role: "admin", venueId: VENUE_ID, platformRole: "none" } as const;
+const OTHER_VENUE_ADMIN = { role: "admin", venueId: "33333333-3333-4333-8333-333333333333", platformRole: "none" } as const;
+const PLATFORM_ADMIN = { role: "staff", venueId: null, platformRole: "admin" } as const;
 
 describe("checkConfigEditable — fail-closed gate", () => {
-  it("admin bypasses without a DB round-trip", async () => {
-    // `fakeDb("error")` would throw — but admin short-circuits
-    // before the DB call, so the error never fires. Proves the
-    // admin branch is genuinely pre-DB.
-    const result = await checkConfigEditable(fakeDb("error"), CONFIG_ID, "admin");
+  it("a platform admin bypasses without a DB round-trip", async () => {
+    // `fakeDb("error")` would throw — but a platform admin short-circuits
+    // before the DB call, so the error never fires. Proves the branch is
+    // genuinely pre-DB.
+    const result = await checkConfigEditable(fakeDb("error"), CONFIG_ID, PLATFORM_ADMIN);
     expect(result).toEqual({ ok: true });
   });
 
+  it("reads the layout's venue before a venue admin bypasses", async () => {
+    const result = await checkConfigEditable(fakeDb("error"), CONFIG_ID, VENUE_ADMIN);
+    expect(result).toMatchObject({ ok: false, status: 503 });
+  });
+
   it("returns 503 CONFIG_LOCK_UNAVAILABLE on DB error (non-admin)", async () => {
-    const result = await checkConfigEditable(fakeDb("error"), CONFIG_ID, "planner");
+    const result = await checkConfigEditable(fakeDb("error"), CONFIG_ID, PLANNER);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected not ok");
     expect(result.status).toBe(503);
@@ -57,12 +69,12 @@ describe("checkConfigEditable — fail-closed gate", () => {
   });
 
   it("returns { ok: true } when config row is absent (404 path delegated to route)", async () => {
-    const result = await checkConfigEditable(fakeDb("not-found"), CONFIG_ID, "planner");
+    const result = await checkConfigEditable(fakeDb("not-found"), CONFIG_ID, PLANNER);
     expect(result).toEqual({ ok: true });
   });
 
   it("allows draft state", async () => {
-    const result = await checkConfigEditable(fakeDb({ reviewStatus: "draft" }), CONFIG_ID, "planner");
+    const result = await checkConfigEditable(fakeDb({ reviewStatus: "draft" }), CONFIG_ID, PLANNER);
     expect(result).toEqual({ ok: true });
   });
 
@@ -70,7 +82,7 @@ describe("checkConfigEditable — fail-closed gate", () => {
     const result = await checkConfigEditable(
       fakeDb({ reviewStatus: "changes_requested" }),
       CONFIG_ID,
-      "planner",
+      PLANNER,
     );
     expect(result).toEqual({ ok: true });
   });
@@ -79,7 +91,7 @@ describe("checkConfigEditable — fail-closed gate", () => {
     const result = await checkConfigEditable(
       fakeDb({ reviewStatus: "rejected" }),
       CONFIG_ID,
-      "planner",
+      PLANNER,
     );
     expect(result).toEqual({ ok: true });
   });
@@ -88,7 +100,7 @@ describe("checkConfigEditable — fail-closed gate", () => {
     const result = await checkConfigEditable(
       fakeDb({ reviewStatus: "submitted" }),
       CONFIG_ID,
-      "planner",
+      PLANNER,
     );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected not ok");
@@ -101,7 +113,7 @@ describe("checkConfigEditable — fail-closed gate", () => {
     const result = await checkConfigEditable(
       fakeDb({ reviewStatus: "under_review" }),
       CONFIG_ID,
-      "planner",
+      PLANNER,
     );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected not ok");
@@ -112,19 +124,28 @@ describe("checkConfigEditable — fail-closed gate", () => {
     const result = await checkConfigEditable(
       fakeDb({ reviewStatus: "approved" }),
       CONFIG_ID,
-      "planner",
+      PLANNER,
     );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected not ok");
     expect(result.status).toBe(409);
   });
 
-  it("admin can edit even a locked (approved) config", async () => {
+  it("the layout's venue admin can edit even a locked (approved) config", async () => {
     const result = await checkConfigEditable(
       fakeDb({ reviewStatus: "approved" }),
       CONFIG_ID,
-      "admin",
+      VENUE_ADMIN,
     );
     expect(result).toEqual({ ok: true });
+  });
+
+  it("holds another venue's admin at the lock like a planner", async () => {
+    const result = await checkConfigEditable(
+      fakeDb({ reviewStatus: "approved" }),
+      CONFIG_ID,
+      OTHER_VENUE_ADMIN,
+    );
+    expect(result).toMatchObject({ ok: false, status: 409, code: "CONFIG_LOCKED", reviewStatus: "approved" });
   });
 });

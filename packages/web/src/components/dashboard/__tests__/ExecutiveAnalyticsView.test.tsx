@@ -170,9 +170,39 @@ describe("ExecutiveAnalyticsView", () => {
 
     await waitFor(() => {
       expect(getVenueDashboardAnalyticsMock)
-        .toHaveBeenCalledWith("00000000-0000-4000-8000-000000004004");
+        .toHaveBeenCalledWith("00000000-0000-4000-8000-000000004004", expect.any(AbortSignal));
     });
     expect(await screen.findByText("Executive analytics")).toBeDefined();
+  });
+
+  it("drops a read that no longer belongs to what the page shows, however late it arrives (dash-ops-5)", async () => {
+    // The page starts reading for the account's own venue; the account then
+    // turns out to be a platform admin, so the page asks which venue instead.
+    let answerFirst = (_data: VenueDashboardAnalytics): void => undefined;
+    const signals: AbortSignal[] = [];
+    getVenueDashboardAnalyticsMock.mockImplementation((_venueId: string | undefined, signal: AbortSignal) => {
+      signals.push(signal);
+      return signals.length === 1
+        ? new Promise<VenueDashboardAnalytics>((resolve) => { answerFirst = resolve; })
+        : Promise.resolve({ ...dashboardData(), pipelineValueMinor: 300_000 });
+    });
+    const { rerender } = render(<ExecutiveAnalyticsView />);
+    await waitFor(() => { expect(signals).toHaveLength(1); });
+    authState.user = { ...authState.user, platformRole: "admin", venueId: null };
+    rerender(<ExecutiveAnalyticsView />);
+    expect(await screen.findByText("Choose a venue")).toBeDefined();
+    expect(signals[0]?.aborted).toBe(true);
+
+    // The first read's figures arrive now, and are not shown.
+    answerFirst(dashboardData());
+    await new Promise((done) => setTimeout(done, 20));
+    expect(screen.queryByText("£12,500")).toBeNull();
+    expect(screen.getByText("Choose a venue")).toBeDefined();
+
+    // The venue chosen is the one reported.
+    await waitFor(() => { expect(screen.getByText("Second venue")).toBeDefined(); });
+    fireEvent.change(screen.getByTestId("analytics-venue-picker"), { target: { value: "00000000-0000-4000-8000-000000004004" } });
+    expect(await screen.findByText("£3,000")).toBeDefined();
   });
 
   it("asks a venue user for nothing — their own venue is their scope", async () => {
@@ -180,7 +210,7 @@ describe("ExecutiveAnalyticsView", () => {
     render(<ExecutiveAnalyticsView />);
 
     await waitFor(() => { expect(screen.getByText("Executive analytics")).toBeDefined(); });
-    expect(getVenueDashboardAnalyticsMock).toHaveBeenCalledWith(undefined);
+    expect(getVenueDashboardAnalyticsMock).toHaveBeenCalledWith(undefined, expect.any(AbortSignal));
     expect(screen.queryByTestId("analytics-venue-picker")).toBeNull();
   });
 

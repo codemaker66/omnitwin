@@ -5,6 +5,7 @@ import { BrickWall } from "../BrickWall.js";
 import { SurfaceVisibilityGroup } from "../SurfaceVisibilityGroup.js";
 import { useVisibilityStore } from "../../stores/visibility-store.js";
 import { mountFrameRoot, type FrameRoot } from "./r3f-frame-root.js";
+import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
 
 // ---------------------------------------------------------------------------
 // The planner hides the detailed room shell, bricks included, while the camera
@@ -19,12 +20,15 @@ let roots: FrameRoot[] = [];
 
 beforeEach(() => {
   useVisibilityStore.setState(initialVisibility, true);
+  // These cases walk the five-second brick-down; #329 turns wallsQuick on by default.
+  setPlannerFeaturesForTesting({ wallsQuick: false });
 });
 
 afterEach(() => {
   for (const root of roots) root.unmount();
   roots = [];
   useVisibilityStore.setState(initialVisibility, true);
+  setPlannerFeaturesForTesting(null);
 });
 
 function Wall({ active, dressed = false }: { readonly active: boolean; readonly dressed?: boolean }): React.ReactElement {

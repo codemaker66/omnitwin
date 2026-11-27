@@ -7,6 +7,7 @@ import {
   TransitionBookingSchema,
   UpdateBookingSchema,
   VIEWING_BOOKING_KIND,
+  holdsEmailAddress,
   isBookingEnquiry,
   occasionLabel,
   type DiaryCommand,
@@ -38,6 +39,7 @@ import {
 } from "../services/diary-commands.js";
 import { announcePromotionNotices, loadPromotionDraft } from "../services/hold-promotion.js";
 import { bindBookingToEvent, syncEventStatus } from "../services/event-binding.js";
+import { lockLiveRoom } from "../services/room-liveness.js";
 import { canReadDiary } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
@@ -60,6 +62,18 @@ const EnquiryBookingsQuery = z.object({ enquiryId: z.uuid() }).strict();
 
 /** Far above the bookings any one enquiry holds; the list is never paged. */
 const ENQUIRY_BOOKINGS_LIMIT = 100;
+
+/** Booking titles are at most 200 characters and never empty (booking.ts). */
+const MAX_BOOKING_TITLE_LENGTH = 200;
+
+/** Who a hold made from an enquiry is titled after: the enquiry's name, or
+ *  its email when the name is blank. Public enquiries stored before
+ *  GuestEnquirySchema treated a blank name as no name can hold "" here, and
+ *  an empty title fails every Diary read for the venue. */
+export function enquiryTitleName(enquiry: { readonly name: string; readonly email: string }): string {
+  const name = enquiry.name.trim();
+  return name === "" ? enquiry.email.trim() : name;
+}
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({
@@ -364,8 +378,18 @@ export async function bookingRoutes(
     }
 
     const occasion = occasionLabel(enquiry.eventType);
-    const fallbackTitle = `${enquiry.name}${occasion === null ? "" : ` — ${occasion}`}`;
-    const title = input.title ?? fallbackTitle.slice(0, 200);
+    const who = enquiryTitleName(enquiry);
+    const fallbackTitle = `${who}${occasion === null ? "" : ` — ${occasion}`}`;
+    // No client name for the event, which the Diary card and the handoff pack
+    // carry, when the enquiry's name is an email address (N7, A4): a guest who
+    // gave no name is filed under their email, and a name can hold another
+    // address (the email corrected since, or an address typed as a name).
+    const clientName = holdsEmailAddress(who) || who.toLowerCase() === enquiry.email.trim().toLowerCase() ? null : enquiry.name;
+    const title = input.title ?? fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH);
+    // A new event takes the hold's title unless it holds an email address,
+    // which eventNameFor counts as no title (the bind itself drops only an
+    // address cut at 200 characters, titleWithoutEnquiryEmail): the event is
+    // then named by its occasion and day.
     const eventType = input.eventType ?? enquiry.eventType;
     const startsAt = new Date(input.startsAt);
     const endsAt = new Date(input.endsAt);
@@ -375,7 +399,10 @@ export async function bookingRoutes(
       // have (a second room for the same wedding), or makes the enquiry's
       // first event, in the hold's own transaction. The enquiry row is locked
       // while it does, so two holds pencilled at once still share one event.
-      const created = await db.transaction(async (tx): Promise<BookingRow | null> => {
+      const created = await db.transaction(async (tx): Promise<BookingRow | "room_deleted" | null> => {
+        // The room as it stands now, held until this commits, so a room
+        // being deleted never takes the hold (admin-venues-3).
+        if (!(await lockLiveRoom(tx, enquiry.venueId, spaceId))) return "room_deleted";
         const bound = await bindBookingToEvent(tx, {
           venueId: enquiry.venueId,
           title,
@@ -383,7 +410,7 @@ export async function bookingRoutes(
           startsAt,
           endsAt,
           createdBy: request.user.id,
-          clientName: enquiry.name,
+          clientName,
         }, { join: "enquiry", enquiryId: enquiry.id });
         // The enquiry was read at this venue above; a mismatch here means it
         // changed meanwhile, and nothing is written.
@@ -417,6 +444,9 @@ export async function bookingRoutes(
         await syncEventStatus(tx, bound.eventId);
         return row;
       });
+      if (created === "room_deleted") {
+        return await reply.status(400).send({ error: "The space does not belong to this venue", code: "SPACE_VENUE_MISMATCH" });
+      }
       if (created === null) {
         return await reply.status(409).send({
           error: "This enquiry changed while the hold was being made. Open it again and hold the date.",
@@ -457,6 +487,7 @@ export async function bookingRoutes(
         spaceId: enquiries.spaceId,
         roomChosen: enquiries.roomChosen,
         name: enquiries.name,
+        email: enquiries.email,
         state: enquiries.state,
         eventType: enquiries.eventType,
       })
@@ -501,27 +532,36 @@ export async function bookingRoutes(
     }
 
     try {
-      const [created] = await db
-        .insert(bookings)
-        .values({
-          // No event, ever: the column's default, and
-          // bookings_viewing_has_no_event refuses any other.
-          venueId: enquiry.venueId,
-          spaceId,
-          kind: VIEWING_BOOKING_KIND,
-          status: "active",
-          title: input.title ?? enquiry.name.slice(0, 200),
-          eventType: null,
-          startsAt: new Date(input.startsAt),
-          endsAt: new Date(input.endsAt),
-          rank: null,
-          jointFlag: false,
-          ownerUserId,
-          notes: input.notes ?? null,
-          createdBy: request.user.id,
-          enquiryId: enquiry.id,
-        })
-        .returning();
+      // The room as it stands now, held until the viewing is written, so a
+      // room being deleted never takes it (admin-venues-3).
+      const created = await db.transaction(async (tx): Promise<BookingRow | "room_deleted" | undefined> => {
+        if (!(await lockLiveRoom(tx, enquiry.venueId, spaceId))) return "room_deleted";
+        const [row] = await tx
+          .insert(bookings)
+          .values({
+            // No event, ever: the column's default, and
+            // bookings_viewing_has_no_event refuses any other.
+            venueId: enquiry.venueId,
+            spaceId,
+            kind: VIEWING_BOOKING_KIND,
+            status: "active",
+            title: input.title ?? enquiryTitleName(enquiry).slice(0, MAX_BOOKING_TITLE_LENGTH),
+            eventType: null,
+            startsAt: new Date(input.startsAt),
+            endsAt: new Date(input.endsAt),
+            rank: null,
+            jointFlag: false,
+            ownerUserId,
+            notes: input.notes ?? null,
+            createdBy: request.user.id,
+            enquiryId: enquiry.id,
+          })
+          .returning();
+        return row;
+      });
+      if (created === "room_deleted") {
+        return await reply.status(400).send({ error: "The space does not belong to this venue", code: "SPACE_VENUE_MISMATCH" });
+      }
       if (created === undefined) {
         return await reply.status(500).send({ error: "Failed to book the viewing", code: "BOOKING_CREATE_FAILED" });
       }

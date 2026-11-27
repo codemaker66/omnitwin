@@ -1,18 +1,21 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ActivityIndicator } from "../components/shared/Activity.js";
-import { handOffPublicConfiguration, prefetchPlannerSpace, useEditorStore } from "../stores/editor-store.js";
+import { closeLayout, handOffPublicConfiguration, prefetchPlannerSpace, saveBeforeLayoutChange, useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
+import { NOTE_HELD_CODE, pieceNamedForRefusedSave, refusedOverHeldNote } from "../lib/guest-plan-notes.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { EventLinkedPlannerBootstrap } from "../components/editor/EventLinkedPlannerBootstrap.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
+import { PlannerLeavingNotes } from "../components/editor/PlannerLeavingNotes.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 import { LayoutLiveLayer } from "../components/editor/LayoutLiveLayer.js";
 import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
+import { EventKindPicker } from "../components/editor/event-kind/EventKindPicker.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
@@ -24,10 +27,12 @@ import {
 } from "../lib/truth-mode-summary.js";
 import { getConfig, getPublicConfig, type Configuration } from "../api/configurations.js";
 import { claimTrackedDraft } from "../lib/planner-claim.js";
+import { layoutClaimedEventKind } from "../lib/event-kind-record.js";
+import { usePlannerDraftClaim } from "../hooks/use-planner-draft-claim.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
-import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { plannerChromeRequested, setMountedPlannerChrome } from "../lib/planner-chrome-flag.js";
 import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
   resolvePlannerVenue,
@@ -35,6 +40,7 @@ import {
 } from "../lib/planner-venue-resolution.js";
 import * as spacesApi from "../api/spaces.js";
 import { recordPlannerArrivalChoice } from "../lib/planner-room-arrival.js";
+import { roomSwitchFrom, takeRoomSwitchApproval } from "../lib/planner-room-switch.js";
 import { PlannerWorkContext, type PlannerWork } from "../components/scene/planner-work.js";
 import "../components/editor/MobilePlannerChrome.css";
 
@@ -213,6 +219,7 @@ export function EditorPage(): React.ReactElement {
   const urlConfigId = params.configId ?? params.code;
   const routeVenueSlug = params.venueSlug;
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const requestedEventId = searchParams.get("eventId");
   const carriedSearch = searchParams.toString();
   // "Start a new plan" asks for a fresh plan, never a reused one (A-X3).
@@ -261,6 +268,62 @@ export function EditorPage(): React.ReactElement {
       void useEditorStore.getState().loadConfiguration(urlConfigId, isAuthenticated);
     }
   }, [urlConfigId, storeConfigId, isAuthenticated]);
+
+  // A signed-in person's own draft, open at its address, becomes theirs. The
+  // page asks, not only the sign-in dialog: signing in sends the person back
+  // here or remounts this page inside Clerk's provider, and either way the
+  // dialog is gone before the account is known (audit web-auth-routing-2).
+  // A plan still being started below is claimed there, before it has an address.
+  usePlannerDraftClaim(urlConfigId !== undefined && urlConfigId === storeConfigId);
+
+  // A guest plan opened before the sign-in resolved was read the public way,
+  // without its notes, and saves that way. Once the person is known, the store
+  // reads it again through the signed-in routes if those answer them, and only
+  // when nothing waits to be saved (delta review of #388, B2).
+  const openReadWithoutNotes = useEditorStore((s) => s.isPublicPreview && !s.notesIncluded);
+  const nothingWaitsToSave = useEditorStore((s) => !s.isDirty && !s.isSaving && s.saveConflict === null);
+  useEffect(() => {
+    if (!isAuthenticated || storeConfigId === null || !openReadWithoutNotes || !nothingWaitsToSave) return;
+    void useEditorStore.getState().readAgainForSignedInRoutes();
+  }, [isAuthenticated, authUserId, authRole, authVenueId, storeConfigId, openReadWithoutNotes, nothingWaitsToSave]);
+
+  // The slate's room switch (QoL D-X3) leaves this page on /plan?space=<room>
+  // with the layout it left still open, and the bootstrap below opens a room
+  // only when none is. Closing exactly that layout lets the bootstrap open the
+  // room; the note about anything left behind survives. The slate settled the
+  // layout's work before navigating; arriving at that entry any other way
+  // (Back, then Forward) gives the work its chance first, and a layout whose
+  // work could be neither saved nor kept stays open.
+  const roomSwitch = roomSwitchFrom(location.state);
+  const leavingLayout = roomSwitch?.leavingLayout ?? null;
+  const roomSwitchApproval = roomSwitch?.approval ?? "";
+  useEffect(() => {
+    if (urlConfigId !== undefined || requestedEventId !== null) return;
+    if (leavingLayout === null || storeConfigId !== leavingLayout) return;
+    if (takeRoomSwitchApproval({ leavingLayout, approval: roomSwitchApproval })) {
+      closeLayout();
+      return;
+    }
+    let cancelled = false;
+    void saveBeforeLayoutChange().then((outcome) => {
+      if (cancelled || useEditorStore.getState().configId !== leavingLayout) return;
+      switch (outcome) {
+        // A refused clear's sentence, like kept work, goes in the note the room shows.
+        case "saved":
+        case "clear-refused":
+        case "kept":
+          closeLayout();
+          return;
+        case "not-kept":
+          return;
+        default: {
+          const exhausted: never = outcome;
+          throw new Error(`Unhandled layout change outcome ${String(exhausted)}`);
+        }
+      }
+    });
+    return () => { cancelled = true; };
+  }, [leavingLayout, roomSwitchApproval, requestedEventId, storeConfigId, urlConfigId]);
 
   // DEV-only session-replay bridge (G4 slice 4, the __venPerf pattern):
   // window.__venReplay() replays the open config's audit trail and diffs
@@ -364,6 +427,8 @@ export function EditorPage(): React.ReactElement {
         if (isAuthenticated && ownsRoute() && await claimOwnDraft(newConfigId)
           && ownsRoute() && useEditorStore.getState().configId === newConfigId) {
           useEditorStore.setState({ isPublicPreview: false });
+          // The event's answer, given while it was a guest's draft, now belongs with the layout (T-674).
+          layoutClaimedEventKind(newConfigId);
         }
         // Committing this draft changes storeConfigId and cleans up the effect.
         // That self-settlement may still navigate, but only for the same route,
@@ -499,6 +564,12 @@ function PlannerChrome(): React.ReactElement {
   usePlannerToolKeys();
   const location = useLocation();
   const chrome = useMemo(() => plannerChromeRequested(location.search), [location.search]);
+  // The scene asks which chrome is mounted, and this is the one answer: the address and the device's memory can say
+  // something else by the time of a click (another tab's flag), and what is on screen has not changed.
+  useLayoutEffect(() => {
+    setMountedPlannerChrome(chrome);
+    return () => { setMountedPlannerChrome(null); };
+  }, [chrome]);
   if (chrome === "v1") return <PlannerCommsLayer />;
   return (
     <Suspense
@@ -512,7 +583,7 @@ function PlannerChrome(): React.ReactElement {
       )}
     >
       <PlannerWorkContext.Provider value={NO_2D_VIEW}>
-        <PlannerChromeV2 />
+        {chrome === "hud" ? <PlannerHud /> : <PlannerChromeV2 />}
       </PlannerWorkContext.Provider>
     </Suspense>
   );
@@ -524,6 +595,12 @@ function PlannerChrome(): React.ReactElement {
  * (PlanDrawingSwitch) here so the cards offer "Continue in the drawing".
  */
 const NO_2D_VIEW: PlannerWork = { continueIn2d: null };
+
+/** The HUD (13 Nov 2026: the hall as one picture, and one shelf), loaded only behind `?chrome=hud`. */
+const PlannerHud = lazy(async () => {
+  const module = await import("../components/planner-hud/PlannerHud.js");
+  return { default: module.PlannerHud };
+});
 
 /** The new chrome (T-671), loaded only behind its flag. */
 const PlannerChromeV2 = lazy(async () => {
@@ -578,6 +655,7 @@ function PlannerCommsLayer(): React.ReactElement {
   // the config is claimed; the panel itself renders a sign-in hint if it
   // ever opens in that state (defense-in-depth).
   const canEditEventDetails = configId !== null && !isPublicPreview;
+  const hasLinkedEvent = (searchParams.get("eventId")?.trim().length ?? 0) > 0;
   const mobile = isNarrow || isTouch;
   const showStandaloneTruthIndicator = !timelinePreviewActive
     && truthModeEnabled
@@ -629,7 +707,7 @@ function PlannerCommsLayer(): React.ReactElement {
       >
         {viewMode === "3d" ? (
           <PlannerWorkContext.Provider value={plannerWork}>
-            <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
+            <PlannerCockpit mobile={mobile} hasLinkedEvent={hasLinkedEvent} />
           </PlannerWorkContext.Provider>
         ) : (
           <BlueprintPage source="editor-store" />
@@ -645,6 +723,9 @@ function PlannerCommsLayer(): React.ReactElement {
           previewLocked={timelinePreviewActive}
         />
       )}
+      {/* "What are you planning?" on a new layout's first open (T-674). Beside the 3D and 2D views, not in
+          either, so the room's name opens it in both; it portals itself into the top layer. */}
+      <EventKindPicker eventLinked={hasLinkedEvent} />
       <div className={mobile ? "mobile-planner-utilities" : undefined}>
       {mobile && showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} embedded />}
       {canEditEventDetails && viewMode === "3d" && !timelinePreviewActive && (
@@ -677,7 +758,7 @@ function PlannerCommsLayer(): React.ReactElement {
       {!mobile && showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} />}
       {saveError !== null ? (
         <SaveErrorToast message={saveError} isAuthenticated={authState} conflict={saveConflict} />
-      ) : null}
+      ) : <PlannerLeavingNotes />}
     </>
   );
 }
@@ -695,8 +776,9 @@ export function SaveErrorToast({
   message: string;
   isAuthenticated: boolean;
   conflict: { readonly expectedRevision: number; readonly currentRevision: number } | null;
-}): React.ReactElement {
+}): React.ReactElement | null {
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
+  const [putAway, setPutAway] = useState(false);
   const retry = (): void => {
     if (isLayoutTimelineMutationLocked()) return;
     useEditorStore.getState().clearSaveError();
@@ -706,14 +788,41 @@ export function SaveErrorToast({
     if (isLayoutTimelineMutationLocked()) return;
     void useEditorStore.getState().reloadAfterConflict(isAuthenticated);
   };
-  const dismiss = (): void => { useEditorStore.getState().clearSaveError(); };
-  const body = conflict === null
+  // A save refused because it would change a note this browser is not shown
+  // (409 NOTE_HELD), or leave out a piece holding one (409 HELD_PIECE_OMITTED):
+  // the API's own words, as they come, before them the piece when the planner
+  // can tell which (lib/guest-plan-notes). Retrying sends the same save to the
+  // same refusal, so it is not offered.
+  const refusedForHeldNote = useEditorStore((s) => refusedOverHeldNote(s.saveErrorCode));
+  // Dismissing such a refusal puts this notice away and nothing more. The
+  // refusal still stands, so the header, toolbox and slate go on saying it:
+  // cleared, they would read "Save layout" and "Saving" with nothing in flight
+  // and the same save sure to be refused. The next save starts it afresh (the
+  // page mounts this notice per failure). A refused clear of a note, which
+  // stands until it is dismissed, goes for good: nothing the person does can
+  // make that clear, and the save line then says where saving stands (ruling
+  // R1(b) on #388). Any other failure is cleared, and a refused clear's
+  // notice beneath it comes back.
+  const dismiss = (): void => {
+    const editor = useEditorStore.getState();
+    if (!refusedForHeldNote) {
+      editor.clearSaveError();
+      return;
+    }
+    editor.dismissRefusedClears();
+    setPutAway(true);
+  };
+  const refusedPiece = useEditorStore((s) => (s.saveErrorCode === NOTE_HELD_CODE ? pieceNamedForRefusedSave(s) : null));
+  const heldNoteRefusal = refusedPiece === null ? message : `${refusedPiece}: ${message}`;
+  const failure = conflict === null
     // Honest about where the changes are (T-635 N5, item 9): nothing keeps
     // them outside this tab, and the next attempt is Retry or the next change
     // (EditorBridge's autosave), not a timer. It used to say "Your layout is
     // safe; we'll try again."
     ? `Couldn't save — ${message}. Your changes are held in this tab until they save: press Retry, or your next change will try again.`
     : `Couldn't save — ${message} Server revision ${String(conflict.currentRevision)} is newer than this tab's revision ${String(conflict.expectedRevision)}.`;
+  const body = refusedForHeldNote ? heldNoteRefusal : failure;
+  if (putAway && refusedForHeldNote) return null;
   return (
     <div
       role="status"
@@ -735,7 +844,7 @@ export function SaveErrorToast({
     >
       <span style={{ color: "#e88", fontSize: 15 }}>⚠</span>
       <span style={{ flex: 1 }}>{body}</span>
-      {conflict === null ? (
+      {conflict === null && refusedForHeldNote ? null : conflict === null ? (
         <button
           type="button"
           onClick={retry}

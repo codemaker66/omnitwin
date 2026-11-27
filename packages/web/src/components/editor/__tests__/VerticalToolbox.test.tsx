@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as configurationApi from "../../../api/configurations.js";
@@ -10,6 +10,8 @@ import { useBookmarkStore } from "../../../stores/bookmark-store.js";
 import { useToolStore } from "../../../stores/tool-store.js";
 import { useMarkupStore } from "../../../stores/markup-store.js";
 import { usePlannerToolKeys } from "../../../lib/planner-keymap.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
+import { registerEscapeLayer } from "../../../lib/planner-keys.js";
 
 /** The editor page's tool keys (A, D, M, V and the tools' Escapes), which reach the toolbox through the tool store. */
 function ToolKeys(): null {
@@ -77,6 +79,25 @@ describe("VerticalToolbox undo buttons", () => {
     expect(screen.getByRole("button", { name: "Reload layout" })).toBeTruthy();
   });
 
+  // A save the API refused because it would change a note this browser is not
+  // shown (409 NOTE_HELD): the same save meets the same refusal.
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("shows a save refused over a held note in the API's own words, with no Retry (%s)", (code, refusal) => {
+    useEditorStore.setState({ configId: "saved", configRevision: 1, isPublicPreview: true, isDirty: true, saveError: refusal, saveErrorCode: code });
+    renderToolbox();
+    // Named for the state its caption shows, so the name holds the visible "Unsaved" (WCAG 2.5.3), and described by
+    // the refusal (delta review of #388 at 713dc3f1, C4): the button saves, whatever the refusal says to do.
+    const save = screen.getByRole("button", { name: "Unsaved changes", description: refusal });
+    expect(save.textContent).toBe("Unsaved");
+    expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/retry/iu);
+    // Any other failed save reads as it did.
+    act(() => { useEditorStore.setState({ saveError: "Network failed", saveErrorCode: "NETWORK_ERROR" }); });
+    expect(screen.getByRole("button", { name: "Save failed - retry" })).toBeTruthy();
+  });
+
   it("renders the first-visit planner coach as a movable widget with a real catalogue action", async () => {
     renderToolbox();
 
@@ -91,16 +112,19 @@ describe("VerticalToolbox undo buttons", () => {
     expect(screen.queryByTestId("planner-onboarding-widget")).toBeNull();
   });
 
-  it("renders the laser diagram controls as a movable and minimizable widget", async () => {
+  it("renders the draw controls as a movable and minimizable widget, in the planner's word for them", async () => {
     renderToolbox();
 
-    fireEvent.click(screen.getByRole("button", { name: "Laser Diagram" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
 
     const panel = await screen.findByTestId("markup-panel");
     expect(panel.getAttribute("data-floating-widget-id")).toBe("planner-markup-panel");
     expect(panel.textContent).toContain("Draw notes");
-    expect(screen.getByRole("button", { name: "Move Laser diagram" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Minimize Laser diagram" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move Draw tools" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Minimize Draw tools" })).toBeTruthy();
+    // QoL F-15: "Laser" is the retired name; nothing a person reads or hears says it.
+    const heard = [...document.body.querySelectorAll("*")].flatMap((node) => ["aria-label", "title"].map((name) => node.getAttribute(name) ?? ""));
+    expect([document.body.textContent ?? "", ...heard].join("\n")).not.toMatch(/laser/iu);
   });
 
   it("renders camera views as a movable widget and still requests bookmark navigation", async () => {
@@ -275,10 +299,158 @@ describe("VerticalToolbox Delete and the V shortcut", () => {
     expect(screen.getByRole("button", { name: /^Add Furniture/u }).getAttribute("aria-pressed")).not.toBe("true");
 
     fireEvent.keyDown(window, { code: "KeyD", key: "d" });
-    expect(screen.getByRole("button", { name: /^Laser Diagram/u }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).toBe("true");
     act(() => { useMarkupStore.getState().setActive(false); });
-    expect(screen.getByRole("button", { name: /^Laser Diagram/u }).getAttribute("aria-pressed")).not.toBe("true");
+    expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).not.toBe("true");
     fireEvent.keyDown(window, { code: "KeyD", key: "d" });
-    expect(screen.getByRole("button", { name: /^Laser Diagram/u }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("VerticalToolbox walls hint", () => {
+  afterEach(() => { setPlannerFeaturesForTesting(null); });
+
+  /** The hint is the Walls button's accessible description, as a browser computes it, and its card's words. */
+  async function hoverWalls(hint: string): Promise<void> {
+    renderToolbox();
+    const walls = screen.getByRole("button", { name: "Show All Walls", description: hint });
+    fireEvent.mouseEnter(walls.parentElement ?? walls);
+    expect((await screen.findByTestId("toolbox-tooltip")).textContent).toContain(hint);
+  }
+
+  it("says a click on a wall toggles it while any click hides one", async () => {
+    setPlannerFeaturesForTesting({ wallClickAlt: false });
+    await hoverWalls("Click a wall to toggle it.");
+  });
+
+  it("says Alt-click once only an Alt-click hides a wall (decision 4)", async () => {
+    setPlannerFeaturesForTesting({ wallClickAlt: true });
+    await hoverWalls("Alt-click a wall to hide it.");
+  });
+
+  it("says Option-click on a Mac", async () => {
+    setPlannerFeaturesForTesting({ wallClickAlt: true });
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko)");
+    await hoverWalls("Option-click a wall to hide it.");
+  });
+});
+
+describe("VerticalToolbox tool words, for the keyboard and a screen reader", () => {
+  const WALLS_HINT = "Click a wall to toggle it.";
+
+  beforeEach(() => { setPlannerFeaturesForTesting({ wallClickAlt: false }); });
+  afterEach(() => { setPlannerFeaturesForTesting(null); });
+
+  it("describes each tool by its card's words, with its shortcut when the card shows one, said once", () => {
+    renderToolbox();
+    const undo = screen.getByRole("button", { name: "Undo", description: "Undo the last change. Shortcut: Ctrl+Z." });
+    screen.getByRole("button", { name: "Show All Walls", description: WALLS_HINT });
+    // The words' span is hidden, so a reader's browse mode or swipe never reads them a second time.
+    expect(document.getElementById(undo.getAttribute("aria-describedby") ?? "")?.hidden).toBe(true);
+  });
+
+  it("never says a tool's name again as a sentence of its words", () => {
+    renderToolbox();
+    const described = screen.getAllByRole("button").filter((button) => button.hasAttribute("aria-describedby"));
+    expect(described.length).toBeGreaterThan(5);
+    for (const button of described) {
+      const name = (button.getAttribute("aria-label") ?? "").toLowerCase();
+      const words = document.getElementById(button.getAttribute("aria-describedby") ?? "")?.textContent ?? "";
+      const sentences = words.toLowerCase().split(/(?<=\.)\s+/u).map((sentence) => sentence.replace(/\.$/u, ""));
+      expect(sentences, name).not.toContain(name);
+    }
+  });
+
+  it("shows the card at once when the keyboard brings focus, not for a click's focus, and hides it from a screen reader", () => {
+    renderToolbox();
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    // A click's focus is not :focus-visible.
+    const byClick = vi.spyOn(walls, "matches").mockReturnValue(false);
+    act(() => { walls.focus(); });
+    expect(screen.queryByTestId("toolbox-tooltip")).toBeNull();
+    act(() => { walls.blur(); });
+    byClick.mockRestore();
+
+    act(() => { walls.focus(); });
+    const card = screen.getByTestId("toolbox-tooltip");
+    expect(card.textContent).toContain(WALLS_HINT);
+    expect(card.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("draws the card outside the toolbar, which scrolls and so clips, and takes it down when its tool scrolls out of view", async () => {
+    renderToolbox();
+    const toolbar = screen.getByTestId("planner-toolbar");
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    act(() => { walls.focus(); });
+    const card = screen.getByTestId("toolbox-tooltip");
+    expect(toolbar.contains(card)).toBe(false);
+    expect(card.style.position).toBe("fixed");
+
+    // The toolbar, 70 px down the screen, scrolls the tool wholly above its view.
+    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 70, 68, 400));
+    vi.spyOn(walls, "getBoundingClientRect").mockReturnValue(new DOMRect(6, 0, 56, 56));
+    act(() => { toolbar.dispatchEvent(new Event("scroll")); });
+    await waitFor(() => { expect(screen.queryByTestId("toolbox-tooltip")).toBeNull(); });
+  });
+
+  it("waits, unseen, for the browser to scroll a focused tool into view, then shows its card there", async () => {
+    renderToolbox();
+    const toolbar = screen.getByTestId("planner-toolbar");
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 70, 68, 400));
+    // Below the toolbar's view when focus arrives: the browser scrolls it in after focus.
+    const toolRect = vi.spyOn(walls, "getBoundingClientRect").mockReturnValue(new DOMRect(6, 500, 56, 56));
+    act(() => { walls.focus(); });
+    expect(screen.getByTestId("toolbox-tooltip").style.visibility).toBe("hidden");
+
+    toolRect.mockReturnValue(new DOMRect(6, 200, 56, 56));
+    act(() => { toolbar.dispatchEvent(new Event("scroll")); });
+    await waitFor(() => { expect(screen.getByTestId("toolbox-tooltip").style.visibility).toBe("visible"); });
+    // And it stays: the first, out-of-view look did not start its 250 ms exit.
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 400); }); });
+    expect(screen.getByTestId("toolbox-tooltip").style.animation).toContain("omni-tt-enter");
+  });
+
+  it("holds no place in the Escape order for a disabled tool, which draws no card", () => {
+    const cleared = vi.fn();
+    const release = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: cleared });
+    vi.useFakeTimers();
+    try {
+      renderToolbox();
+      const redo = screen.getByRole("button", { name: "Redo" });
+      expect(redo).toHaveProperty("disabled", true);
+      fireEvent.mouseEnter(redo.parentElement ?? redo);
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(screen.queryByTestId("toolbox-tooltip")).toBeNull();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(cleared).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows one card at a time: a card that opens takes the last one down at once, not over its fading exit", () => {
+    renderToolbox();
+    act(() => { screen.getByRole("button", { name: "Show All Walls" }).focus(); });
+    act(() => { screen.getByRole("button", { name: "Rotate" }).focus(); });
+    const cards = screen.getAllByTestId("toolbox-tooltip");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.textContent).toContain("Rotate selected furniture");
+  });
+
+  it("goes on Escape, and that Escape does nothing else", async () => {
+    const cleared = vi.fn();
+    const release = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: cleared });
+    try {
+      renderToolbox();
+      act(() => { screen.getByRole("button", { name: "Show All Walls" }).focus(); });
+      expect(screen.getByTestId("toolbox-tooltip")).toBeTruthy();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => { expect(screen.queryByTestId("toolbox-tooltip")).toBeNull(); });
+      expect(cleared).not.toHaveBeenCalled();
+    } finally {
+      release();
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useGuidelineStore } from "../guideline-store.js";
+import { useRoomDimensionsStore } from "../room-dimensions-store.js";
 import type { WallHit } from "../../lib/guideline.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
@@ -81,6 +82,35 @@ describe("guideline-store", () => {
       expect(guidelines[0]?.axis).toBe("x");
       expect(guidelines[0]?.fixedCoord).toBe(5);
       expect(guidelines[0]?.realDistance).toBeCloseTo(width / RENDER_SCALE);
+    });
+
+    it("spans the room the planner has loaded, wall to wall", () => {
+      // The Grand Hall's scanned interior, as usePlannerRoomDimensions sets it
+      // (now also the default room), and the Saloon, which is not the default:
+      // a guideline that read the default would fail the second.
+      const rooms = [
+        { dims: { width: 21.135, length: 10.59, height: 6.7 }, halfX: 10.5675, halfZ: 5.295 },
+        { dims: { width: 12, length: 7, height: 5.4 }, halfX: 6, halfZ: 3.5 },
+      ];
+      try {
+        for (const { dims, halfX, halfZ } of rooms) {
+          resetStore();
+          useRoomDimensionsStore.getState().setDimensions(dims);
+          useGuidelineStore.getState().activate();
+          // Points inside both rooms.
+          useGuidelineStore.getState().placeGuideline({ axis: "x", position: 0, wallCoord: 2 });
+          useGuidelineStore.getState().placeGuideline({ axis: "z", position: 0, wallCoord: -3 });
+          const [across, along] = useGuidelineStore.getState().guidelines;
+          expect(across?.start[0]).toBeCloseTo(-halfX, 9);
+          expect(across?.end[0]).toBeCloseTo(halfX, 9);
+          expect(across?.realDistance).toBeCloseTo(dims.width, 9);
+          expect(along?.start[2]).toBeCloseTo(-halfZ, 9);
+          expect(along?.end[2]).toBeCloseTo(halfZ, 9);
+          expect(along?.realDistance).toBeCloseTo(dims.length, 9);
+        }
+      } finally {
+        useRoomDimensionsStore.getState().setDimensions(GRAND_HALL_RENDER_DIMENSIONS);
+      }
     });
 
     it("increments nextId after each placement", () => {

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import Fastify from "fastify";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
@@ -18,11 +19,13 @@ import {
   createRequestCore,
   listRequestHandlers,
   listRequestsForClientEvent,
+  readRequest,
   transitionRequestCore,
   type RequestActor,
   type RequestDeny,
 } from "../services/requests.js";
 import { loadClientEventSchedule } from "../services/client-event-schedule.js";
+import { requestRoutes } from "../routes/requests.js";
 
 // Goal 19 S1 — the widened request on real rows: the client asks on their own
 // slot and gets a client-facing thread; the floor's ask gets a staff-private
@@ -186,6 +189,41 @@ describe.skipIf(target === undefined)("the widened request on migrated PostgreSQ
     await db.delete(schema.eventConfigurationLinks).where(eq(schema.eventConfigurationLinks.id, f.linkId));
     expect(refused(await createClientRequestCore(db, f.client, f.eventId, chairs(f))).status).toBe(403);
     expect(refused(await listRequestsForClientEvent(db, f.client, f.eventId)).status).toBe(403);
+  });
+
+  it("closes a client's own request and its history the moment the link is revoked; the floor still reads both (supplier-requests-7)", async () => {
+    const f = await fixture();
+    const made = granted(await createClientRequestCore(db, f.client, f.eventId, chairs(f)));
+    const server = Fastify();
+    await server.register(requestRoutes, { db, prefix: "/requests" });
+    await server.ready();
+    try {
+      const history = async (person: RequestActor): Promise<number> => (await server.inject({
+        method: "GET", url: `/requests/${made.request.id}/history`,
+        headers: { authorization: `Bearer ${JSON.stringify({ id: person.id, email: `${person.id}@s1.invalid`, name: person.name, role: person.role, venueId: person.venueId })}` },
+      })).statusCode;
+      expect(granted(await readRequest(db, f.client, made.request.id)).id).toBe(made.request.id);
+      expect(await history(f.client)).toBe(200);
+
+      await db.delete(schema.eventConfigurationLinks).where(eq(schema.eventConfigurationLinks.id, f.linkId));
+      expect(refused(await readRequest(db, f.client, made.request.id)).status).toBe(403);
+      expect(await history(f.client)).toBe(403);
+      // The venue's floor and office still read it.
+      expect(granted(await readRequest(db, f.staff, made.request.id)).id).toBe(made.request.id);
+      expect(granted(await readRequest(db, f.hallkeeper, made.request.id)).id).toBe(made.request.id);
+      expect(await history(f.staff)).toBe(200);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("closes a client's own request when the plan their link points at is deleted (supplier-requests-7)", async () => {
+    const f = await fixture();
+    const made = granted(await createClientRequestCore(db, f.client, f.eventId, chairs(f)));
+    const [link] = await db.select().from(schema.eventConfigurationLinks).where(eq(schema.eventConfigurationLinks.id, f.linkId));
+    await db.update(schema.configurations).set({ deletedAt: new Date() }).where(eq(schema.configurations.id, link?.configurationId ?? ""));
+    expect(refused(await readRequest(db, f.client, made.request.id)).status).toBe(403);
+    expect(granted(await readRequest(db, f.staff, made.request.id)).id).toBe(made.request.id);
   });
 
   it("refuses a slot that is not part of the client's event, and a hallkeeper at the client's door", async () => {

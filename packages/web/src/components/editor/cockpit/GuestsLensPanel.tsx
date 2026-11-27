@@ -25,8 +25,10 @@ import {
 import { usePlannerTruth, type PlannerTruth } from "../../../hooks/use-planner-truth.js";
 import {
   AUTO_FILL_STYLES,
+  LAY_OUT_OVER_WORDS,
   autoFillPlacedLine,
   autoFillStyleOption,
+  canLayOut,
   occasionPhrase,
   publishedFigureFor,
   roomAtSpacingLine,
@@ -34,6 +36,7 @@ import {
   type AutoFillStyle,
 } from "../../../lib/auto-fill.js";
 import type { PlacedItem } from "../../../lib/placement.js";
+import { plannerFeatureEnabled } from "../../../lib/planner-features.js";
 import { sceneFurniturePlacements } from "../../../lib/table-dressing.js";
 
 // ---------------------------------------------------------------------------
@@ -203,11 +206,20 @@ export function GuestsLensPanel(): ReactElement {
     })
     : null;
 
-  // Layouts the planner can lay out for a guest count. Only offered on a blank
-  // floor so it never wipes work in progress (auto-arrange replaces the layout).
-  const canBuild = sceneItems.length === 0;
+  // Layouts the planner can lay out for a guest count. On a blank floor, every
+  // style; with Fill over the layout, banquet rounds on any floor too, since they
+  // re-plan the rounds and keep everything else (canLayOut). Theatre rows replace
+  // the layout, so they never wipe work in progress.
+  const floorEmpty = sceneItems.length === 0;
+  const fillOver = plannerFeatureEnabled("fillKeepOuts");
+  const buildable = AUTO_FILL_STYLES.filter((option) => canLayOut(option.style, floorEmpty, fillOver));
   const [choosing, setChoosing] = useState<AutoFillStyle | null>(null);
-  const [filled, setFilled] = useState<{ readonly plan: AutoFillPlan; readonly after: readonly PlacedItem[] } | null>(null);
+  const [filled, setFilled] = useState<{
+    readonly plan: AutoFillPlan;
+    /** What a fill over a laid floor did to the rounds there, said in place of "Placed …" (planner-qol C-02). */
+    readonly doneLine: string | null;
+    readonly after: readonly PlacedItem[];
+  } | null>(null);
   const choiceRefs = useRef(new Map<AutoFillStyle, HTMLButtonElement>());
   const resultRef = useRef<HTMLDivElement>(null);
 
@@ -216,17 +228,17 @@ export function GuestsLensPanel(): ReactElement {
   useEffect(() => {
     if (requested === null) return;
     const style = useAutoFillRequestStore.getState().take();
-    if (style !== null && canBuild) setChoosing(style);
-  }, [requested, canBuild]);
+    if (style !== null && canLayOut(style, floorEmpty, fillOver)) setChoosing(style);
+  }, [requested, floorEmpty, fillOver]);
 
   const fillCurrent = filled !== null && filled.after === placedItems ? filled : null;
   useEffect(() => {
     if (fillCurrent !== null) resultRef.current?.focus({ preventScroll: true });
   }, [fillCurrent]);
 
-  const onPlaced = (plan: AutoFillPlan): void => {
+  const onPlaced = (plan: AutoFillPlan, doneLine: string | null): void => {
     setChoosing(null);
-    setFilled({ plan, after: usePlacementStore.getState().placedItems });
+    setFilled({ plan, doneLine, after: usePlacementStore.getState().placedItems });
   };
   const onBack = (): void => {
     const style = choosing;
@@ -279,7 +291,7 @@ export function GuestsLensPanel(): ReactElement {
       {truth.staff && <GenericEstimateSection model={model} />}
 
       <LensPanelSection label="Build this room">
-        {canBuild && choosing !== null ? (
+        {choosing !== null && canLayOut(choosing, floorEmpty, fillOver) ? (
           <AutoFillPrompt
             key={choosing}
             style={choosing}
@@ -287,29 +299,36 @@ export function GuestsLensPanel(): ReactElement {
             onPlaced={onPlaced}
             onCancel={onBack}
           />
-        ) : canBuild ? (
-          <div className="lens-panel__share-buttons">
-            {AUTO_FILL_STYLES.map((b) => (
-              <button
-                key={b.style}
-                ref={(node) => {
-                  if (node === null) choiceRefs.current.delete(b.style);
-                  else choiceRefs.current.set(b.style, node);
-                }}
-                type="button"
-                className="lens-panel__chip-link auto-fill__choice"
-                onClick={() => { setChoosing(b.style); }}
-                data-testid={`guests-build-${b.style}`}
-              >
-                {b.label}
-              </button>
-            ))}
-          </div>
         ) : fillCurrent !== null ? (
           <div className="auto-fill__result" ref={resultRef} tabIndex={-1} data-testid="auto-fill-result">
-            <p className="auto-fill__placed" data-testid="auto-fill-placed">{autoFillPlacedLine(fillCurrent.plan)}</p>
+            <p className="auto-fill__placed" data-testid="auto-fill-placed">{fillCurrent.doneLine ?? autoFillPlacedLine(fillCurrent.plan)}</p>
             {fillShort !== null && <p className="auto-fill__short" data-testid="auto-fill-result-short">{fillShort}</p>}
           </div>
+        ) : buildable.length > 0 ? (
+          <>
+            <div className="lens-panel__share-buttons">
+              {buildable.map((b) => (
+                <button
+                  key={b.style}
+                  ref={(node) => {
+                    if (node === null) choiceRefs.current.delete(b.style);
+                    else choiceRefs.current.set(b.style, node);
+                  }}
+                  type="button"
+                  className="lens-panel__chip-link auto-fill__choice"
+                  onClick={() => { setChoosing(b.style); }}
+                  data-testid={`guests-build-${b.style}`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+            {!floorEmpty && (
+              <p className="lens-panel__field-hint" data-testid="guests-build-over">
+                {LAY_OUT_OVER_WORDS} Theatre rows need a clear floor.
+              </p>
+            )}
+          </>
         ) : (
           <p className="lens-panel__field-hint" data-testid="guests-build-blocked">Clear the floor to lay out a fresh room.</p>
         )}

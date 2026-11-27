@@ -571,3 +571,73 @@ describe("the name a template is offered under", () => {
     expect(suggestedTemplateName(`${"R".repeat(118)}😀`, null)).toBe(`${"R".repeat(118)}😀`);
   });
 });
+
+describe("a rate for particular dates in place of the template's entry", () => {
+  const EVENING = "00000000-0000-4000-8000-0000000000b1";
+  const HOGMANAY = "00000000-0000-4000-8000-0000000000b2";
+  const everyday = rule({ id: EVENING, spaceId: GRAND_HALL, name: "Grand Hall — Evening", amount: "2400.00", appliesFrom: "19:00:00", appliesUntil: "00:30:00" });
+  const hogmanay = rule({
+    id: HOGMANAY, spaceId: GRAND_HALL, name: "Grand Hall — Evening, Hogmanay", amount: "4000.00", appliesFrom: "19:00:00", appliesUntil: "00:30:00",
+    validFrom: "2026-12-31", validTo: "2026-12-31",
+  });
+  const dated = [everyday, hogmanay, DINNER_RULE];
+  const hall = template({ message: "", lines: [priceList(EVENING, "Grand Hall — Evening", "flat_rate", 1), priceList(DINNER, "Dinner", "per_head")] });
+  const NEW_YEARS_EVE: TemplateEvent = { ...EVENT, eventDate: "2026-12-31" };
+  const TAKES_THE_PLACE = "On 31 December 2026, “Grand Hall — Evening, Hogmanay” takes the place of Grand Hall — Evening.";
+
+  it("prices the line by the dated rate on its date, as Add from price list does, and says so in the list's words", () => {
+    const applied = applyTemplate(hall, dated, NEW_YEARS_EVE, EMPTY_DRAFT, "replace", nameOfRoom);
+    expect(applied.draft.lines.map(({ description, quantity, pounds, listed }) => ({ description, quantity, pounds, listed }))).toEqual([
+      {
+        description: "Grand Hall — Evening, Hogmanay", quantity: "1", pounds: "4000",
+        listed: { pricingRuleId: HOGMANAY, ruleType: "flat_rate", description: "Grand Hall — Evening, Hogmanay" },
+      },
+      { description: "Dinner", quantity: "120", pounds: "65", listed: { pricingRuleId: DINNER, ruleType: "per_head", description: "Dinner" } },
+    ]);
+    expect(applied.said).toEqual([TAKES_THE_PLACE]);
+    expect(applied.summary).toBe("Started from Grand Hall wedding: its 2 lines.");
+  });
+
+  it("does not add the hall again when the dated rate is already in the quote", () => {
+    const listed = { pricingRuleId: HOGMANAY, ruleType: "flat_rate", description: "Grand Hall — Evening, Hogmanay" } as const;
+    const quoted: ComposerDraft = { ...EMPTY_DRAFT, lines: [{ description: "Grand Hall — Evening, Hogmanay", quantity: "1", pounds: "4000", listed }] };
+    const applied = applyTemplate(hall, dated, NEW_YEARS_EVE, quoted, "add", nameOfRoom);
+    expect(applied.draft.lines.map((line) => line.description)).toEqual(["Grand Hall — Evening, Hogmanay", "Dinner"]);
+    expect(applied.summary).toBe("Added 1 of Grand Hall wedding's 2 lines.");
+    expect(applied.said).toEqual([TAKES_THE_PLACE, "Already in the quote, so not added again: Grand Hall — Evening, Hogmanay."]);
+
+    // Added from the list and renamed since, its words as added: still the hall.
+    const renamed = { ...listed, description: "Hogmanay hall hire" };
+    const asAdded: ComposerDraft = { ...EMPTY_DRAFT, lines: [{ description: "Hogmanay hall hire", quantity: "1", pounds: "4000", listed: renamed }] };
+    expect(applyTemplate(hall, dated, NEW_YEARS_EVE, asAdded, "add", nameOfRoom).draft.lines.map((line) => line.description))
+      .toEqual(["Hogmanay hall hire", "Dinner"]);
+  });
+
+  it("adds the dated rate once when the template holds both it and the everyday rate", () => {
+    const both = template({ message: "", lines: [priceList(EVENING, "Grand Hall — Evening", "flat_rate", 1), priceList(HOGMANAY, "Grand Hall — Evening, Hogmanay", "flat_rate", 1)] });
+    const applied = applyTemplate(both, dated, NEW_YEARS_EVE, EMPTY_DRAFT, "replace", nameOfRoom);
+    expect(applied.draft.lines.map(({ description, pounds }) => [description, pounds])).toEqual([["Grand Hall — Evening, Hogmanay", "4000"]]);
+    expect(applied.said).toEqual([TAKES_THE_PLACE]);
+  });
+
+  it("prices the everyday rate, and says nothing of the dated one, on an ordinary date", () => {
+    const applied = applyTemplate(hall, dated, { ...EVENT, eventDate: "2026-12-30" }, EMPTY_DRAFT, "replace", nameOfRoom);
+    expect(applied.draft.lines.map(({ description, pounds }) => [description, pounds])).toEqual([["Grand Hall — Evening", "2400"], ["Dinner", "65"]]);
+    expect(applied.said).toEqual([]);
+  });
+
+  it("prices the saved entry with no date yet, saying nothing of a rate it does not stand in for", () => {
+    const applied = applyTemplate(hall, dated, { ...EVENT, eventDate: null }, EMPTY_DRAFT, "replace", nameOfRoom);
+    expect(applied.draft.lines[0]).toMatchObject({ description: "Grand Hall — Evening", pounds: "2400" });
+    expect(applied.said).toEqual([]);
+  });
+
+  it("treats a saved dated rate not priced for the date, or a switched-off everyday one, as before", () => {
+    const notThen = applyTemplate(template({ message: "", lines: [priceList(HOGMANAY, "Grand Hall — Evening, Hogmanay", "flat_rate", 1)] }), dated, EVENT, EMPTY_DRAFT, "replace", nameOfRoom);
+    expect(notThen.draft.lines).toEqual([]);
+    expect(notThen.said).toEqual(["Not priced for 5 June 2027: Grand Hall — Evening, Hogmanay."]);
+    const off = applyTemplate(hall, [rule({ ...everyday, isActive: false }), hogmanay, DINNER_RULE], NEW_YEARS_EVE, EMPTY_DRAFT, "replace", nameOfRoom);
+    expect(off.draft.lines.map((line) => line.description)).toEqual(["Dinner"]);
+    expect(off.said).toEqual(["No longer on the price list: Grand Hall — Evening."]);
+  });
+});

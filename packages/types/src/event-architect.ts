@@ -57,7 +57,7 @@ export const EventArchitectBriefSchema = z.object({
   startTime: z.string().trim().min(1).max(40).nullable(),
   endTime: z.string().trim().min(1).max(40).nullable(),
   serviceModel: EventArchitectServiceModelSchema,
-  accessibilityRequirements: z.array(EventArchitectAccessibilityRequirementSchema),
+  accessibilityRequirements: z.array(EventArchitectAccessibilityRequirementSchema).max(10),
   planningPrompt: z.string().trim().max(2000).nullable(),
 }).strict();
 export type EventArchitectBrief = z.infer<typeof EventArchitectBriefSchema>;
@@ -319,9 +319,13 @@ export type EventArchitectOpsReviewDecision = z.infer<
   typeof EventArchitectOpsReviewDecisionSchema
 >;
 
+// The authority a review is stored under, one per reviewing role. The roles
+// that hold each are EVENT_ARCHITECT_OPS_REVIEW_AUTHORITY_BY_ROLE
+// (event-architect-ops-reviewers.ts); the database CHECK is migration 0107's.
 export const EventArchitectOpsReviewerAuthoritySchema = z.enum([
   "venue_staff",
   "venue_hallkeeper",
+  "venue_manager",
   "venue_admin",
   "platform_admin",
 ]);

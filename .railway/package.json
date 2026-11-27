@@ -1,0 +1,8 @@
+{
+  "name": "venviewer-railway-config",
+  "private": true,
+  "description": "Railway's TypeScript kit, for planning railway.ts. Not part of the pnpm workspace.",
+  "devDependencies": {
+    "railway": "3.17.0"
+  }
+}

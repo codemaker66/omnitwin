@@ -4,6 +4,7 @@ import { getConfig, getConfigSummaries, type Configuration } from "../../api/con
 import { getEventPhaseGraph } from "../../api/events.js";
 import { getVenue, type VenueDetail } from "../../api/spaces.js";
 import { ApiError } from "../../api/client.js";
+import { getClientEventSchedule } from "../../api/client-event-schedule.js";
 import { resolveEventLinkedLayouts } from "../event-linked-layouts.js";
 
 // ---------------------------------------------------------------------------
@@ -133,5 +134,24 @@ describe("resolveEventLinkedLayouts (staff path)", () => {
     vi.mocked(getEventPhaseGraph).mockResolvedValue(graphLinking(2));
     vi.mocked(getConfigSummaries).mockRejectedValue(new ApiError(503, "Unavailable", "DB_UNREACHABLE"));
     await expect(resolve()).rejects.toThrow("Some linked layouts could not be checked. Retry to load the complete choice.");
+  });
+});
+
+describe("resolveEventLinkedLayouts names an event stored without a name (the event-name ruling)", () => {
+  it("by its occasion and the venue's day, on the staff path", async () => {
+    const graph = graphLinking(0);
+    vi.mocked(getEventPhaseGraph).mockResolvedValue({ ...graph, event: { ...graph.event, name: "" } });
+    vi.mocked(getConfigSummaries).mockResolvedValue([]);
+    expect((await resolve()).eventName).toBe("Drinks reception, 24 September 2026");
+  });
+
+  it("by its occasion and the venue's day, on the client's path", async () => {
+    vi.mocked(getClientEventSchedule).mockResolvedValue({
+      event: { id: EVENT, venueId: VENUE, name: "", eventType: "reception", status: "in_planning", startsAt: NOW, endsAt: null, guestCount: 0 },
+      venue: { id: VENUE, name: "Test venue", timezone: "Europe/London" },
+      scheduleState: "working", phases: [], layouts: [], slots: [],
+    });
+    const result = await resolveEventLinkedLayouts({ eventId: EVENT, venueSlug: "test-venue", spaceSlug: null, isCurrent: () => true, customer: true });
+    expect(result.eventName).toBe("Drinks reception, 24 September 2026");
   });
 });

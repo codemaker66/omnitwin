@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within, type BoundFunctions, type queries } from "@testing-library/react";
 import { StrictMode } from "react";
 import { ApiError } from "../../../api/client.js";
 import { ProposalsDesk } from "../ProposalsDesk.js";
-import { forgetProposalMemory } from "../proposals/proposal-memory.js";
+import { forgetProposalMemory, recallDraft, rememberDraft } from "../proposals/proposal-memory.js";
+import { resetTradesHallVenueReads } from "../../../hooks/use-trades-hall-venue.js";
 
 // ---------------------------------------------------------------------------
 // The Proposals desk (roadmap X1): proposals grouped as a booker works them,
@@ -30,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   transitionProposal: vi.fn(),
   changeProposalLayout: vi.fn(),
   listSpaces: vi.fn(),
+  getVenue: vi.fn(),
   listPricingRules: vi.fn(),
   listProposalTemplates: vi.fn(),
   createProposalTemplate: vi.fn(),
@@ -61,7 +63,17 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   transitionProposal: mocks.transitionProposal,
   changeProposalLayout: mocks.changeProposalLayout,
 }));
-vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
+vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces, getVenue: mocks.getVenue }));
+// An accepted proposal reads its contract and deposit (Plan 19 L5): none here.
+vi.mock("../../../api/deposits.js", () => ({
+  getProposalDeposit: () => Promise.resolve({ availability: "off", requests: [] }),
+  requestProposalDeposit: vi.fn(),
+  cancelProposalDeposit: vi.fn(),
+}));
+vi.mock("../../../api/contracts.js", () => ({
+  getProposalContract: () => Promise.resolve({ acceptedVersion: null, clientEmail: null, versions: [] }),
+  prepareProposalContract: vi.fn(),
+}));
 vi.mock("../../../api/ai-assistant.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../api/ai-assistant.js")>(),
   draftProposalMessage: mocks.draftProposalMessage,
@@ -186,6 +198,9 @@ function reloadHeld(): boolean {
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   ai.available = false;
+  // The venue "v1" is Trades Hall unless a test says otherwise; each test reads it afresh.
+  resetTradesHallVenueReads();
+  mocks.getVenue.mockResolvedValue({ id: "v1", slug: "trades-hall-glasgow", name: "Trades Hall" });
   // What the booker wrote lives for the page; each test is a fresh page.
   forgetProposalMemory();
   authState.user = { ...authState.user, id: "u1", name: "Catherine Tait", venueId: "v1" };
@@ -288,8 +303,12 @@ describe("the ledger", () => {
     await screen.findByTestId("proposal-row-p3");
     fireEvent.click(screen.getByRole("button", { name: "With the client, 2" }));
     await waitFor(() => { expect(mocks.listProposalDesk).toHaveBeenLastCalledWith({ limit: 50, offset: 0, group: "with_client" }); });
-    await waitFor(() => { expect(screen.queryByTestId("proposal-row-p3")).toBeNull(); });
-    expect(screen.getByRole("button", { name: "Drafts, 1" })).toBeDefined();
+    // The draft goes when the group is read, and the stages show no counts
+    // until its answer is drawn: both hold only once it is.
+    await waitFor(() => {
+      expect(screen.queryByTestId("proposal-row-p3")).toBeNull();
+      expect(screen.getByRole("button", { name: "Drafts, 1" })).toBeDefined();
+    });
     expect(screen.getByRole("button", { name: "All, 3" })).toBeDefined();
   });
 
@@ -305,6 +324,23 @@ describe("the ledger", () => {
     expect((await screen.findByTestId("proposal-list-error")).textContent).toContain("The proposals could not be read.");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByTestId("proposal-row-p1")).toBeDefined();
+  });
+
+  // Release audit dash-commercial-4: "now" was taken once, as the desk opened.
+  it("turns the day at the venue's midnight while open, so its ages and date stay true", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    // 23:58:30 in Glasgow on Tuesday 14 July 2026 (BST), 22:58 in UTC.
+    vi.setSystemTime("2026-07-14T22:58:30.000Z");
+    existing = [proposal({ id: "p2", title: "Draft lunch", currentVersion: 1, updatedAt: "2026-07-13T10:00:00.000Z" })];
+    render(<ProposalsDesk />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(row("p2").getAttribute("aria-label")).toContain("changed yesterday");
+    expect(screen.getByText("Tuesday 14 July")).toBeDefined();
+
+    // Two minutes on: 00:00:30 on Wednesday 15 July in Glasgow.
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(row("p2").getAttribute("aria-label")).toContain("changed 2 days ago");
+    expect(screen.getByText("Wednesday 15 July")).toBeDefined();
   });
 });
 
@@ -722,14 +758,16 @@ describe("the ledger and the open proposal", () => {
     fireEvent.click(panel.getByTestId("withdraw-confirm-button"));
     await panel.findByRole("alert");
     await waitFor(() => { expect(screen.getByTestId("proposals-summary").textContent).toBe("Nothing is waiting on you."); });
-    await act(async () => { await Promise.resolve(); });
+    // Nor the proposal twice: the refusal's own read of it is on its way, and
+    // said. It goes out once the render that asks for it is drawn, and the
+    // list's answer can be drawn in that same render.
+    await waitFor(() => { expect(mocks.getDeskProposal.mock.calls.length).toBe(proposalReads + 1); });
     expect(mocks.listProposalDesk.mock.calls.length).toBe(listReads + 1);
-    // Nor the proposal twice: the refusal's own read of it is on its way, and said.
-    expect(mocks.getDeskProposal.mock.calls.length).toBe(proposalReads + 1);
     expect(panel.getByText("Refreshing the proposal…")).toBeDefined();
     await act(async () => { answer(existing[0]); await Promise.resolve(); });
     expect(await panel.findByText("Accepted", { selector: ".enq-chip" })).toBeDefined();
     expect(mocks.listProposalDesk.mock.calls.length).toBe(listReads + 1);
+    expect(mocks.getDeskProposal.mock.calls.length).toBe(proposalReads + 1);
     expect(panel.queryByText("Refreshing the proposal…")).toBeNull();
   });
 
@@ -1221,7 +1259,9 @@ describe("the next version", () => {
     act(() => { answer(checked()); });
     await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
     expect(panel.queryByTestId("composer-check-again")).toBeNull();
-    expect(document.activeElement).toBe(panel.getByTestId("composer-start"));
+    // Focus moves in an effect after the answer is drawn: on a loaded machine
+    // the wait above can end in between (CI, 18 October 2026).
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("composer-start")); });
   });
 
   it("gives focus to what the next composer starts from, or to the proposal, when Check again finds it moved on", async () => {
@@ -1265,8 +1305,15 @@ describe("the next version", () => {
       if (elsewhere) row("p1").focus();
       act(() => { answer(version(1)); });
       await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toMatch(/^Starts from version 1\./u); });
-      await act(async () => { await Promise.resolve(); });
-      expect(document.activeElement).toBe(elsewhere ? row("p1") : panel.getByTestId("composer-start"));
+      // Focus is handed on by an effect after the render that shows the
+      // version: wait for it to arrive, or give it time to run and find it
+      // left where the booker put it.
+      if (elsewhere) {
+        await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 50); }); });
+        expect(document.activeElement).toBe(row("p1"));
+      } else {
+        await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("composer-start")); });
+      }
       cleanup();
       forgetProposalMemory();
     }
@@ -2407,6 +2454,113 @@ describe("the next version", () => {
     expect(reloadHeld()).toBe(false);
   });
 
+  it("keeps no copy of words the stalled save stored, though they were remembered again after it answered", async () => {
+    // The answer can land between the coming-back composer appearing and its
+    // effect remembering its words, so they are remembered again after the save
+    // put them away: on a busy machine CI saw "The version that did not save"
+    // offer words that had saved (18 October 2026). Memory is put in that state
+    // here. The version the next composer starts from holds the words, so
+    // nothing is lost and nothing is kept.
+    existing = [proposal({ status: "changes_requested", currentVersion: 1 })];
+    let saved: (value: Record<string, unknown>) => void = () => undefined;
+    mocks.createProposalVersion
+      .mockImplementationOnce(() => new Promise((resolve) => { saved = resolve; }))
+      .mockRejectedValueOnce(new ApiError(409, "A newer version was saved or sent after this was read.", "PROPOSAL_VERSION_CHANGED"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My words." } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    cleanup();
+    render(<ProposalsDesk />);
+    const back = within(await openProposal());
+    expect((await back.findByTestId<HTMLTextAreaElement>("composer-message")).value).toBe("My words.");
+    const written = recallDraft("u1", "p1");
+    expect(written?.draft.message).toBe("My words.");
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(2, { clientMessage: "My words." }));
+    await act(async () => {
+      saved(version(2, { clientMessage: "My words." }));
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    });
+    // The save puts the words away, and the composer's effect can remember
+    // them again before or after it: let both run, then hold memory where the
+    // late order leaves it.
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 50); }); });
+    rememberDraft("u1", "p1", written);
+    fireEvent.click(back.getByTestId("composer-save"));
+    await waitFor(() => { expect(back.getByTestId("composer-start").textContent).toMatch(/^Starts from version 2\./u); });
+    expect(back.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("My words.");
+    expect(back.queryByTestId("kept-version")).toBeNull();
+    expect(reloadHeld()).toBe(false);
+  });
+
+  /** A quote the API made from one line of Grand Hall hire at this price. */
+  function madeHireQuote(unitMinor: number): Record<string, unknown> {
+    return {
+      id: "33333333-3333-4333-8333-333333333333", venueId: "v1", opportunityId: null, proposalId: "p1", enquiryId: null, spaceId: null,
+      name: "Autumn gala quote", status: "draft", currency: "GBP", subtotalMinor: unitMinor, totalMinor: unitMinor, validUntil: null,
+      supersededByQuoteId: null, notes: null, createdBy: "u1", createdAt: NOW, updatedAt: NOW, deletedAt: null,
+      lineItems: [{
+        id: "44444444-4444-4444-8444-444444444444", quoteId: "33333333-3333-4333-8333-333333333333", pricingRuleId: null,
+        description: "Grand Hall hire", quantity: 1, unitAmountMinor: unitMinor, lineTotalMinor: unitMinor, sortOrder: 0,
+      }],
+    };
+  }
+
+  /** Words saved by a save that stalled as the desk was left, then
+   *  remembered again by the coming-back composer after the save answered. */
+  async function staleCopyOfSavedWords(
+    words: { readonly message: string; readonly price?: string },
+    saved2: Record<string, unknown>,
+    after: Record<string, unknown>,
+  ): Promise<BoundFunctions<typeof queries>> {
+    let saved: (value: Record<string, unknown>) => void = () => undefined;
+    mocks.createProposalVersion
+      .mockImplementationOnce(() => new Promise((resolve) => { saved = resolve; }))
+      .mockRejectedValueOnce(new ApiError(409, "A newer version was saved or sent after this was read.", "PROPOSAL_VERSION_CHANGED"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: words.message } });
+    if (words.price !== undefined) fireEvent.change(panel.getByTestId("quote-price-0"), { target: { value: words.price } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    cleanup();
+    render(<ProposalsDesk />);
+    const back = within(await openProposal());
+    expect((await back.findByTestId<HTMLTextAreaElement>("composer-message")).value).toBe(words.message);
+    const written = recallDraft("u1", "p1");
+    expect(written?.draft.message).toBe(words.message);
+    existing = [proposal(after)];
+    mocks.getLatestProposalVersion.mockResolvedValue(saved2);
+    await act(async () => {
+      saved(saved2);
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 50); }); });
+    rememberDraft("u1", "p1", written);
+    return back;
+  }
+
+  it("keeps no copy of words the stalled save stored when a price was typed another way", async () => {
+    // "4600.5" saves as £4,600.50, which the version gives back as "4600.50":
+    // the same words as a version reads them, though not the same characters.
+    const hire = (minor: number): Record<string, unknown> => quoteSnapshot([{ description: "Grand Hall hire", quantity: 1, unitAmountMinor: minor }]);
+    existing = [proposal({ status: "changes_requested", currentVersion: 1 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(1, { quote: hire(440_000) }));
+    mocks.createQuote.mockResolvedValue(madeHireQuote(460_050));
+    mocks.deleteQuote.mockResolvedValue(undefined);
+    const back = await staleCopyOfSavedWords(
+      { message: "My words.", price: "4600.5" },
+      version(2, { clientMessage: "My words.", quote: hire(460_050) }),
+      { status: "changes_requested", currentVersion: 2 },
+    );
+    fireEvent.click(back.getByTestId("composer-save"));
+    await waitFor(() => { expect(back.getByTestId("composer-start").textContent).toMatch(/^Starts from version 2\./u); });
+    expect(back.queryByTestId("kept-version")).toBeNull();
+    expect(reloadHeld()).toBe(false);
+  });
+
   it("puts away only the copies there were when a save began, when it arrives after the desk was left", async () => {
     existing = [proposal({ status: "changes_requested", currentVersion: 1 })];
     let saved: (value: Record<string, unknown>) => void = () => undefined;
@@ -2721,23 +2875,64 @@ describe("the next version", () => {
     expect(mocks.createProposalVersion).not.toHaveBeenCalled();
   });
 
-  it("computes capacity guidance from the room's area and puts the careful note in", async () => {
-    mocks.listSpaces.mockResolvedValue([{
-      id: "s1", venueId: "v1", name: "Grand Hall", slug: "grand-hall", description: "", widthM: "21", lengthM: "10", heightM: "7",
-      floorPlanOutline: [], meshUrl: null, thumbnailUrl: null, sortOrder: 0, createdAt: NOW, updatedAt: NOW,
-    }]);
+  /** The Grand Hall as seeded: 21 m × 10.5 m, so 220.5 m² of bounding rectangle. */
+  const SEEDED_GRAND_HALL = {
+    id: "s1", venueId: "v1", name: "Grand Hall", slug: "grand-hall", description: "", widthM: "21", lengthM: "10.5", heightM: "7",
+    floorPlanOutline: [], meshUrl: null, thumbnailUrl: null, sortOrder: 0, createdAt: NOW, updatedAt: NOW,
+  };
+
+  it("shows staff the estimate at generic spacing and puts the venue's published figure in the client's note", async () => {
+    mocks.listSpaces.mockResolvedValue([SEEDED_GRAND_HALL]);
     render(<ProposalsDesk />);
     const panel = within(await openProposal());
-    // 21 m × 10 m = 210 m²; dinner rounds by default: floor(210 / 1.5) = 140.
+    // 220.5 m²; dinner rounds by default: floor(220.5 / 1.5) = 147, for staff only.
     fireEvent.change(await panel.findByTestId("capacity-guests"), { target: { value: "120" } });
     const result = panel.getByTestId("capacity-result");
-    expect(result.textContent).toContain("around 140 guests");
+    expect(result.textContent).toContain("Estimate at generic spacing");
+    expect(result.textContent).toContain("around 147 guests");
     expect(result.textContent).toContain("120 asked for");
-    expect(result.textContent).toContain("Planning estimate only");
+    expect(result.textContent).toContain("not the venue's published figure");
+    await waitFor(() => { expect(panel.getByTestId<HTMLButtonElement>("capacity-insert").disabled).toBe(false); });
     fireEvent.click(panel.getByTestId("capacity-insert"));
     const note = panel.getByTestId<HTMLInputElement>("composer-capacity");
-    expect(note.value).toContain("Grand Hall: comfortable for around 140 guests");
-    expect(note.value).toContain("final capacity confirmed by the venue team");
+    expect(note.value).toBe(
+      "The venue publishes 180 for dinner in the Grand Hall (Published guide · Trades Hall · 9 Jul 2026). "
+      + "Final numbers depend on the layout and are confirmed by the venue team.",
+    );
+    expect(note.value).not.toContain("147");
+  });
+
+  it("never tells the client the 339 standing worked out from floor area, only the published 250", async () => {
+    mocks.listSpaces.mockResolvedValue([SEEDED_GRAND_HALL]);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("capacity-style"), { target: { value: "cocktail" } });
+    fireEvent.change(panel.getByTestId("capacity-guests"), { target: { value: "300" } });
+    // Staff still see the arithmetic: floor(220.5 / 0.65) = 339.
+    expect(panel.getByTestId("capacity-result").textContent).toContain("around 339 guests");
+    await waitFor(() => { expect(panel.getByTestId<HTMLButtonElement>("capacity-insert").disabled).toBe(false); });
+    fireEvent.click(panel.getByTestId("capacity-insert"));
+    const note = panel.getByTestId<HTMLInputElement>("composer-capacity").value;
+    expect(note).not.toContain("339");
+    expect(note).not.toContain("comfortable for around");
+    expect(note).toBe(
+      "The venue publishes 250 for reception in the Grand Hall (Published guide · Trades Hall · 9 Jul 2026). "
+      + "300 guests is more than the published 250 for reception; the venue team will say what is possible.",
+    );
+  });
+
+  it("states no figure for another venue's room of the same name", async () => {
+    mocks.getVenue.mockResolvedValue({ id: "v1", slug: "another-hall", name: "Another Hall" });
+    mocks.listSpaces.mockResolvedValue([SEEDED_GRAND_HALL]);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("capacity-style"), { target: { value: "theatre" } });
+    await waitFor(() => { expect(panel.getByTestId<HTMLButtonElement>("capacity-insert").disabled).toBe(false); });
+    fireEvent.click(panel.getByTestId("capacity-insert"));
+    const note = panel.getByTestId<HTMLInputElement>("composer-capacity").value;
+    expect(note).toBe("The venue team confirms the capacity of the Grand Hall for this layout.");
+    expect(note).not.toMatch(/\d/u);
+    expect(mocks.getVenue).toHaveBeenCalledWith("v1");
   });
 
   it("holds capacity guidance still while a save is on its way, so nothing is put in that the version would not keep", async () => {
@@ -4709,6 +4904,23 @@ describe("Draft the message with AI", () => {
     await waitFor(() => { expect(document.activeElement).toBe(gone); });
   });
 
+  it("tells the booker to write by hand, and takes every AI draft away for the visit, when the provider is out of credit (C1)", async () => {
+    mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(503, "AI drafts are unavailable just now.", "AI_DRAFTS_UNAVAILABLE"));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My own words." } });
+    fireEvent.click(panel.getByTestId("ai-draft-ask"));
+    const unavailable = await panel.findByTestId("ai-draft-unavailable");
+    expect(unavailable.textContent).toBe("AI drafts are unavailable just now. Write this message by hand; drafts return on their own. The message is unchanged.");
+    // No draft named: every AI draft goes for the visit, not only this one.
+    expect(mocks.markAIDraftsUnavailable).toHaveBeenCalledWith();
+    expect(panel.queryByTestId("ai-draft-ask")).toBeNull();
+    expect(panel.queryByTestId("ai-draft-retry")).toBeNull();
+    expect(messageOf(element)).toBe("My own words.");
+    await waitFor(() => { expect(document.activeElement).toBe(unavailable); });
+  });
+
   it("takes AI drafting away for the visit, as calmly, when the venue's AI allowance for the month is used", async () => {
     mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(429, "This venue's AI allowance for the month is used", "AI_BUDGET_REACHED"));
     render(<ProposalsDesk />);
@@ -4746,6 +4958,14 @@ describe("Draft the message with AI", () => {
     expect(within(block).getByTestId("ai-draft-claim").textContent)
       .toBe("It includes \"photoreal digital twin\", which a proposal may not say. Change it before saving.");
     expect(within(block).getByText("Unsupported certainty was taken out of it.")).toBeDefined();
+    expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
+    expect(within(block).queryByTestId("ai-draft-withheld")).toBeNull();
+    fireEvent.click(within(block).getByTestId("ai-draft-away"));
+
+    // Plan 19, L6: what the server took out of the model's words is said, calmly.
+    block = await drafted(element, draft({ withheldCommitments: ["price", "availability"] }));
+    expect(within(block).getByTestId("ai-draft-withheld").textContent)
+      .toBe("Wording that seemed to give a price or say whether a date or room is free was taken out, as only the team confirms these.");
     expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
   });
 

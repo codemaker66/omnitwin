@@ -27,6 +27,11 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type {
+  DecisionActionClass,
+  DecisionBody,
+  DecisionEventKind,
+  DecisionReceipt,
+  DecisionStatus,
   AIUsageAttempt,
   AIUsageFeature,
   AIUsageOutcome,
@@ -34,6 +39,8 @@ import type {
   AgentTrajectory,
   BookingLostReason,
   EngagementEventKind,
+  WebVitalDeviceClass,
+  WebVitalName,
   FirstResponseChannel,
   CaptureInclude,
   CaptureSourceKind,
@@ -2741,6 +2748,110 @@ export const packageSelections = pgTable("package_selections", {
   index("package_selections_opportunity_idx").on(table.opportunityId),
   index("package_selections_proposal_idx").on(table.proposalId),
   index("package_selections_quote_idx").on(table.quoteId),
+]);
+
+// ---------------------------------------------------------------------------
+// 23c-ii. Deposits and the contract's signature (Plan 19 L5; migration 0104).
+//
+// A deposit request is figured from the accepted proposal version, named by
+// number and content hash; each Stripe Checkout Session opened for it is a
+// deposit_payments row holding the facts Stripe reported, from which its
+// state is derived (@omnitwin/types deposits.ts). `livemode` is CHECKed false:
+// this lane takes no real money. Contract versions and signatures are
+// immutable (a trigger refuses UPDATE, DELETE and TRUNCATE); actors in them
+// are ids without keys and labels, so no account change rewrites them. The
+// CHECK constraints live in the migration.
+// ---------------------------------------------------------------------------
+
+export const proposalDepositRequests = pgTable("proposal_deposit_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  proposalId: uuid("proposal_id").notNull(),
+  eventId: uuid("event_id"),
+  proposalVersion: integer("proposal_version").notNull(),
+  proposalVersionHash: varchar("proposal_version_hash", { length: 64 }).notNull(),
+  basis: varchar("basis", { length: 10 }).$type<"amount" | "percent">().notNull(),
+  percentBasisPoints: integer("percent_basis_points"),
+  quoteTotalMinor: integer("quote_total_minor").notNull(),
+  amountMinor: integer("amount_minor").notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  cancelledBy: uuid("cancelled_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => [
+  foreignKey({ columns: [table.proposalId, table.venueId], foreignColumns: [proposals.id, proposals.venueId], name: "proposal_deposit_requests_proposal_venue_fk" }),
+  foreignKey({ columns: [table.eventId, table.venueId], foreignColumns: [events.id, events.venueId], name: "proposal_deposit_requests_event_venue_fk" }),
+  unique("proposal_deposit_requests_id_venue_unique").on(table.id, table.venueId),
+  uniqueIndex("proposal_deposit_requests_one_in_force").on(table.proposalId).where(sql`${table.cancelledAt} IS NULL`),
+  index("proposal_deposit_requests_proposal_idx").on(table.proposalId, table.createdAt),
+]);
+
+export const depositPayments = pgTable("deposit_payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull(),
+  depositRequestId: uuid("deposit_request_id").notNull(),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id").notNull(),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  checkoutUrl: text("checkout_url").notNull(),
+  sessionExpiresAt: timestamp("session_expires_at", { withTimezone: true }).notNull(),
+  livemode: boolean("livemode").notNull().default(false),
+  amountMinor: integer("amount_minor").notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  amountReceivedMinor: integer("amount_received_minor"),
+  currencyReceived: varchar("currency_received", { length: 3 }),
+  amountRefundedMinor: integer("amount_refunded_minor").notNull().default(0),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  processingAt: timestamp("processing_at", { withTimezone: true }),
+  declinedAt: timestamp("declined_at", { withTimezone: true }),
+  failureMessage: varchar("failure_message", { length: 500 }),
+  failedAt: timestamp("failed_at", { withTimezone: true }),
+  expiredAt: timestamp("expired_at", { withTimezone: true }),
+  lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.depositRequestId, table.venueId], foreignColumns: [proposalDepositRequests.id, proposalDepositRequests.venueId], name: "deposit_payments_request_venue_fk" }),
+  unique("deposit_payments_session_unique").on(table.stripeCheckoutSessionId),
+  unique("deposit_payments_payment_intent_unique").on(table.stripePaymentIntentId),
+  index("deposit_payments_request_idx").on(table.depositRequestId, table.createdAt),
+]);
+
+export const proposalContractVersions = pgTable("proposal_contract_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  proposalId: uuid("proposal_id").notNull(),
+  version: integer("version").notNull(),
+  proposalVersion: integer("proposal_version").notNull(),
+  proposalVersionHash: varchar("proposal_version_hash", { length: 64 }).notNull(),
+  document: jsonb("document").$type<unknown>().notNull(),
+  documentHash: varchar("document_hash", { length: 64 }).notNull(),
+  createdBy: uuid("created_by"),
+  createdByLabel: varchar("created_by_label", { length: 255 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.proposalId, table.venueId], foreignColumns: [proposals.id, proposals.venueId], name: "proposal_contract_versions_proposal_venue_fk" }),
+  unique("proposal_contract_versions_proposal_version_unique").on(table.proposalId, table.version),
+  unique("proposal_contract_versions_id_hash_unique").on(table.id, table.documentHash),
+  unique("proposal_contract_versions_id_venue_unique").on(table.id, table.venueId),
+]);
+
+export const proposalContractSignatures = pgTable("proposal_contract_signatures", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull(),
+  contractVersionId: uuid("contract_version_id").notNull(),
+  documentHash: varchar("document_hash", { length: 64 }).notNull(),
+  signerName: varchar("signer_name", { length: 200 }).notNull(),
+  signerEmail: varchar("signer_email", { length: 255 }).notNull(),
+  consentStatement: text("consent_statement").notNull(),
+  userAgent: varchar("user_agent", { length: 512 }),
+  shareTokenId: uuid("share_token_id"),
+  shareTokenPrefix: varchar("share_token_prefix", { length: 16 }),
+  signedAt: timestamp("signed_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.contractVersionId, table.documentHash], foreignColumns: [proposalContractVersions.id, proposalContractVersions.documentHash], name: "proposal_contract_signatures_version_hash_fk" }),
+  foreignKey({ columns: [table.contractVersionId, table.venueId], foreignColumns: [proposalContractVersions.id, proposalContractVersions.venueId], name: "proposal_contract_signatures_version_venue_fk" }),
+  unique("proposal_contract_signatures_one_per_version").on(table.contractVersionId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -6162,7 +6273,10 @@ export const foundryVerifiedCheckpoints = pgTable("foundry_verified_checkpoints"
 // ---------------------------------------------------------------------------
 // Action log — G4 Slice 3 (03 §2). The append-only audit trail behind the
 // planner's Action envelope (migration 0059). Append-only by code contract:
-// no update/delete surface exists anywhere. `id` is the CLIENT action uuid
+// no update/delete surface exists anywhere, with one exception that 0059's
+// comment predates: the allergy-note retention pass blanks guests' allergy
+// notes in payload and inverse (services/dietary-retention.ts,
+// people-privacy-3), leaving the row. `id` is the CLIENT action uuid
 // (no default) so ON CONFLICT (id) DO NOTHING makes batch retries idempotent;
 // `ordinal` is the server-assigned read order (client clocks never order the
 // trail). `recorded_ts` is the operator's clock, `received_at` the server's —
@@ -6742,4 +6856,86 @@ export const venueEngagementEvents = pgTable("venue_engagement_events", {
   index("venue_engagement_events_enquiry_idx").on(table.enquiryId).where(sql`${table.enquiryId} IS NOT NULL`),
   index("venue_engagement_events_proposal_idx").on(table.proposalId, table.kind, table.recordedAt).where(sql`${table.proposalId} IS NOT NULL`),
   index("venue_engagement_events_space_idx").on(table.spaceId).where(sql`${table.spaceId} IS NOT NULL`),
+]);
+
+// Goal 09 M1, migration 0108: prepared decisions and their history. What a
+// decision was prepared as (`body`) never changes; where it stands changes
+// once, from prepared, with its receipt (decisions_guard_update). The history
+// is append-only. services/decisions.ts is the only writer.
+export const decisions = pgTable("decisions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  actionClass: varchar("action_class", { length: 40 }).$type<DecisionActionClass>().notNull(),
+  status: varchar("status", { length: 20 }).$type<DecisionStatus>().notNull().default("prepared"),
+  subjectKind: varchar("subject_kind", { length: 20 }).$type<"booking">().notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  body: jsonb("body").$type<DecisionBody>().notNull(),
+  /** Why, in the asker's words: erasable, the only column that may change after a decision is decided. */
+  reason: text("reason"),
+  preparedBy: uuid("prepared_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  preparedAt: timestamp("prepared_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  supersedes: uuid("supersedes").references((): AnyPgColumn => decisions.id, { onDelete: "restrict" }),
+  supersededBy: uuid("superseded_by").references((): AnyPgColumn => decisions.id, { onDelete: "restrict" }),
+  receipt: jsonb("receipt").$type<DecisionReceipt>(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+}, (table) => [
+  index("decisions_venue_status_prepared_idx").on(table.venueId, table.status, table.preparedAt.desc()),
+  index("decisions_subject_idx").on(table.subjectKind, table.subjectId),
+  check("decisions_action_class", sql`${table.actionClass} IN ('booking_time_move', 'guest_count_change', 'stock_shortage', 'service_request')`),
+  check("decisions_status", sql`${table.status} IN ('prepared', 'executed', 'declined', 'failed', 'superseded', 'withdrawn')`),
+  check("decisions_subject_kind", sql`${table.subjectKind} IN ('booking')`),
+  check("decisions_body_object", sql`jsonb_typeof(${table.body}) = 'object'`),
+  check("decisions_reason", sql`${table.reason} IS NULL OR char_length(${table.reason}) BETWEEN 1 AND 500`),
+  check("decisions_window", sql`${table.expiresAt} > ${table.preparedAt}`),
+  check("decisions_receipt", sql`(${table.status} IN ('executed', 'declined', 'failed')) = (${table.receipt} IS NOT NULL AND jsonb_typeof(${table.receipt}) = 'object')`),
+  check("decisions_decided_at", sql`(${table.status} = 'prepared') = (${table.decidedAt} IS NULL)`),
+  check("decisions_superseded", sql`(${table.status} = 'superseded') = (${table.supersededBy} IS NOT NULL)`),
+  check("decisions_not_self", sql`${table.supersedes} IS DISTINCT FROM ${table.id} AND ${table.supersededBy} IS DISTINCT FROM ${table.id}`),
+]);
+
+export const decisionEvents = pgTable("decision_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  decisionId: uuid("decision_id").notNull().references(() => decisions.id, { onDelete: "restrict" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  kind: varchar("kind", { length: 20 }).$type<DecisionEventKind>().notNull(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  detail: jsonb("detail").$type<Record<string, string | number | boolean | null>>().notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`clock_timestamp()`).notNull(),
+}, (table) => [
+  index("decision_events_decision_created_idx").on(table.decisionId, table.createdAt),
+  check("decision_events_kind", sql`${table.kind} IN ('prepared', 'executed', 'declined', 'failed', 'stale', 'withdrawn', 'execution_error')`),
+  check("decision_events_detail", sql`jsonb_typeof(${table.detail}) = 'object'`),
+]);
+
+// ---------------------------------------------------------------------------
+// Migration 0109: field web vitals (goal 07).
+//
+// One row per vital of a sampled page load: the route's pattern (never an
+// address), a device class, the value on its vital's step (WEB_VITAL_STEPS, so
+// its precision names no browser) and the rating it earns; not how the page
+// was reached. Nothing about the visitor. Only the UTC day it arrived, not the
+// moment, and written in shuffled hourly batches of at least ten samples of
+// one vital, page, device class and day (createWebVitalsBatch), so neither row
+// order, xmin nor restore history pairs a row with a host's request log. Kept
+// WEB_VITAL_RETENTION_DAYS, then removed by the nightly
+// cleanup. Written only by routes/public-web-vitals.ts, through its batch.
+// ---------------------------------------------------------------------------
+
+export const webVitalSamples = pgTable("web_vital_samples", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).default(sql`date_trunc('day', now(), 'UTC')`).notNull(),
+  page: varchar("page", { length: 160 }).notNull(),
+  device: varchar("device", { length: 10 }).$type<WebVitalDeviceClass>().notNull(),
+  metric: varchar("metric", { length: 8 }).$type<WebVitalName>().notNull(),
+  value: doublePrecision("value").notNull(),
+  rating: varchar("rating", { length: 20 }).notNull(),
+}, (table) => [
+  check("web_vital_samples_page_shape", sql`${table.page} ~ '^/$|^(/([a-z][a-z-]{0,39}|:[A-Za-z]{1,40}|\\*))+$'`),
+  check("web_vital_samples_device_check", sql`${table.device} IN ('phone', 'tablet', 'desktop')`),
+  check("web_vital_samples_metric_check", sql`${table.metric} IN ('LCP', 'INP', 'CLS', 'TTFB')`),
+  check("web_vital_samples_rating_check", sql`${table.rating} IN ('good', 'needs-improvement', 'poor')`),
+  check("web_vital_samples_value_check", sql`${table.value} >= 0`),
+  // The cleanup and the p75 report both read by day alone.
+  index("web_vital_samples_recorded_idx").on(table.recordedAt),
 ]);

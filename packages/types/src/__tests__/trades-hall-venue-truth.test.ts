@@ -6,6 +6,8 @@ import {
   TRADES_HALL_PUBLIC_PROFILE,
   TRADES_HALL_PUBLISHED_ROOM_NAMES,
   TRADES_HALL_ROOM_CAPACITIES,
+  TRADES_HALL_ROOM_DIMENSIONS,
+  TRADES_HALL_WITHHELD_ROOM_DIMENSIONS,
   TRADES_HALL_WEDDING_PRICING,
   VENUE_TRUTH_PROVENANCE,
   VENUE_TRUTH_STATEMENTS,
@@ -141,6 +143,87 @@ describe("public profile — what the venue already publishes", () => {
   });
 });
 
+describe("room dimensions", () => {
+  it("gives the Grand Hall's interior as its laser scan measures it", () => {
+    // Blake's decision, 11 November 2026: the measured size. The height is the
+    // clear 6.7 m to the underside of the coffered ceiling, never the dome's.
+    // The note says only what the height is measured to, short enough to sit
+    // beside the figure; the dome is a remark of its own, for a footnote.
+    expect(TRADES_HALL_ROOM_DIMENSIONS["grand-hall"]).toEqual({
+      extents: [{ lengthM: 21.14, widthM: 10.59, heightM: 6.7, note: "to the coffered ceiling" }],
+      remark: "The dome rises above part of the hall.",
+    });
+  });
+
+  it("states no figure in a height's note or remark, so the only height shown is heightM", () => {
+    // The dome is never given as the room's height, and a number in either
+    // string would be a second height for a surface to print.
+    const texts = Object.values(TRADES_HALL_ROOM_DIMENSIONS)
+      .flatMap((d) => [...(d?.extents.map((extent) => extent.note) ?? []), d?.remark])
+      .filter((text): text is string => text !== undefined);
+    expect(texts.length).toBeGreaterThan(0);
+    for (const text of texts) expect(text).not.toMatch(/\d/);
+  });
+
+  it("keeps the Saloon at the venue's published figures", () => {
+    expect(TRADES_HALL_ROOM_DIMENSIONS.saloon).toEqual({ extents: [{ lengthM: 12, widthM: 7, heightM: 5.4 }] });
+  });
+
+  it("shows no size for the Reception Room, and keeps the venue's published one on record", () => {
+    // The survey traces a smaller, L-shaped room and the planner's own outline
+    // agrees with the survey, so no surface shows the published size until
+    // the venue confirms one (Blake's decision, 24 November 2026).
+    expect(TRADES_HALL_ROOM_DIMENSIONS["reception-room"]).toBeUndefined();
+    expect(TRADES_HALL_WITHHELD_ROOM_DIMENSIONS["reception-room"]).toEqual({
+      extents: [{ lengthM: 13.4, widthM: 11.2, heightM: 3.2 }],
+    });
+  });
+
+  it("never holds a room's dimensions as both shown and withheld", () => {
+    // A surface reads the shown record only. A room in both would be shown.
+    const shown = Object.keys(TRADES_HALL_ROOM_DIMENSIONS);
+    for (const slug of Object.keys(TRADES_HALL_WITHHELD_ROOM_DIMENSIONS)) {
+      expect(shown, slug).not.toContain(slug);
+    }
+  });
+
+  it("gives the Robert Adam Room as the two sections the venue publishes, lower first", () => {
+    // The venue's rooms page (read 22 November 2026) lists a Lower Section and
+    // an Upper Section. The upper figures alone used to stand for the whole
+    // room; Blake chose both, 22 November 2026.
+    expect(TRADES_HALL_ROOM_DIMENSIONS["robert-adam-room"]).toEqual({
+      extents: [
+        { section: "Lower", lengthM: 11.2, widthM: 7.6, heightM: 2.8 },
+        { section: "Upper", lengthM: 9.7, widthM: 5.6, heightM: 2.18 },
+      ],
+    });
+  });
+
+  it("gives each gallery the published 11.5 by 4 m and no height", () => {
+    // The venue's page states a height for the North Gallery only and not what
+    // it is measured to, so neither gallery carries one (Blake, 22 November 2026).
+    for (const slug of ["north-gallery", "south-gallery"] as const) {
+      const gallery = TRADES_HALL_ROOM_DIMENSIONS[slug];
+      expect(gallery).toEqual({ extents: [{ lengthM: 11.5, widthM: 4 }] });
+      expect(gallery?.extents[0].heightM).toBeUndefined();
+    }
+  });
+
+  it("names every section of a room published in sections, and none of a room given whole", () => {
+    // A surface labels each line of a sectioned room by its section; an
+    // unnamed section would print as a second whole-room figure.
+    for (const [slug, dimensions] of Object.entries(TRADES_HALL_ROOM_DIMENSIONS)) {
+      const sections = dimensions.extents.map((extent) => extent.section);
+      if (dimensions.extents.length === 1) {
+        expect(sections, slug).toEqual([undefined]);
+      } else {
+        expect(sections.every((section) => section !== undefined && section.trim() !== ""), slug).toBe(true);
+        expect(new Set(sections).size, slug).toBe(sections.length);
+      }
+    }
+  });
+});
+
 describe("claim safety", () => {
   it("every public string passes the proposal claim guard", () => {
     const strings = [
@@ -150,6 +233,9 @@ describe("claim safety", () => {
       ...TRADES_HALL_WEDDING_PRICING.seasons.flatMap((s) => s.rates.map((r) => r.packageName)),
       ...CAPACITY_FORMATS.flatMap((f) => [f.label, f.description]),
       ...Object.values(TRADES_HALL_PUBLISHED_ROOM_NAMES),
+      ...Object.values(TRADES_HALL_ROOM_DIMENSIONS)
+        .flatMap((d) => [...(d?.extents.flatMap((extent) => [extent.section, extent.note]) ?? []), d?.remark])
+        .filter((text): text is string => text !== undefined),
     ];
     for (const s of strings) {
       expect(findUnsupportedProposalClaim(s), `claim guard tripped on: ${s}`).toBeNull();

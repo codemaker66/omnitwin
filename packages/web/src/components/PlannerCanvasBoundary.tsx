@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from "react";
 import { usePlannerWork } from "./scene/planner-work.js";
+import { reportFailure } from "../observability/failure-reports.js";
 
 // ---------------------------------------------------------------------------
 // PlannerCanvasBoundary — graceful fallback when the 3D canvas can't start.
@@ -38,6 +39,8 @@ export class PlannerCanvasBoundary extends Component<
   }
 
   override componentDidCatch(error: Error): void {
+    // Its name only: an error's message may quote what the planner held.
+    reportFailure("planner-canvas-fallback", { error: error.name });
     // eslint-disable-next-line no-console
     console.warn(
       "VenViewer: the 3D planner canvas failed to start; offering the 2D planner instead.",

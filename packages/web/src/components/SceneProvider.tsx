@@ -6,7 +6,7 @@ import { useEditorStore } from "../stores/editor-store.js";
 // SceneProvider — exposes the Three.js scene to non-Canvas code
 //
 // Punch list #24: the ortho-capture utility needs the live Three.js scene
-// to render a top-down floor plan PNG. SaveSendPanel (which triggers the
+// to render a top-down floor plan image. SaveSendPanel (which triggers the
 // capture) is outside the <Canvas> and can't call useThree(). This
 // component bridges the gap by writing the scene ref to the editor-store
 // on mount and clearing it on unmount.

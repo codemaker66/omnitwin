@@ -72,7 +72,19 @@ interface RequestOptions {
   /** Validate the whole body instead of unwrapping `{ data }`, for an
    *  envelope whose siblings matter (a paginated list's `meta`). */
   readonly keepEnvelope?: boolean;
+  /** Ask the browser to finish sending this request even if the page goes
+   *  (a save sent as the planner hides or closes). Browsers refuse a
+   *  keepalive body over 64 KiB, so a larger one is sent as an ordinary
+   *  request: it still goes while the page stays, and not after. */
+  readonly keepalive?: boolean;
+  /** The secret this browser was given when it made a guest plan, sent as
+   *  `X-Plan-Claim-Secret`: the API returns such a plan's notes only to its
+   *  maker. A header, never the address, so it stays out of logs and history. */
+  readonly planClaimSecret?: string;
 }
+
+/** Under the 64 KiB browsers allow all pending keepalive bodies together. */
+export const KEEPALIVE_BODY_LIMIT_BYTES = 60_000;
 
 type ResponseSchema<T> = ZodType<T>;
 
@@ -107,6 +119,10 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
     headers["Idempotency-Key"] = opts.idempotencyKey;
   }
 
+  if (opts.planClaimSecret !== undefined) {
+    headers["X-Plan-Claim-Secret"] = opts.planClaimSecret;
+  }
+
   if (opts.skipAuth !== true) {
     const token = await getAuthToken();
     if (token !== null) {
@@ -124,8 +140,12 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
   }
 
   if (opts.body !== undefined) {
-    fetchOpts.body = JSON.stringify(opts.body);
+    const body = JSON.stringify(opts.body);
+    fetchOpts.body = body;
     headers["Content-Type"] = "application/json";
+    if (opts.keepalive === true && new TextEncoder().encode(body).byteLength <= KEEPALIVE_BODY_LIMIT_BYTES) {
+      fetchOpts.keepalive = true;
+    }
   }
 
   let res: Response;
@@ -188,8 +208,13 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
 // ---------------------------------------------------------------------------
 
 export const api = {
-  get: <T>(path: string, schema?: ResponseSchema<T>, signal?: AbortSignal): Promise<T> =>
-    request<T>({ method: "GET", path, signal }, schema),
+  get: <T>(
+    path: string,
+    schema?: ResponseSchema<T>,
+    signal?: AbortSignal,
+    options?: { planClaimSecret?: string },
+  ): Promise<T> =>
+    request<T>({ method: "GET", path, signal, ...options }, schema),
 
   /** GET validated as the whole `{ data, meta }` envelope; the schema is required. */
   getEnvelope: <T>(path: string, schema: ResponseSchema<T>, signal?: AbortSignal): Promise<T> =>
@@ -200,7 +225,7 @@ export const api = {
     body?: unknown,
     skipAuth?: boolean,
     schema?: ResponseSchema<T>,
-    options?: { idempotencyKey?: string; signal?: AbortSignal; keepEnvelope?: boolean },
+    options?: { idempotencyKey?: string; signal?: AbortSignal; keepEnvelope?: boolean; keepalive?: boolean; planClaimSecret?: string },
   ): Promise<T> =>
     request<T>({ method: "POST", path, body, skipAuth, ...options }, schema),
 

@@ -24,6 +24,13 @@ export interface PdfLine {
   /** Where the run ends, after any rotation the page applied. */
   readonly x2: number;
   readonly y2: number;
+  /** The fill colour the run is shown in ("#8a3522"), or null where the page set none. */
+  readonly color: string | null;
+}
+
+/** An RGB fill as pdfkit writes it ("0.5411764705882353 0.20784313725490197 0.13333333333333333"), as "#8a3522". */
+function hexColour(red: string, green: string, blue: string): string {
+  return `#${[red, green, blue].map((part) => Math.round(Number(part) * 255).toString(16).padStart(2, "0")).join("")}`;
 }
 
 /** A PDF matrix [a b c d e f]; a point maps as (a·x + c·y + e, b·x + d·y + f). */
@@ -53,11 +60,38 @@ function objectsOf(buf: Buffer): Map<string, string> {
   return new Map([...source.matchAll(/(\d+) 0 obj([\s\S]*?)endobj/gu)].map((match) => [match[1] ?? "", match[2] ?? ""]));
 }
 
-function streamOf(body: string): string {
-  const raw = /stream\r?\n([\s\S]*?)\r?\nendstream/u.exec(body)?.[1];
-  if (raw === undefined) throw new Error("PDF object has no stream");
-  const bytes = Buffer.from(raw, "latin1");
-  return (/\/FlateDecode/u.test(body) ? inflateSync(bytes) : bytes).toString("latin1");
+// A stream is exactly its /Length bytes after "stream" and its line break,
+// then "endstream". Reading up to "endstream" instead takes a last byte of 0x0D
+// for part of the line break before it, and a compressed stream's last byte
+// (the end of its zlib checksum) is 0x0D about one time in 256, which
+// truncates it. Every reader of these PDFs goes through pdfStream.
+const STREAM_START = />>\s*stream\r?\n/u;
+
+/**
+ * One object's stream, read by its /Length, with /FlateDecode undone, as
+ * latin1 text. Throws when the object has no stream, its /Length is missing or
+ * indirect, "endstream" does not follow those bytes, or they do not inflate:
+ * a test reading a damaged PDF fails instead of finding nothing in it.
+ */
+export function pdfStream(body: string): string {
+  const start = STREAM_START.exec(body);
+  if (start === null) throw new Error("PDF object has no stream");
+  const dict = body.slice(0, start.index);
+  // (?!\d) stops "/Length 12 0 R" from backtracking to read a length of 1.
+  const length = /\/Length (\d+)(?!\d)(?! \d+ R)/u.exec(dict)?.[1];
+  if (length === undefined) throw new Error("PDF stream has no direct /Length");
+  const from = start.index + start[0].length;
+  const to = from + Number(length);
+  if (!/^(?:\r\n|\r|\n)?endstream/u.test(body.slice(to))) {
+    throw new Error(`PDF stream does not end after its /Length of ${length} bytes`);
+  }
+  const bytes = Buffer.from(body.slice(from, to), "latin1");
+  return (/\/FlateDecode/u.test(dict) ? inflateSync(bytes) : bytes).toString("latin1");
+}
+
+/** Every stream in the file, in object order, each read as pdfStream reads one. */
+export function pdfStreams(buf: Buffer): string[] {
+  return [...objectsOf(buf).values()].filter((body) => STREAM_START.test(body)).map(pdfStream);
 }
 
 function refOf(body: string, key: string): string | undefined {
@@ -120,7 +154,7 @@ function fontsOf(objects: ReadonlyMap<string, string>, resources: string): Map<s
     const base = /\/BaseFont \/(\S+)/u.exec(body)?.[1] ?? "";
     const toUnicode = refOf(body, "ToUnicode");
     const descendant = /\/DescendantFonts \[(\d+) 0 R\]/u.exec(body)?.[1];
-    const unicode = toUnicode === undefined ? new Map<number, string>() : parseToUnicode(streamOf(objects.get(toUnicode) ?? ""));
+    const unicode = toUnicode === undefined ? new Map<number, string>() : parseToUnicode(pdfStream(objects.get(toUnicode) ?? ""));
     const { widths, defaultWidth } = parseWidths(objects.get(descendant ?? "") ?? "");
     fonts.set(entry[1] ?? "", { base, unicode, widths, defaultWidth });
   }
@@ -141,15 +175,25 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
     const resourcesRef = refOf(page, "Resources");
     const resources = resourcesRef === undefined ? page : objects.get(resourcesRef) ?? "";
     const fonts = fontsOf(objects, resources);
-    const content = streamOf(objects.get(refOf(page, "Contents") ?? "") ?? "");
+    const content = pdfStream(objects.get(refOf(page, "Contents") ?? "") ?? "");
     const lines: PdfLine[] = [];
     let ctm: Matrix = IDENTITY;
-    const saved: Matrix[] = [];
-    for (const op of content.matchAll(/(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|\bBT\b([\s\S]*?)\bET\b/gu)) {
-      if (op[1] === "q") { saved.push(ctm); continue; }
-      if (op[1] === "Q") { ctm = saved.pop() ?? IDENTITY; continue; }
+    let fill: string | null = null;
+    const saved: { readonly ctm: Matrix; readonly fill: string | null }[] = [];
+    for (const op of content.matchAll(/(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|\bBT\b([\s\S]*?)\bET\b|([\d.]+) ([\d.]+) ([\d.]+) scn\b/gu)) {
+      if (op[1] === "q") { saved.push({ ctm, fill }); continue; }
+      if (op[1] === "Q") {
+        const state = saved.pop();
+        ctm = state?.ctm ?? IDENTITY;
+        fill = state?.fill ?? null;
+        continue;
+      }
       if (op[2] !== undefined) {
         ctm = concat([Number(op[2]), Number(op[3]), Number(op[4]), Number(op[5]), Number(op[6]), Number(op[7])], ctm);
+        continue;
+      }
+      if (op[9] !== undefined) {
+        fill = hexColour(op[9], op[10] ?? "", op[11] ?? "");
         continue;
       }
       const body = op[8] ?? "";
@@ -171,7 +215,7 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
           }
           const [startX, startY] = apply(ctm, x, y);
           const [endX, endY] = apply(ctm, x + width, y);
-          lines.push({ text, x: startX, y: startY, x2: endX, y2: endY, size, font: font.base, width });
+          lines.push({ text, x: startX, y: startY, x2: endX, y2: endY, size, font: font.base, width, color: fill });
         }
       }
     }
@@ -179,9 +223,87 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
   });
 }
 
+/** Each page's content stream, inflated, as latin1 text: its drawing operators in order. */
+export function pdfPageContents(buf: Buffer): string[] {
+  const objects = objectsOf(buf);
+  return pageIds(objects).map((id) => pdfStream(objects.get(refOf(objects.get(id) ?? "", "Contents") ?? "") ?? ""));
+}
+
+export interface PdfRule {
+  /** Left and right ends, PDF points from the page's left. */
+  readonly x: number;
+  readonly x2: number;
+  /** Height, PDF points from the page's bottom (as a text line's baseline). */
+  readonly y: number;
+  /** The stroke's width when set right after the segment (a rule's own), else null. */
+  readonly weight: number | null;
+}
+
+const STRAIGHT_STROKE = /(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|(-?[\d.]+) (-?[\d.]+) m\s+(-?[\d.]+) (-?[\d.]+) l\s+(?!-?[\d.]+ -?[\d.]+ l)(?:([\d.]+) w)?/gu;
+
+/** One straight segment drawn alone, in page points, with the stroke width set right after it, if any. */
+interface Segment { readonly x1: number; readonly y1: number; readonly x2: number; readonly y2: number; readonly weight: number | null }
+
+/** Every straight line drawn as one segment, page by page. A segment that carries on into another (a shape's edge) is not one. */
+function pdfSegments(buf: Buffer): Segment[][] {
+  const objects = objectsOf(buf);
+  return pageIds(objects).map((id) => {
+    const content = pdfStream(objects.get(refOf(objects.get(id) ?? "", "Contents") ?? "") ?? "");
+    const segments: Segment[] = [];
+    let ctm: Matrix = IDENTITY;
+    const saved: Matrix[] = [];
+    for (const op of content.matchAll(STRAIGHT_STROKE)) {
+      if (op[1] === "q") { saved.push(ctm); continue; }
+      if (op[1] === "Q") { ctm = saved.pop() ?? IDENTITY; continue; }
+      if (op[2] !== undefined) {
+        ctm = concat([Number(op[2]), Number(op[3]), Number(op[4]), Number(op[5]), Number(op[6]), Number(op[7])], ctm);
+        continue;
+      }
+      const [x1, y1] = apply(ctm, Number(op[8]), Number(op[9]));
+      const [x2, y2] = apply(ctm, Number(op[10]), Number(op[11]));
+      segments.push({ x1, y1, x2, y2, weight: op[12] === undefined ? null : Number(op[12]) });
+    }
+    return segments;
+  });
+}
+
+/**
+ * Every horizontal line drawn as one segment, page by page: the sheet's
+ * rules. A segment that carries on into another (a shape's edge) is not one.
+ */
+export function pdfRules(buf: Buffer): PdfRule[][] {
+  return pdfSegments(buf).map((segments) => segments
+    .filter((segment) => Math.abs(segment.y1 - segment.y2) < 0.01)
+    .map((segment) => ({ x: Math.min(segment.x1, segment.x2), x2: Math.max(segment.x1, segment.x2), y: segment.y1, weight: segment.weight })));
+}
+
+export interface PdfUpright {
+  /** Distance from the page's left, PDF points. */
+  readonly x: number;
+  /** The lower end and the upper end, PDF points from the page's bottom (as a text line's baseline). */
+  readonly y: number;
+  readonly y2: number;
+}
+
+/** Every vertical line drawn as one segment, page by page: the rules standing between the header's facts. */
+export function pdfUprights(buf: Buffer): PdfUpright[][] {
+  return pdfSegments(buf).map((segments) => segments
+    .filter((segment) => Math.abs(segment.x1 - segment.x2) < 0.01 && Math.abs(segment.y1 - segment.y2) >= 0.01)
+    .map((segment) => ({ x: segment.x1, y: Math.min(segment.y1, segment.y2), y2: Math.max(segment.y1, segment.y2) })));
+}
+
+/**
+ * A run's text with each no-break space (U+00A0) read as the space it prints
+ * as. Assertions match plain spaces against this, so a character the PDF lost
+ * can never be passed over as whitespace.
+ */
+export function plainSpaces(text: string): string {
+  return text.replace(/\u00A0/gu, " ");
+}
+
 /** All text, runs joined by single spaces, as a reader would search it. */
 export function pdfText(buf: Buffer): string {
-  return pdfPages(buf).flat().map((line) => line.text).join(" ").replace(/\s+/gu, " ").trim();
+  return pdfPages(buf).flat().map((line) => plainSpaces(line.text)).join(" ").replace(/\s+/gu, " ").trim();
 }
 
 export function pdfPageSizes(buf: Buffer): { width: number; height: number }[] {

@@ -1,14 +1,44 @@
-import type { CreateEventDayIssueInput, RecordObservation, UpdateOpsTaskStatusInput } from "@omnitwin/types";
+import type {
+  CreateEventDayIssueInput,
+  RecordObservation,
+  RequestState,
+  RequestTransition,
+  UpdateOpsTaskStatusInput,
+} from "@omnitwin/types";
 import { openCache, type CacheHandle } from "./idb-cache.js";
+
+/** The most earlier-press keys a task's row keeps: the API's bound
+ *  (MAX_EARLIER_PRESS_KEYS in @omnitwin/types), copied here rather than
+ *  imported. The Day Board route loads this queue, and a value import from
+ *  @omnitwin/types brought its event-day schemas into that route: 2.9 kB
+ *  (1.0 kB gzipped), measured by two builds (#418, review DR7). A test pins
+ *  the two equal. */
+export const MAX_EARLIER_PRESS_KEYS = 20;
 
 // ---------------------------------------------------------------------------
 // event-day-offline-queue
 //
 // Mobile ops staff can lose WiFi during setup. This queue mirrors the
 // hallkeeper progress queue: failed status/issue writes are stored in IndexedDB
-// and replayed when the device is online again. Task status is last-write-wins
-// per task; issue creation keeps every queued issue.
+// and replayed when the device is online again. Task status keeps one row per
+// task, the latest press, with the status it was pressed against
+// (input.expectedStatus) and the keys of the device's earlier presses for the
+// task (input.earlierPressKeys): the server refuses its replay once the task
+// has moved on, unless its last write was one of those presses (#418). Issue
+// creation keeps every queued issue; a step on a floor request keeps every
+// press, in the order pressed, each under its own key.
 // ---------------------------------------------------------------------------
+
+/** The keys a task's new row carries: those the replaced row carried, the
+ *  replaced press's own, then the ones the page names, each once, never the
+ *  new press's own, the newest MAX_EARLIER_PRESS_KEYS kept. */
+function earlierPressKeysFor(replaced: QueuedEventDayOp | undefined, input: UpdateOpsTaskStatusInput, ownKey: string): readonly string[] {
+  const fromRow = replaced?.kind === "task_status"
+    ? [...(replaced.input.earlierPressKeys ?? []), ...(replaced.input.idempotencyKey === undefined ? [] : [replaced.input.idempotencyKey])]
+    : [];
+  const keys = [...new Set([...fromRow, ...(input.earlierPressKeys ?? [])])].filter((key) => key !== ownKey);
+  return keys.slice(-MAX_EARLIER_PRESS_KEYS);
+}
 
 export type QueuedEventDayOp =
   | {
@@ -34,12 +64,44 @@ export type QueuedEventDayOp =
     readonly venueId: string;
     readonly input: RecordObservation;
     readonly queuedAt: string;
-  };
+  }
+  | QueuedRequestStep;
+
+/** L9: a step on a floor request (Seen, I'll do it, Done …) pressed with no
+ *  connection. The commandId was minted at the press and travels as the
+ *  Idempotency-Key, so the replay is that press: one step on the server's
+ *  ledger however often it is sent. Who pressed it is kept, and the replay is
+ *  sent only while that person is the one signed in. */
+export interface QueuedRequestStep {
+  readonly kind: "request_step";
+  readonly queueKey: string;
+  readonly venueId: string;
+  readonly requestId: string;
+  /** The slot the request sits on, so what the replay could not do is said there. */
+  readonly bookingId: string | null;
+  /** What was asked ("Chairs × 10"), for those words. */
+  readonly summary: string;
+  readonly transition: RequestTransition;
+  /** The state the request was in, as this person saw it, when the step was
+   *  pressed: the replay is refused if the request has moved on since. */
+  readonly expectedState: RequestState;
+  /** Whose the request was, as this person saw it, when the step was
+   *  pressed (null for nobody's): the replay is refused if it has changed
+   *  hands since, which its state alone cannot show. */
+  readonly expectedOwnerUserId: string | null;
+  readonly commandId: string;
+  readonly authorUserId: string;
+  readonly authorName: string;
+  readonly queuedAt: string;
+}
+
+export type RequestStepInput = Omit<QueuedRequestStep, "kind" | "queueKey" | "queuedAt">;
 
 /** What the server said when a replayed op reached it; or "left", when the
  *  op is not this drainer's to send and stays queued for the screen that
- *  owns it (the Day Board drains facts about rooms, the event-day page the
- *  rest). */
+ *  owns it (the Day Board drains facts about rooms, its requests provider the
+ *  request steps, the event-day page the rest), or for the person who
+ *  pressed it to be signed in again. */
 export type EventDayOpOutcome = "applied" | "replayed" | "refused" | "left";
 
 const DB_NAME = "omnitwin-event-day";
@@ -55,6 +117,10 @@ function issueKey(clientOperationId: string): string {
 
 function observationKey(idempotencyKey: string): string {
   return `observation:${idempotencyKey}`;
+}
+
+function requestStepKey(commandId: string): string {
+  return `request:${commandId}`;
 }
 
 function makeClientOperationId(prefix: string): string {
@@ -84,16 +150,51 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
     await handle.delete(queueKey);
   }
 
+  /** Acks a task status only while its row still holds the press with this
+   *  idempotency key. A task keeps one row, so a later press (on this page or
+   *  another) writes over an earlier one's; that later press stays queued.
+   *  The compare and the delete are one step of the store (one readwrite
+   *  transaction on IndexedDB). Resolves whether the row was deleted; a row
+   *  already gone is no error. */
+  async function ackIf(queueKey: string, idempotencyKey: string): Promise<boolean> {
+    return handle.deleteIf(queueKey, (stored) =>
+      stored.value.kind === "task_status" && stored.value.input.idempotencyKey === idempotencyKey);
+  }
+
+  /** A request step replays after every step pressed before it on this
+   *  device: its stamp is never behind the latest kept one, even under a
+   *  clock that stood still or stepped back between the presses. */
+  async function nextRequestStepStamp(): Promise<string> {
+    const latest = (await list())
+      .filter((op) => op.kind === "request_step")
+      .map((op) => Date.parse(op.queuedAt))
+      .filter((stamp) => Number.isFinite(stamp))
+      .reduce((max, stamp) => Math.max(max, stamp), Number.NEGATIVE_INFINITY);
+    return new Date(Math.max(Date.now(), latest + 1)).toISOString();
+  }
+
+  // Request steps are written one at a time, so two presses stored at once
+  // still take their stamps in the order they were pressed.
+  let requestStepWrites: Promise<void> = Promise.resolve();
+
   return {
+    /** The task's one row, now this press. A press made against a status
+     *  (expectedStatus) keeps the keys of the device's earlier presses for
+     *  the task: the replaced row's, read and written in the same step of
+     *  the store (#418, ruling A). */
     async enqueueTaskStatus(opsTaskId: string, input: UpdateOpsTaskStatusInput): Promise<void> {
       const key = taskKey(opsTaskId);
       const idempotencyKey = input.idempotencyKey ?? makeClientOperationId("task");
-      await handle.put(key, {
-        kind: "task_status",
-        queueKey: key,
-        opsTaskId,
-        input: { ...input, idempotencyKey },
-        queuedAt: new Date().toISOString(),
+      await handle.upsert(key, (replaced): QueuedEventDayOp => {
+        const { earlierPressKeys: _named, ...pressed } = input;
+        const earlierPressKeys = input.expectedStatus === undefined ? [] : earlierPressKeysFor(replaced?.value, input, idempotencyKey);
+        return {
+          kind: "task_status",
+          queueKey: key,
+          opsTaskId,
+          input: { ...pressed, idempotencyKey, ...(earlierPressKeys.length === 0 ? {} : { earlierPressKeys: [...earlierPressKeys] }) },
+          queuedAt: new Date().toISOString(),
+        };
       });
     },
 
@@ -128,8 +229,26 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
       });
     },
 
+    /** A step on a floor request (L9), keyed by its own commandId: the same
+     *  press stored twice is one op and keeps its first place in the order. */
+    async enqueueRequestStep(step: RequestStepInput): Promise<void> {
+      const write = requestStepWrites.then(async () => {
+        const key = requestStepKey(step.commandId);
+        const existing = await handle.get(key);
+        await handle.put(key, {
+          ...step,
+          kind: "request_step",
+          queueKey: key,
+          queuedAt: existing?.value.queuedAt ?? await nextRequestStepStamp(),
+        });
+      });
+      requestStepWrites = write.catch(() => undefined);
+      await write;
+    },
+
     list,
     ack,
+    ackIf,
 
     /** Replay in the order the ops were made. An op is acked only once the
      *  server has it, fresh or replayed; the first failure stops the drain so
@@ -175,12 +294,21 @@ export function enqueueEventDayObservation(venueId: string, input: RecordObserva
   return defaultQueue.enqueueObservationRecord(venueId, input);
 }
 
+export function enqueueEventDayRequestStep(step: RequestStepInput): Promise<void> {
+  return defaultQueue.enqueueRequestStep(step);
+}
+
 export function listPendingEventDayOps(): Promise<readonly QueuedEventDayOp[]> {
   return defaultQueue.list();
 }
 
 export function ackEventDayOp(queueKey: string): Promise<void> {
   return defaultQueue.ack(queueKey);
+}
+
+/** Acks a queued task status only while its row still holds that press. */
+export function ackEventDayOpIf(queueKey: string, idempotencyKey: string): Promise<boolean> {
+  return defaultQueue.ackIf(queueKey, idempotencyKey);
 }
 
 export function drainEventDayOps(

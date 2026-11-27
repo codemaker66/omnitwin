@@ -419,6 +419,23 @@ describe("house-tokens.css — zero-visual-regression aliases", () => {
     expect(cockpitCss).toContain("var(--house-bg-0");
     expect(cockpitCss).toContain("var(--house-text-1");
   });
+
+  it("shows text selected in the cockpit's own fields in copper (CB-01)", async () => {
+    const cockpitCss = (await readFile(
+      resolve("src/components/editor/cockpit/PlannerCockpit.css"),
+      "utf-8",
+    )).replaceAll("\r\n", "\n");
+    // The shell-wide `::selection { background: transparent }` stays for the
+    // chrome's labels; fields override it so a person sees what typing replaces.
+    const rule = /\.cockpit-shell :is\(input, textarea, \[contenteditable="true"\]\)::selection\s*\{([^}]*)\}/.exec(cockpitCss);
+    expect(rule, "cockpit field ::selection rule").not.toBeNull();
+    const body = rule?.[1] ?? "";
+    expect(body).toContain("background: color-mix(in srgb, var(--house-accent-copper) 42%, transparent);");
+    expect(body).toContain("color: var(--house-text-0);");
+    const tokens = await readFile(resolve(HOUSE_CSS), "utf-8");
+    expect(tokens).toMatch(/--house-accent-copper\s*:/);
+    expect(tokens).toMatch(/--house-text-0\s*:/);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -561,6 +578,10 @@ const REGISTER_EXEMPT: readonly RegExp[] = [
   /MeasurementTool\.tsx/,
   /CockpitSceneOverlays\.tsx/,
   /LayoutPlanThumbnail\.tsx/,
+  // The door rule's marks, light laid on the floor beside the placement ghost:
+  // the brass edge and the warm gold a door's space glows when something
+  // stands in it, the gold Blake chose on frames of the drawn hall (28 Oct 2026).
+  /DoorClearSpaceLayer\.tsx/,
   // T-629 split the ornament description out of GrandHallOrnaments.tsx into
   // data; the same gilt, avodire and oak, so the same rule.
   /grand-hall-ornament-parts\.ts/,
@@ -741,19 +762,26 @@ describe("the register is enforced by value, not by name", () => {
     const tooSmall: string[] = [];
     for (const [path, text] of await readSrcFiles()) {
       if (TYPE_FLOOR_EXEMPT.some((rule) => rule.test(path))) continue;
-      text.split("\n").forEach((line, index) => {
-        const at = `${path}:${String(index + 1)}`;
-        const record = (size: string, syntax: string): void => {
-          if (Number(size) < TYPE_FLOOR_PX) tooSmall.push(`${at} ${syntax} ${size}px`);
-        };
-        if (path.endsWith(".css")) {
-          for (const m of line.matchAll(/font-size:\s*([0-9.]+)px/g)) record(m[1] ?? "0", "font-size");
+      const record = (line: number, size: string, syntax: string): void => {
+        if (Number(size) < TYPE_FLOOR_PX) tooSmall.push(`${path}:${String(line)} ${syntax} ${size}px`);
+      };
+      if (path.endsWith(".css")) {
+        text.split("\n").forEach((line, index) => {
+          for (const m of line.matchAll(/font-size:\s*([0-9.]+)px/g)) record(index + 1, m[1] ?? "0", "font-size");
           // The shorthand is the syntax the first pass never searched.
-          for (const m of line.matchAll(/font:[^;{}]*?\b([0-9.]+)px/g)) record(m[1] ?? "0", "font: shorthand");
-        } else {
-          for (const m of line.matchAll(/fontSize:\s*"?([0-9.]+)(?:px)?"?/g)) record(m[1] ?? "0", "inline fontSize");
+          for (const m of line.matchAll(/font:[^;{}]*?\b([0-9.]+)px/g)) record(index + 1, m[1] ?? "0", "font: shorthand");
+        });
+      } else {
+        // Every numeric literal in the value counts, up to the next `,` or `}`
+        // (or a type annotation's `;`), across lines: reading only the literal
+        // after `fontSize:` let `compact ? 8 : 9` hide behind its condition.
+        for (const m of text.matchAll(/fontSize:([^,;}]*)/g)) {
+          const line = text.slice(0, m.index).split("\n").length;
+          for (const size of (m[1] ?? "").matchAll(/(?<![\w.$-])([0-9]*\.?[0-9]+)/g)) {
+            record(line, size[1] ?? "0", "inline fontSize");
+          }
         }
-      });
+      }
     }
     expect([...tooSmall].sort()).toEqual([...PX_FLOOR_HANDOFF].sort());
   });

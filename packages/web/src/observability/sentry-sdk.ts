@@ -3,4 +3,4 @@
 // dynamically keeps every export — Session Replay, Feedback, profiling and the
 // AI-tracing integrations — which roughly tripled the chunk for code this app
 // never calls. Add a name here before calling it from sentry.ts.
-export { browserApiErrorsIntegration, captureException, init, withScope } from "@sentry/react";
+export { browserApiErrorsIntegration, captureException, captureMessage, init, withScope } from "@sentry/react";

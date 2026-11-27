@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { SignIn } from "@clerk/react";
 import { isClerkGoogleSignInEnabled, VENVIEWER_CLERK_APPEARANCE } from "../auth/clerk-appearance.js";
 import { useAuthStore } from "../../stores/auth-store.js";
-import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "../../stores/editor-store.js";
+import { useEditorStore } from "../../stores/editor-store.js";
 import { ApiError } from "../../api/client.js";
-import { claimTrackedDraft, type DraftClaim } from "../../lib/planner-claim.js";
+import { claimOpenDraft } from "../../hooks/use-planner-draft-claim.js";
+import { getSafeReturnTo } from "../../lib/auth-return.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { ActivityStatus } from "../shared/Activity.js";
@@ -19,25 +20,18 @@ interface AuthModalProps {
   readonly onClose: () => void;
 }
 
-// Claim is not idempotent. Share its result across StrictMode effect replay and
-// dismissal/reopening; server settlement belongs to this editor/account session.
-// Only a draft this browser created is claimed (release audit public-surface-1):
-// a layout opened from someone's shared link stays theirs.
-const pendingClaims = new Map<string, Promise<DraftClaim>>();
-function claimPreview(configId: string, userId: string | null): Promise<DraftClaim> {
-  const session = captureEditorSession();
-  const key = JSON.stringify([configId, session.generation, userId]);
-  const pending = pendingClaims.get(key);
-  if (pending !== undefined) return pending;
-  const request = claimTrackedDraft(configId).then((outcome) => {
-    const auth = useAuthStore.getState();
-    if (outcome !== "claimed" || !isCurrentEditorSession(session) || !auth.isAuthenticated || (auth.user?.id ?? null) !== userId) return outcome;
-    useEditorStore.setState({ isPublicPreview: false });
-    void useEditorStore.getState().saveToServer(true);
-    return outcome;
-  }).finally(() => { pendingClaims.delete(key); });
-  pendingClaims.set(key, request);
-  return request;
+// The claim itself is hooks/use-planner-draft-claim.ts: the planner page asks
+// for it too, because signing in closes this dialog before the account is
+// known, and the two share one request.
+
+/**
+ * Where Clerk sends the person once they have signed in: back to this plan.
+ * With no address given, Clerk goes to the site's front page and the plan
+ * they were saving is left behind. Clerk's own steps use the fragment, so the
+ * plan's address is its path and options.
+ */
+function plannerReturnAddress(): string {
+  return getSafeReturnTo(`${window.location.pathname}${window.location.search}`) ?? "/plan";
 }
 
 interface ClaimProblem {
@@ -77,7 +71,7 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
     let cancelled = false;
     if (isAuthenticated && configId !== null && isPublicPreview) {
       setClaimProblem(null);
-      void claimPreview(configId, userId).then((outcome) => {
+      void claimOpenDraft(configId, userId).then((outcome) => {
         if (!cancelled && outcome === "not-created-here") setClaimProblem(NOT_CREATED_HERE);
       }, (error: unknown) => {
         if (!cancelled) setClaimProblem(claimProblemFor(error));
@@ -115,7 +109,7 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
               <button type="button" onClick={onClose}>Return to layout</button>
             </div>
           )
-        ) : <SignIn appearance={VENVIEWER_CLERK_APPEARANCE} routing="hash" />}
+        ) : <SignIn appearance={VENVIEWER_CLERK_APPEARANCE} routing="hash" fallbackRedirectUrl={plannerReturnAddress()} />}
       </div>
     </div>,
     document.body,

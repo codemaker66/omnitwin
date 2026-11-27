@@ -15,6 +15,7 @@ import { useMediaQuery } from "../../hooks/use-media-query.js";
 import { useLatestRequest } from "../../hooks/use-latest-request.js";
 import { parsePoundsToMinor } from "../../lib/money-input.js";
 import { useAuthStore } from "../../stores/auth-store.js";
+import { useBoardClock } from "../../pages/hallkeeper/lib/use-board-clock.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { deskGreeting, venueYear, type SummaryPart } from "./enquiries/enquiry-desk-format.js";
 import {
@@ -185,7 +186,9 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
   const wide = useMediaQuery(WIDE_DESK);
   const titleId = useId();
   const user = useAuthStore((state) => state.user);
-  const [nowMs] = useState(() => Date.now());
+  // The product's one clock, redrawn each whole minute, so "sent 2 days ago"
+  // and the date above stay true on a desk left open overnight.
+  const nowMs = useBoardClock(null);
   const [filter, setFilter] = useState<ProposalFilter>("all");
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [listReading, setListReading] = useState(false);

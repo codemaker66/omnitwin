@@ -1,6 +1,6 @@
 import type { BoardRange } from "../../diary/lib/board-time.js";
 import { VENUE_TIME_ZONE, formatWallTime, msToWallInput, wallInputToMs } from "../../diary/lib/board-time.js";
-import type { DayBoardLane, DayBoardSlot } from "./day-board-state.js";
+import { runsForDays, type DayBoardLane, type DayBoardSlot } from "./day-board-state.js";
 
 // ---------------------------------------------------------------------------
 // The board's geometry (goal 19 S3, D7): one ruler across the day, a NOW
@@ -59,8 +59,13 @@ function wallHour(range: BoardRange, hour: number, timeZone: string): number {
 
 /**
  * The visible window: the venue's working day (07:00 to 23:00), widened to
- * hold every slot's setup and clear-down with half an hour either side, and
+ * hold each slot's setup and clear-down with half an hour either side, and
  * the present moment while the day is on screen, all clamped to the day.
+ *
+ * A booking that runs for days (an exhibition in its third day) widens it
+ * only by its own moments that fall on the day: its doors on the first day,
+ * its end on the last. Otherwise its earlier days would drag the window to
+ * the small hours and leave them empty on every room.
  */
 export function boardWindow(
   range: BoardRange,
@@ -72,8 +77,11 @@ export function boardWindow(
   let toMs = wallHour(range, WINDOW_CLOSES_HOUR, timeZone);
   for (const lane of lanes) {
     for (const slot of lane.slots) {
-      fromMs = Math.min(fromMs, slot.segments.setupStartsAtMs - WINDOW_PADDING_MS);
-      toMs = Math.max(toMs, slot.segments.clearDownEndsAtMs + WINDOW_PADDING_MS);
+      const { setupStartsAtMs, doorsAtMs, endsAtMs, clearDownEndsAtMs } = slot.segments;
+      const forDays = runsForDays(doorsAtMs, endsAtMs);
+      const onTheDay = (ms: number): boolean => ms >= range.fromMs && ms <= range.toMs;
+      if (!forDays || onTheDay(setupStartsAtMs)) fromMs = Math.min(fromMs, setupStartsAtMs - WINDOW_PADDING_MS);
+      if (!forDays || onTheDay(clearDownEndsAtMs)) toMs = Math.max(toMs, clearDownEndsAtMs + WINDOW_PADDING_MS);
     }
   }
   if (nowMs > range.fromMs && nowMs < range.toMs) {
@@ -102,13 +110,13 @@ export function span(fromMs: number, toMs: number, window: BoardWindow): Span {
 
 /**
  * Hour ticks across the window. On a wide board every hour is labelled; on a
- * narrow one every second hour, so labels never collide. The first tick is
- * the first whole hour at or after the window opens.
+ * narrower one every second, third or fourth hour, so labels never collide.
+ * The first tick is the first whole hour at or after the window opens.
  */
 export function rulerTicks(
   window: BoardWindow,
   timeZone: string = VENUE_TIME_ZONE,
-  labelEvery: 1 | 2 = 1,
+  labelEvery: 1 | 2 | 3 | 4 = 1,
 ): readonly RulerTick[] {
   const ticks: RulerTick[] = [];
   const first = Math.ceil(window.fromMs / HOUR_MS) * HOUR_MS;

@@ -19,7 +19,9 @@ if (databaseUrl !== undefined) {
   const url = new URL(databaseUrl);
   if (!["postgres:", "postgresql:"].includes(url.protocol)
     || !["127.0.0.1", "localhost"].includes(url.hostname)
-    || !url.pathname.startsWith("/venviewer_reconcile_")) {
+    || !url.pathname.startsWith("/venviewer_reconcile_")
+    // No query string or fragment: a client takes ?host= over the address's own host.
+    || url.search !== "" || url.hash !== "") {
     throw new Error("Reconcile guard tests require their own isolated loopback database");
   }
 }

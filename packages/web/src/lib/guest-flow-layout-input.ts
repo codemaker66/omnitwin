@@ -46,8 +46,7 @@ import {
 } from "./furniture-semantics.js";
 import type { PlacedItem } from "./placement.js";
 import { RENDER_SCALE } from "../constants/scale.js";
-import { footprintCorners, type FurnitureFootprint } from "./circulation.js";
-import { normalizeFurnitureScale } from "./furniture-scale.js";
+import { footprintCorners, footprintOfPlacement, type FurnitureFootprint } from "./circulation.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 // ---------------------------------------------------------------------------
@@ -200,16 +199,7 @@ function isObstacle(item: CatalogueItem, categories: ReadonlySet<FurnitureCatego
 
 /** Render-space placed item → metre-space oriented footprint (reuses circulation). */
 function footprintFromPlaced(placed: PlacedItem, item: CatalogueItem): FurnitureFootprint {
-  const scale = normalizeFurnitureScale(placed.scale);
-  return {
-    id: placed.id,
-    label: item.name,
-    cx: placed.x / RENDER_SCALE,
-    cz: placed.z / RENDER_SCALE,
-    width: item.width * scale,
-    depth: item.depth * scale,
-    rotation: placed.rotationY,
-  };
+  return footprintOfPlacement(placed, item, RENDER_SCALE);
 }
 
 /** Mean centre (scene metres) of a non-empty set of resolved items. */

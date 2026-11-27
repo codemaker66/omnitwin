@@ -96,6 +96,82 @@ describe("useCalendar request identity", () => {
   });
 });
 
+// hallkeeper-web-4: the live socket says Live only once the read its hello
+// asked for is in, so that read has to say when it has ended.
+describe("useCalendar refetchAndWait", () => {
+  const settledFlag = (promise: Promise<void>): { done: boolean } => {
+    const flag = { done: false };
+    void promise.then(() => { flag.done = true; });
+    return flag;
+  };
+
+  it.each(["lands", "fails"] as const)("settles once the read it asked for %s, and not before", async (outcome) => {
+    const reread = deferred<CalendarResponse>();
+    getCalendar.mockResolvedValueOnce(response("venue-a")).mockReturnValueOnce(reread.promise);
+    const { result } = renderHook(() => useCalendar("venue-a", first));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+
+    let flag = { done: false };
+    act(() => { flag = settledFlag(result.current.refetchAndWait()); });
+    await act(async () => { await Promise.resolve(); });
+    expect(getCalendar).toHaveBeenCalledTimes(2);
+    expect(flag.done).toBe(false);
+
+    await act(async () => {
+      if (outcome === "lands") reread.resolve(response("venue-a"));
+      else reread.reject(new Error("Offline"));
+      await reread.promise.catch(() => undefined);
+      await Promise.resolve();
+    });
+    expect(flag.done).toBe(true);
+  });
+
+  it("is not settled by a read that set out before it", async () => {
+    const before = deferred<CalendarResponse>();
+    const after = deferred<CalendarResponse>();
+    getCalendar.mockReturnValueOnce(before.promise).mockReturnValueOnce(after.promise);
+    const { result } = renderHook(() => useCalendar("venue-a", first));
+    expect(getCalendar).toHaveBeenCalledTimes(1);
+
+    let flag = { done: false };
+    act(() => { flag = settledFlag(result.current.refetchAndWait()); });
+    expect(getCalendar).toHaveBeenCalledTimes(2);
+    await act(async () => { before.resolve(response("venue-a")); await before.promise; await Promise.resolve(); });
+    expect(flag.done).toBe(false);
+
+    await act(async () => { after.resolve(response("venue-a")); await after.promise; await Promise.resolve(); });
+    expect(flag.done).toBe(true);
+    expect(result.current.status).toBe("ready");
+  });
+
+  it("settles when the board moves to another range and that range's read ends", async () => {
+    const reread = deferred<CalendarResponse>();
+    const next = deferred<CalendarResponse>();
+    getCalendar.mockResolvedValueOnce(response("venue-a")).mockReturnValueOnce(reread.promise).mockReturnValueOnce(next.promise);
+    const { result, rerender } = renderHook(({ range }) => useCalendar("venue-a", range), { initialProps: { range: first } });
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+
+    let flag = { done: false };
+    act(() => { flag = settledFlag(result.current.refetchAndWait()); });
+    rerender({ range: second });
+    await act(async () => { reread.resolve(response("venue-a")); await reread.promise; await Promise.resolve(); });
+    expect(flag.done).toBe(false);
+    await act(async () => { next.resolve(response("venue-a")); await next.promise; await Promise.resolve(); });
+    expect(flag.done).toBe(true);
+  });
+
+  it("settles on unmount, so nothing waits on a board that has gone", async () => {
+    getCalendar.mockResolvedValueOnce(response("venue-a")).mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = renderHook(() => useCalendar("venue-a", first));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    let flag = { done: false };
+    act(() => { flag = settledFlag(result.current.refetchAndWait()); });
+    unmount();
+    await act(async () => { await Promise.resolve(); });
+    expect(flag.done).toBe(true);
+  });
+});
+
 describe("useCalendar keeps the board steady (roadmap N3)", () => {
   const flush = async (): Promise<void> => { await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); }); };
 

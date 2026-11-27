@@ -3,9 +3,11 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ReferenceLoadoutRowSchema } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { validateEnv } from "../env.js";
 import { referenceLoadoutRoutes } from "../routes/reference-loadouts.js";
+import { referencePhotoRoutes } from "../routes/reference-photos.js";
 
 // ---------------------------------------------------------------------------
 // The reference loadouts list on the migrated platform database. Its photo
@@ -18,6 +20,8 @@ import { referenceLoadoutRoutes } from "../routes/reference-loadouts.js";
 // covers the refusals and the signing).
 // ---------------------------------------------------------------------------
 
+// The create and rename below authenticate with the test-mode bearer.
+process.env["NODE_ENV"] = "test";
 const target = process.env["VENVIEWER_PLATFORM_TEST_DATABASE_URL"];
 if (target !== undefined) {
   const parsed = new URL(target);
@@ -56,6 +60,7 @@ describe.skipIf(target === undefined)("reference loadouts list through the real 
     db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(referenceLoadoutRoutes, { db, env: ENV, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
+    await server.register(referencePhotoRoutes, { db, prefix: "/loadouts/:loadoutId/photos" });
     await server.ready();
   });
 
@@ -88,6 +93,19 @@ describe.skipIf(target === undefined)("reference loadouts list through the real 
     return fileKey;
   }
 
+  it("answers a create and a rename with the row the web's own schema reads (dash-ops-4)", async () => {
+    const { venueId, spaceId, userId } = await seedRoom();
+    const headers = { authorization: `Bearer ${JSON.stringify({ id: userId, email: `${userId}@loadouts.invalid`, name: "Fixture", role: "staff", venueId })}` };
+    const created = await server.inject({ method: "POST", url: `/venues/${venueId}/spaces/${spaceId}/loadouts`, headers, payload: { name: "Wedding reset" } });
+    expect(created.statusCode, created.body).toBe(201);
+    const row = ReferenceLoadoutRowSchema.parse(created.json<{ data: unknown }>().data);
+    expect(row).toMatchObject({ spaceId, venueId, name: "Wedding reset", description: null });
+
+    const renamed = await server.inject({ method: "PATCH", url: `/venues/${venueId}/spaces/${spaceId}/loadouts/${row.id}`, headers, payload: { name: "Dinner reset" } });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(ReferenceLoadoutRowSchema.parse(renamed.json<{ data: unknown }>().data)).toMatchObject({ id: row.id, name: "Dinner reset" });
+  });
+
   it("lists each loadout in the room with its own photo count and first photo as cover", async () => {
     const { venueId, spaceId, otherSpaceId, userId } = await seedRoom();
     const loadout = (name: string, minutes: number, space = spaceId, deletedAt: Date | null = null) => ({
@@ -112,6 +130,62 @@ describe.skipIf(target === undefined)("reference loadouts list through the real 
     expect(listed).toEqual([
       { name: "Dinner rounds", photoCount: 2, coverFileKey: cover },
       { name: "Theatre", photoCount: 0, coverFileKey: null },
+    ]);
+  });
+
+  // Release audit, contract-a-2. Every photo write answered with the bare
+  // reference_photos row, which has no file key, name or type. The web reads a
+  // photo with those (it draws the picture from the key), so each successful
+  // link, caption and reorder was reported as a failure, and a retry linked the
+  // same photo twice.
+  it("answers each photo write with the photo as the detail read gives it, its file's key, name and type included (contract-a-2)", async () => {
+    const { venueId, spaceId, userId } = await seedRoom();
+    const headers = { authorization: `Bearer ${JSON.stringify({ id: userId, email: `${userId}@loadouts.invalid`, name: "Fixture", role: "staff", venueId })}` };
+    const loadoutId = randomUUID();
+    await db.insert(schema.referenceLoadouts).values({ id: loadoutId, venueId, spaceId, name: "TEST ONLY photo contract", createdBy: userId });
+    /** A photo as the browser's upload leaves it: a files row in this loadout's scope, not yet linked. */
+    const uploaded = async (filename: string): Promise<{ id: string; fileKey: string }> => {
+      const fileKey = `private/venues/${venueId}/loadouts/${loadoutId}/${randomUUID()}.jpg`;
+      const [file] = await db.insert(schema.files).values({
+        fileKey, filename, contentType: "image/jpeg", context: "loadout", contextId: loadoutId, uploadedBy: userId,
+      }).returning({ id: schema.files.id });
+      if (file === undefined) throw new Error("File fixture was not inserted");
+      return { id: file.id, fileKey };
+    };
+    const wide = await uploaded("wide.jpg");
+    const close = await uploaded("close.jpg");
+    const asRead = (file: { id: string; fileKey: string }, filename: string, caption: string | null, sortOrder: number): Record<string, unknown> =>
+      ({ id: expect.any(String) as unknown, fileId: file.id, caption, sortOrder, fileKey: file.fileKey, filename, contentType: "image/jpeg" });
+
+    const linked = await server.inject({ method: "POST", url: `/loadouts/${loadoutId}/photos`, headers, payload: { fileId: wide.id, caption: "From the door" } });
+    expect(linked.statusCode, linked.body).toBe(201);
+    const first = linked.json<{ data: { id: string } }>().data;
+    expect(first).toEqual(asRead(wide, "wide.jpg", "From the door", 0));
+
+    const second = await server.inject({ method: "POST", url: `/loadouts/${loadoutId}/photos`, headers, payload: { fileId: close.id } });
+    expect(second.statusCode, second.body).toBe(201);
+    const secondPhoto = second.json<{ data: { id: string } }>().data;
+    expect(secondPhoto).toEqual(asRead(close, "close.jpg", null, 1));
+
+    const captioned = await server.inject({ method: "PATCH", url: `/loadouts/${loadoutId}/photos/${first.id}`, headers, payload: { caption: "From the stage" } });
+    expect(captioned.statusCode, captioned.body).toBe(200);
+    expect(captioned.json<{ data: unknown }>().data).toEqual({ ...asRead(wide, "wide.jpg", "From the stage", 0), id: first.id });
+
+    const reordered = await server.inject({ method: "POST", url: `/loadouts/${loadoutId}/photos/reorder`, headers, payload: { photoIds: [secondPhoto.id, first.id] } });
+    expect(reordered.statusCode, reordered.body).toBe(200);
+    const inOrder = reordered.json<{ data: unknown[] }>().data;
+    expect(inOrder).toEqual([
+      { ...asRead(close, "close.jpg", null, 0), id: secondPhoto.id },
+      { ...asRead(wide, "wide.jpg", "From the stage", 1), id: first.id },
+    ]);
+
+    // Exactly what opening the loadout then reads, with each photo's
+    // five-minute signed read URL beside it (T-668).
+    const detail = await server.inject({ method: "GET", url: `/venues/${venueId}/spaces/${spaceId}/loadouts/${loadoutId}`, headers });
+    expect(detail.statusCode, detail.body).toBe(200);
+    expect(detail.json<{ data: { photos: unknown[] } }>().data.photos).toEqual([
+      { ...asRead(close, "close.jpg", null, 0), id: secondPhoto.id, readUrl: expect.stringContaining(close.fileKey) as unknown },
+      { ...asRead(wide, "wide.jpg", "From the stage", 1), id: first.id, readUrl: expect.stringContaining(wide.fileKey) as unknown },
     ]);
   });
 });

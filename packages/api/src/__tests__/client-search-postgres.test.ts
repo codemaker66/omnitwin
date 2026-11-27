@@ -170,6 +170,28 @@ describe.skipIf(target === undefined)("client search on the migrated disposable 
     expect((await server.inject({ method: "GET", url: `/clients/contacts/${randomUUID()}/profile`, headers: bearer("staff") })).statusCode).toBe(404);
   });
 
+  // Release audit dash-commercial-7: the profile gave only the current
+  // version, so the contact's timeline said a version saved since the send
+  // had been sent.
+  it("says which version of a proposal was sent, when a later one has been saved since", async () => {
+    const contactId = (await search("henderson")).contacts[0]?.id ?? "";
+    const read = async () => (await server.inject({
+      method: "GET", url: `/clients/contacts/${contactId}/profile`, headers: bearer("sales"),
+    })).json<{ data: {
+      deals: { id: string }[];
+      proposals: { title: string; currentVersion: number; sentVersion: number | null; sentAt: string | null }[];
+    } }>().data;
+    const dealId = (await read()).deals[0]?.id ?? "";
+    await pool.query(
+      `INSERT INTO proposals (venue_id, opportunity_id, title, status, current_version, sent_version, sent_at)
+       VALUES ($1, $2, 'Henderson reception, changes asked', 'changes_requested', 3, 2, now())`,
+      [venueId, dealId],
+    );
+    const asked = (await read()).proposals.find((row) => row.title === "Henderson reception, changes asked");
+    expect(asked).toMatchObject({ currentVersion: 3, sentVersion: 2 });
+    expect(asked?.sentAt).not.toBeNull();
+  });
+
   it("lists the clients whose events come next, soonest first, each guest with their own lead", async () => {
     const [room] = await pool.query<{ id: string }>(
       "INSERT INTO spaces (venue_id, name, slug, width_m, length_m, height_m, floor_plan_outline) VALUES ($1, 'Room', $2, 10, 10, 3, '[]') RETURNING id",

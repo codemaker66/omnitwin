@@ -7,6 +7,8 @@ import {
   GRAND_HALL_RENDER_DIMENSIONS,
 } from "../scale.js";
 import { TRADES_HALL_GRAND_HALL_DIMENSIONS } from "@omnitwin/types";
+import { HALL_HEIGHT, HALL_LENGTH, HALL_WIDTH } from "../../components/grand-hall/hall-spec.js";
+import { computeBoundingBox, roomGeometries } from "../../data/room-geometries.js";
 
 // ---------------------------------------------------------------------------
 // RENDER_SCALE constant
@@ -107,33 +109,48 @@ describe("scaleForRendering", () => {
 // ---------------------------------------------------------------------------
 
 describe("GRAND_HALL_RENDER_DIMENSIONS", () => {
+  // The scanned hall (hall-spec): 21.135 m along x is the room's width here,
+  // 10.59 m along z its length.
   it("has correct scaled width", () => {
-    expect(GRAND_HALL_RENDER_DIMENSIONS.width).toBe(
-      TRADES_HALL_GRAND_HALL_DIMENSIONS.width * RENDER_SCALE,
-    );
+    expect(GRAND_HALL_RENDER_DIMENSIONS.width).toBe(HALL_LENGTH * RENDER_SCALE);
   });
 
   it("has correct scaled length", () => {
-    expect(GRAND_HALL_RENDER_DIMENSIONS.length).toBe(
-      TRADES_HALL_GRAND_HALL_DIMENSIONS.length * RENDER_SCALE,
-    );
+    expect(GRAND_HALL_RENDER_DIMENSIONS.length).toBe(HALL_WIDTH * RENDER_SCALE);
   });
 
   it("height is NOT scaled", () => {
-    expect(GRAND_HALL_RENDER_DIMENSIONS.height).toBe(
-      TRADES_HALL_GRAND_HALL_DIMENSIONS.height,
-    );
+    expect(GRAND_HALL_RENDER_DIMENSIONS.height).toBe(HALL_HEIGHT);
   });
 
   it("toRealWorld recovers original width", () => {
-    expect(toRealWorld(GRAND_HALL_RENDER_DIMENSIONS.width)).toBeCloseTo(
-      TRADES_HALL_GRAND_HALL_DIMENSIONS.width,
-    );
+    expect(toRealWorld(GRAND_HALL_RENDER_DIMENSIONS.width)).toBeCloseTo(HALL_LENGTH, 10);
   });
 
   it("toRealWorld recovers original length", () => {
-    expect(toRealWorld(GRAND_HALL_RENDER_DIMENSIONS.length)).toBeCloseTo(
-      TRADES_HALL_GRAND_HALL_DIMENSIONS.length,
-    );
+    expect(toRealWorld(GRAND_HALL_RENDER_DIMENSIONS.length)).toBeCloseTo(HALL_WIDTH, 10);
+  });
+
+  // Before a space loads the planner shows this room; once the Grand Hall
+  // loads, usePlannerRoomDimensions sizes the room from its geometry. They are
+  // one room, so nothing shifts (it was 2.5 mm short at each end wall when
+  // this came from the rounded public 21.14).
+  it("is the room the planner sizes from the Grand Hall's geometry once it loads", () => {
+    const geometry = roomGeometries["Grand Hall"];
+    if (geometry === undefined) throw new Error("No Grand Hall geometry");
+    const bbox = computeBoundingBox(geometry.wallPolygon);
+    expect(scaleForRendering({ width: bbox.width, length: bbox.depth, height: geometry.ceilingHeight }))
+      .toEqual(GRAND_HALL_RENDER_DIMENSIONS);
+  });
+
+  // The stored and published size (TRADES_HALL_GRAND_HALL_DIMENSIONS, which
+  // production stores via migration 0106) is this one rounded up to the
+  // centimetre, so the stored outline contains every centre the planner allows.
+  it("rounds up to the stored and published Grand Hall figures", () => {
+    const realWidth = toRealWorld(GRAND_HALL_RENDER_DIMENSIONS.width);
+    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS.width).toBeGreaterThanOrEqual(realWidth);
+    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS.width - realWidth).toBeLessThanOrEqual(0.005 + 1e-9);
+    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS.length).toBeCloseTo(toRealWorld(GRAND_HALL_RENDER_DIMENSIONS.length), 10);
+    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS.height).toBe(GRAND_HALL_RENDER_DIMENSIONS.height);
   });
 });

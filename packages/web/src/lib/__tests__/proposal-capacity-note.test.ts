@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { findUnsupportedProposalClaim, LAYOUT_STYLES } from "@omnitwin/types";
+import { findUnsupportedProposalClaim, LAYOUT_STYLES, TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
 import {
   buildProposalCapacityGuidance,
-  buildProposalCapacityNote,
   CAPACITY_GUIDANCE_DISCLOSURE,
   CAPACITY_STYLE_LABELS,
 } from "../proposal-capacity-note.js";
+import { publishedCapacityFor, publishedCapacityNote, publishedFormatForStyle } from "../planner-truth.js";
 
 // Grand Hall bounding box: 21m × 10m = 210 m².
 const GRAND_HALL_AREA = 210;
@@ -26,47 +26,42 @@ describe("buildProposalCapacityGuidance", () => {
   });
 });
 
-describe("buildProposalCapacityNote", () => {
-  it("names the room, the estimate, the style, and the human-review disclosure", () => {
-    const intel = buildProposalCapacityGuidance(GRAND_HALL_AREA, 120, "dinner-rounds");
-    const note = buildProposalCapacityNote("Grand Hall", intel);
-    expect(note).toContain("Grand Hall: comfortable for around 140 guests");
-    expect(note).toContain("seated dinner on round tables");
-    expect(note).toContain("for 120 guests");
-    expect(note).toContain("Planning estimate only; human review required");
-    expect(note).toContain("final capacity confirmed by the venue team");
-  });
+// The proposal composer puts publishedCapacityNote (planner-truth.ts) into the
+// client's capacity note, never the estimate above: the note must pass the
+// proposal claim guard and fit the 500-character payload field everywhere.
+describe("the capacity note the composer puts in the proposal", () => {
+  const rooms = [...Object.keys(TRADES_HALL_ROOM_CAPACITIES), "a-room-nobody-published"];
 
-  it("says one guest, not one guests", () => {
-    const intel = buildProposalCapacityGuidance(GRAND_HALL_AREA, 1, "dinner-rounds");
-    const note = buildProposalCapacityNote("Grand Hall", intel);
-    expect(note).toContain("for 1 guest:");
-    expect(note).not.toContain("1 guests");
-  });
-
-  it("omits the fit segment when no guest count is given", () => {
-    const intel = buildProposalCapacityGuidance(GRAND_HALL_AREA, 0, "cocktail");
-    const note = buildProposalCapacityNote("Saloon", intel);
-    expect(note).not.toContain("for 0 guests");
-    expect(note).toContain("standing reception");
-  });
-
-  it("passes the proposal claim guard for every layout style", () => {
-    for (const style of LAYOUT_STYLES) {
-      for (const guests of [0, 120]) {
-        const intel = buildProposalCapacityGuidance(GRAND_HALL_AREA, guests, style);
-        const note = buildProposalCapacityNote("Robert Adam Room", intel);
-        expect(findUnsupportedProposalClaim(note)).toBeNull();
+  it("passes the proposal claim guard for every room, layout style and guest count", () => {
+    for (const slug of rooms) {
+      for (const tradesHall of [true, false]) {
+        for (const style of LAYOUT_STYLES) {
+          for (const guests of [null, 120, 9999]) {
+            const note = publishedCapacityNote({
+              published: publishedCapacityFor({ slug, tradesHall }),
+              format: publishedFormatForStyle(style),
+              roomName: "Robert Adam Room",
+              guests,
+            });
+            expect(findUnsupportedProposalClaim(note)).toBeNull();
+          }
+        }
       }
     }
   });
 
   it("stays inside the 500-character payload limit with long room names", () => {
-    const intel = buildProposalCapacityGuidance(GRAND_HALL_AREA, 9999, "dinner-banquet");
-    const note = buildProposalCapacityNote("The Right Honourable Lady Convenor's Reception Room and North Gallery", intel);
+    const note = publishedCapacityNote({
+      published: publishedCapacityFor({ slug: "grand-hall", tradesHall: true }),
+      format: null,
+      roomName: "The Right Honourable Lady Convenor's Reception Room and North Gallery",
+      guests: 9999,
+    });
     expect(note.length).toBeLessThanOrEqual(500);
   });
+});
 
+describe("CAPACITY_STYLE_LABELS", () => {
   it("labels every layout style", () => {
     for (const style of LAYOUT_STYLES) {
       expect(CAPACITY_STYLE_LABELS[style].length).toBeGreaterThan(0);
