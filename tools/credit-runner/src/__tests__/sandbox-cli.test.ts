@@ -4,6 +4,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, rmdir, symlink, unlink, writ
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import Anthropic from "@anthropic-ai/sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { gitEnv } from "../git.js";
 import { withBaseCommit } from "../sandbox/base-repo.js";
@@ -313,6 +314,14 @@ describe("the launcher in a process of its own (launcher-child.ts, started as th
         const api = new FakeApi([]);
         api.persistFile = path.join(folder, "sessions.jsonl");
         api.statuses = ["running"];
+        // The next start must refuse before it creates anything. A create here is refused at once with a 400 (never
+        // retried or looked up), so a check that let the run through fails this test within seconds, not by its timeout.
+        const tried = { creates: 0 };
+        api.createSession = () => {
+          tried.creates += 1;
+          const refusal = "the next start sent a create: its startup check let a run through past an unbooked session";
+          return Promise.reject(new Anthropic.BadRequestError(400, { message: refusal }, refusal, new Headers()));
+        };
         const runId = (JSON.parse((await readFile(api.persistFile, "utf8")).trim()) as { readonly metadata: { readonly run: string } }).metadata.run;
         const config = { workRoot: path.join(folder, "work"), ledgerFile, lane: "sandbox", laneCapUsd: 110, orgCapUsd: 190 };
         const next = (signal?: AbortSignal) =>
@@ -320,7 +329,7 @@ describe("the launcher in a process of its own (launcher-child.ts, started as th
         const advice =
           "session sesn_1 (running) was made by this lane and has no ledger line; if a launcher is still following it, let that launcher finish (it books the session when it stops); otherwise book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_1 --book";
         expect(await next()).toMatchObject({ kind: "skipped", reason: expect.stringContaining(advice) });
-        expect(api.sessions).toHaveLength(0);
+        expect(tried.creates).toBe(0);
 
         const configFile = path.join(folder, "sandbox.config.json");
         await writeFile(configFile, JSON.stringify({ ...config, keyDir: path.join(folder, "keys"), keyFile: "pot-1.key" }));
