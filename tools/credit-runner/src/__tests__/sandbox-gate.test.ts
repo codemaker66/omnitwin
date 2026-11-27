@@ -556,7 +556,7 @@ describe("review.md's words on building the branch", () => {
   const head = "c".repeat(40);
   /** Fixed words, the same in every review: what was reviewed, the only way to build the branch, and the file that must not be applied. */
   const BUILDING =
-    "The format-patch files (`patch-*.patch` in the `outputs` folder beside this file) are the reviewed form: this review read the change from them. Build the branch only with `git am` on them, in their numbered order, on a new branch made at the base commit. `diff.patch` is not verified: nothing checks that it holds the same change as the patches (this review only searches it for secret-shaped text), so it must not be applied.";
+    "The format-patch files (`patch-*.patch` in the `outputs` folder beside this file) are the reviewed form: this review read the change from them. Build the branch only with `git am` on them, in their numbered order, on a new branch made at the base commit. `diff.patch` is not verified: nothing checks that it holds the same change as the patches (this review only checks that it is present and not empty, and searches it for secret-shaped text), so it must not be applied.";
 
   for (const verdict of ["ready-for-review", "rejected"] as const) {
     it(`says near the top of a ${verdict} review that the patches are the reviewed form, built only with git am, and that diff.patch must not be applied`, () => {

@@ -131,7 +131,7 @@ export function reviewMarkdown(task: Task, record: Extract<JobRecord, { kind: "r
     "",
     "## Building the branch",
     "",
-    "The format-patch files (`patch-*.patch` in the `outputs` folder beside this file) are the reviewed form: this review read the change from them. Build the branch only with `git am` on them, in their numbered order, on a new branch made at the base commit. `diff.patch` is not verified: nothing checks that it holds the same change as the patches (this review only searches it for secret-shaped text), so it must not be applied.",
+    "The format-patch files (`patch-*.patch` in the `outputs` folder beside this file) are the reviewed form: this review read the change from them. Build the branch only with `git am` on them, in their numbered order, on a new branch made at the base commit. `diff.patch` is not verified: nothing checks that it holds the same change as the patches (this review only checks that it is present and not empty, and searches it for secret-shaped text), so it must not be applied.",
   ];
   // Reasons, flags and changed entries can carry text the agent wrote (the
   // verifier's problems, file names, output names): each is one code span on
