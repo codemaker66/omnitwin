@@ -9,7 +9,7 @@
  */
 
 import { openCache, type CacheHandle } from "../idb-cache.js";
-import { GuestListSchema, deleteAfter, removedFromWhenUnreadable, repairGuestList, type GuestList } from "./model.js";
+import { GuestListSchema, deleteAfter, keptByLaterKit, removedFromWhenUnreadable, repairGuestList, type GuestList } from "./model.js";
 
 export const GUEST_LIST_DB = "venviewer-guest-lists";
 export const GUEST_LIST_STORE = "lists";
@@ -88,6 +88,11 @@ export type Saved =
   | { readonly kind: "other-kept"; readonly list: GuestList }
   /** Another tab was at work on the lists and did not finish in time: nothing was written, and the save can be tried again. */
   | { readonly kind: "busy" }
+  /**
+   * Nothing was kept: storage refused, the list is not one `open` would
+   * accept, or what is stored was kept by a later version of the kit and is
+   * never written over.
+   */
   | { readonly kind: "not-kept" };
 
 export interface SaveOptions {
@@ -109,7 +114,8 @@ export interface GuestListStore {
    * is still replaced, and the answer says so, so the page can say so, unless
    * the caller asked to give way to it. The answer carries the stamp written:
    * the caller's next `loaded`. When nothing is stored and the caller had
-   * loaded a copy, nothing is written.
+   * loaded a copy, nothing is written. Nor is anything written over a list
+   * kept by a later version of the kit: the answer is then "not-kept".
    *
    * The paper's version never goes down on the device. When another tab's
    * copy had been printed under a larger number than the list being saved, or
@@ -124,7 +130,8 @@ export interface GuestListStore {
   /**
    * Removes what is stored for a plan only while it still cannot be read as a
    * list, compared and deleted in one step of the store. A list is never
-   * removed by it, so one another tab has stored there since is left alone.
+   * removed by it, so one another tab has stored there since is left alone;
+   * nor is a list kept by a later version of the kit.
    */
   eraseUnreadable(planId: string): Promise<void>;
   /**
@@ -210,6 +217,8 @@ export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Ex
     if (!checked.success) return { kind: "not-kept" };
     try {
       const stored = await handle.get(checked.data.planId);
+      // A list kept by a later version of the kit, which this one cannot read, is never written over.
+      if (stored !== null && keptByLaterKit(stored.value)) return { kind: "not-kept" };
       // The copy the caller loaded is gone: it was removed, and is not written back.
       if (stored === null && loaded !== null) return { kind: "removed-elsewhere" };
       // What is stored is another's unless it is the very copy the caller loaded.
@@ -260,7 +269,8 @@ export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Ex
 
   async function eraseUnreadable(planId: string): Promise<void> {
     try {
-      await handle.deleteIf(planId, (stored) => !GuestListSchema.safeParse(stored.value).success);
+      // A list kept by a later version of the kit cannot be read here either, and is not removed for it.
+      await handle.deleteIf(planId, (stored) => !keptByLaterKit(stored.value) && !GuestListSchema.safeParse(stored.value).success);
     } catch {
       // Storage refused: what is stored stays as it was.
     }

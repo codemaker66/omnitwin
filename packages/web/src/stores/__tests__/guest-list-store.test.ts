@@ -2169,3 +2169,64 @@ describe("guest list page state: start again never erases a list", () => {
     expect(state().notice).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// A list kept by a later version of the kit, which this version cannot read.
+// A tab left open across a release still runs this code: it writes nothing
+// over that list and does not erase it, and says its own list is not kept.
+// ---------------------------------------------------------------------------
+
+describe("guest list page state: a list kept by a later version of the kit", () => {
+  /** What a later kit might keep for the plan, as the device holds it. */
+  function keptByALaterKit(): { readonly storedAt: string; readonly value: Record<string, unknown> } {
+    return {
+      storedAt: "2026-11-14T09:00:00.000Z",
+      value: { ...emptyGuestList(PLAN_A, "2026-11-14T09:00:00.000Z"), version: 2, revision: 9, guests: [guest(1), guest(2)], courses: ["soup"] },
+    };
+  }
+
+  it("a tab that held the list from before writes nothing over it, by a change or by a print, and says its list is not kept", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    expect(state().kept).toBe(true);
+    // A newer tab, running a later kit, keeps the list in its own shape.
+    const later = keptByALaterKit();
+    await backend.put(PLAN_A, later);
+
+    // A read here takes nothing: the value cannot be read.
+    await state().refresh();
+    expect(state().list?.guests).toEqual([guest(1)]);
+    // A change here is not written over it.
+    state().apply(titled("Typed in the older tab"));
+    await state().flush();
+    expect(state().kept).toBe(false);
+    expect(await backend.get(PLAN_A)).toEqual(later);
+    // Nor is a print's record, which gives way.
+    state().apply((list) => markPrinted(list, "2026-11-15T10:00:00.000Z"), {
+      undo: false,
+      ifOtherCopy: (theirs) => printedFromOlderCopy(theirs, 1, "2026-11-15T10:00:00.000Z"),
+    });
+    await state().flush();
+    expect(state().kept).toBe(false);
+    expect(await backend.get(PLAN_A)).toEqual(later);
+    expect(state().list?.title).toBe("Typed in the older tab");
+  });
+
+  it("start again does not erase it, and a list begun afterwards is not kept over it", async () => {
+    const { backend, store } = device();
+    const later = keptByALaterKit();
+    await backend.put(PLAN_A, later);
+    await state().open(PLAN_A, store, clock());
+    expect(state().phase).toBe("unreadable");
+
+    await state().startAgain();
+    expect(await backend.get(PLAN_A)).toEqual(later);
+    expect(state().phase).toBe("ready");
+    state().apply(titled("Begun again"));
+    await state().flush();
+    expect(state().kept).toBe(false);
+    expect(await backend.get(PLAN_A)).toEqual(later);
+  });
+});

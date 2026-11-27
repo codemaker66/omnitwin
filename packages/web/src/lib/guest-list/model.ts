@@ -23,6 +23,11 @@ export const SEATS_MIN = 1;
 export const SEATS_MAX = 24;
 export const SEATS_DEFAULT = 10;
 
+/**
+ * The version of the list's stored shape. Every list this version keeps
+ * carries it (the schema allows no other), so a later version of the kit can
+ * tell an earlier list from its own, and this one a later (`keptByLaterKit`).
+ */
 export const LIST_VERSION = 1;
 
 /** A list is removed this many days after its event date. */
@@ -107,6 +112,18 @@ export function emptyGuestList(planId: string, nowIso: string): GuestList {
     updatedAt: nowIso,
     revision: 0,
   };
+}
+
+/**
+ * Whether a stored value was kept by a later version of the kit: it carries a
+ * `version` above this one's. This version cannot read such a list. A tab left
+ * open across a release still runs this code, so it must never write over that
+ * list, or erase it for being unreadable.
+ */
+export function keptByLaterKit(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || !("version" in value)) return false;
+  const version: unknown = value.version;
+  return typeof version === "number" && version > LIST_VERSION;
 }
 
 /**

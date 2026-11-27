@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { memoryBackend, withBackend, type CacheBackend } from "../../idb-cache.js";
-import { emptyGuestList, type Guest, type GuestList } from "../model.js";
+import { emptyGuestList, LIST_VERSION, type Guest, type GuestList } from "../model.js";
 import { markPrinted } from "../paper.js";
 import { createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE, LOCK_WAIT_MS, stampOf, type Exclusive, type GuestListStore, type Stamp } from "../store.js";
 
@@ -968,6 +968,78 @@ describe("guest list store: nothing is removed on the strength of an earlier rea
     } finally {
       vi.unstubAllGlobals();
       vi.resetModules();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A list kept by a later version of the kit, in a shape this version cannot
+// read. A tab left open across a release still runs this code: it must never
+// write over that list, or erase it for being unreadable.
+// ---------------------------------------------------------------------------
+
+describe("guest list store: a list kept by a later version of the kit", () => {
+  /** What a later kit might keep: its own version, and a field this version does not know. */
+  function keptByALaterKit(): Record<string, unknown> {
+    return {
+      ...listFor(PLAN_A, { guests: [guestAt(1, null, null, "Ada Canary")], revision: 5 }),
+      version: LIST_VERSION + 1,
+      courses: ["soup"],
+    };
+  }
+
+  it("marks every list it saves with its own version, so a later kit can tell the same of this one", async () => {
+    const { raw, a } = twoTabs();
+    await a.save(listFor(PLAN_A), null);
+    expect((await raw.get(PLAN_A))?.value).toMatchObject({ version: LIST_VERSION });
+  });
+
+  it("opens as a value it cannot read, and is left in place", async () => {
+    const { backend, raw, a } = twoTabs();
+    await raw.put(PLAN_A, keptByALaterKit());
+    const before = JSON.stringify(await backend.get(PLAN_A));
+    expect(await a.open(PLAN_A)).toEqual({ kind: "unreadable" });
+    expect(JSON.stringify(await backend.get(PLAN_A))).toBe(before);
+  });
+
+  it("is never written over by a save, whether or not the save gives way: nothing is written, and the answer is not-kept", async () => {
+    const { backend, raw, a } = twoTabs();
+    await raw.put(PLAN_A, keptByALaterKit());
+    const before = JSON.stringify(await backend.get(PLAN_A));
+    const put = vi.spyOn(backend, "put");
+
+    const ours = listFor(PLAN_A, { title: "From the older tab" });
+    expect(await a.save(ours, null)).toEqual({ kind: "not-kept" });
+    expect(await a.save(ours, { revision: 4, updatedAt: NOW })).toEqual({ kind: "not-kept" });
+    expect(await a.save(ours, { revision: 4, updatedAt: NOW }, { yieldToOther: true })).toEqual({ kind: "not-kept" });
+    expect(put).not.toHaveBeenCalled();
+    expect(JSON.stringify(await backend.get(PLAN_A))).toBe(before);
+  });
+
+  it("is never erased as a value that cannot be read", async () => {
+    const { backend, raw, a } = twoTabs();
+    await raw.put(PLAN_A, keptByALaterKit());
+    const before = JSON.stringify(await backend.get(PLAN_A));
+    await a.eraseUnreadable(PLAN_A);
+    expect(JSON.stringify(await backend.get(PLAN_A))).toBe(before);
+  });
+
+  it("is still removed by the planner's own delete", async () => {
+    const { backend, raw, a } = twoTabs();
+    await raw.put(PLAN_A, keptByALaterKit());
+    await a.erase(PLAN_A);
+    expect(await backend.get(PLAN_A)).toBeNull();
+  });
+
+  it("a value that cannot be read and names no later version is replaced and erased as before", async () => {
+    const { backend, raw, a } = twoTabs();
+    for (const value of [{ junk: true }, { version: LIST_VERSION, junk: true }, { version: "2" }, { version: 0 }]) {
+      await raw.put(PLAN_A, value);
+      await a.eraseUnreadable(PLAN_A);
+      expect(await backend.get(PLAN_A)).toBeNull();
+      await raw.put(PLAN_A, value);
+      expect((await a.save(listFor(PLAN_A), null)).kind).toBe("saved-over-other");
+      await a.erase(PLAN_A);
     }
   });
 });
