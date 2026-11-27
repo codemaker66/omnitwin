@@ -24,14 +24,19 @@ import { EscalationScheduler } from "../services/escalation-scheduler.js";
 const GUEST = "Jane Guest";
 const GUEST_EMAIL = "jane.guest@example.com";
 const FAILED_QUERY = `Failed query: insert into "notifications" ("title", "body") values ($1, $2)\nparams: Still waiting: 2 chairs,${GUEST} asked for this and nobody has picked it up yet.`;
-const CAUSE = "duplicate key value violates unique constraint \"users_email_key\"";
-/** The database's own error, as node-postgres raises one: its message holds
- *  no values, but `detail` quotes the row's (and `hint` and `where` can). The
- *  SDK sends a cause's type and message only; with extraErrorDataIntegration,
- *  which the API does not use, `detail` would be sent too (seen 26 Nov 2026). */
+/** PostgreSQL's own message for a value typed into the wrong field quotes the
+ *  value (PostgreSQL 16.6, probed 27 Nov 2026); the scrubber keeps the enum's
+ *  name and drops the value. */
+const CAUSE = `invalid input value for enum request_state: "${GUEST_EMAIL}"`;
+const SCRUBBED_CAUSE = "invalid input value for enum request_state: \"[redacted]\"";
+/** The database's own error, as node-postgres raises one: its message quotes
+ *  the value, and `detail`, `hint` and `where` can quote a row's. The SDK
+ *  sends a cause's type and message only, through the API's scrubber; with
+ *  extraErrorDataIntegration, which the API does not use, `detail` would be
+ *  sent too (seen 26 Nov 2026). */
 const databaseError = (): Error => Object.assign(new Error(CAUSE), {
   severity: "ERROR",
-  code: "23505",
+  code: "22P02",
   detail: `Key (email)=(${GUEST_EMAIL}) already exists.`,
   hint: `Choose an address other than ${GUEST_EMAIL}.`,
   where: `SQL statement for ${GUEST_EMAIL}`,
@@ -159,14 +164,14 @@ describe("a failed escalation pass reaches Sentry (the real SDK)", () => {
     const { event, raw } = failure();
     const values = (event.exception?.values ?? []).map((value) => value.value ?? "");
     expect(values.some((value) => value.includes("params: [redacted]"))).toBe(true);
-    expect(values).toContain(CAUSE);
+    expect(values).toContain(SCRUBBED_CAUSE);
     expect(withoutSourceLines(JSON.parse(raw))).not.toContain(GUEST);
   });
 
-  it("sends none of the database error's own fields: the row's values in detail, hint and where stay out", () => {
+  it("sends none of the value the database quoted: not in its message, nor in detail, hint or where", () => {
     const data = withoutSourceLines(JSON.parse(failure().raw));
-    // Not vacuous: the cause itself is there, by its message.
-    expect(data).toContain(CAUSE.replaceAll("\"", "\\\""));
+    // Not vacuous: the cause itself is there, by its scrubbed message, with the enum's name.
+    expect(data).toContain(SCRUBBED_CAUSE.replaceAll("\"", "\\\""));
     expect(data).not.toContain(GUEST_EMAIL);
     expect(data).not.toContain("Key (email)");
   });

@@ -264,6 +264,46 @@ describe("scrubErrorMessage", () => {
     // 'params' mid-line is not a parameters block.
     expect(scrubErrorMessage("route params: id is required")).toBe("route params: id is required");
   });
+
+  // PostgreSQL's own messages, exactly as PostgreSQL 16.6 raised them for a
+  // value typed into the wrong field (probed 27 Nov 2026). The pg error's
+  // message reaches Sentry as a linked error and the log as `cause`.
+  const VALUE = "Jane Guest <jane.guest@example.com>";
+  const quotesTheValue: readonly (readonly [string, string])[] = [
+    [`invalid input syntax for type uuid: "${VALUE}"`, `invalid input syntax for type uuid: "[redacted]"`],
+    [`invalid input syntax for type integer: "${VALUE}"`, `invalid input syntax for type integer: "[redacted]"`],
+    [`invalid input syntax for type timestamp with time zone: "${VALUE}"`, `invalid input syntax for type timestamp with time zone: "[redacted]"`],
+    [`invalid input value for enum request_state: "${VALUE}"`, `invalid input value for enum request_state: "[redacted]"`],
+    [`value "99999999999" is out of range for type integer`, `value "[redacted]" is out of range for type integer`],
+    [`date/time field value out of range: "2026-13-45"`, `date/time field value out of range: "[redacted]"`],
+    [`malformed array literal: "${VALUE}"`, `malformed array literal: "[redacted]"`],
+    [`malformed range literal: "${VALUE}"`, `malformed range literal: "[redacted]"`],
+    [`malformed record literal: "${VALUE}"`, `malformed record literal: "[redacted]"`],
+    [`invalid value "Jane" for "YYYY"`, `invalid value "[redacted]" for "YYYY"`],
+    [`time zone "${VALUE}" not recognized`, `time zone "[redacted]" not recognized`],
+    [`invalid hexadecimal digit: "J"`, `invalid hexadecimal digit: "[redacted]"`],
+    [`invalid byte sequence for encoding "UTF8": 0xc3 0x28`, `invalid byte sequence for encoding "UTF8": [redacted]`],
+  ];
+
+  it("drops the value PostgreSQL quotes in its own message, keeping the type, enum and field it was refused for", () => {
+    for (const [message, scrubbed] of quotesTheValue) expect(scrubErrorMessage(message), message).toBe(scrubbed);
+  });
+
+  it("drops the quoted value inside a stack too, and keeps the frames", () => {
+    const stack = `error: invalid input syntax for type uuid: "${VALUE}"\n    at Parser.parseErrorMessage (parser.js:1:1)`;
+    expect(scrubErrorMessage(stack)).toBe(`error: invalid input syntax for type uuid: "[redacted]"\n    at Parser.parseErrorMessage (parser.js:1:1)`);
+  });
+
+  it("leaves PostgreSQL's messages that name only the schema whole: the constraint, column and relation names stay", () => {
+    const namesOnly = [
+      `duplicate key value violates unique constraint "users_email_key"`,
+      `null value in column "name" of relation "people" violates not-null constraint`,
+      `new row for relation "people" violates check constraint "people_age_check"`,
+      "value too long for type character varying(4)",
+      "invalid input syntax for type json",
+    ];
+    for (const message of namesOnly) expect(scrubErrorMessage(message)).toBe(message);
+  });
 });
 
 describe("errorLogSerializer", () => {
