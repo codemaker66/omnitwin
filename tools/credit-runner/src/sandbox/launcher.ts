@@ -1,7 +1,7 @@
 import { writeSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AGENT_EFFORT, AGENT_MODEL, type Task } from "../task.js";
+import { AGENT_EFFORT, AGENT_MODEL, describeError, type Task } from "../task.js";
 import type { SandboxApi } from "./api.js";
 import { sandboxSystemPrompt } from "./brief.js";
 import { appendCreditLine, appendCreditLineSync, charges, checkSpend, type CreditLine, ledgerHasSession, readCreditLedger, readLedgerBookings, readLedgerBookingsSync } from "./credit-ledger.js";
@@ -393,7 +393,7 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
       } catch (error) {
         started.booked = false;
         const how = started.sessionId === null ? "book it with collect --book once its id is known" : `book it with ${bookCommand(started.sessionId)}`;
-        print(`session ${session} may still be running, and booking it failed (${error instanceof Error ? error.message : String(error)}); ${how}`);
+        print(`session ${session} may still be running, and booking it failed (${describeError(error)}); ${how}`);
         exit(1);
         return;
       }

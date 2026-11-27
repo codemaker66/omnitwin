@@ -196,7 +196,7 @@ export async function main(argv: readonly string[], seams: { readonly api?: Sand
       }
     }
     // The review runs on this machine's git: one too old for it rejects every run, after the session is paid for.
-    const gitVersion = await git(tmpdir(), ["--version"]).catch((error: unknown) => `git --version failed: ${error instanceof Error ? error.message : String(error)}`);
+    const gitVersion = await git(tmpdir(), ["--version"]).catch((error: unknown) => `git --version failed: ${describeError(error)}`);
     const gitProblem = gitVersionProblem(gitVersion);
     out(gitProblem === null ? `Git: ${gitVersion.replace(/^git version /u, "")} (the review needs 2.41 or newer)` : `Warning: ${gitProblem}`);
     return 0;

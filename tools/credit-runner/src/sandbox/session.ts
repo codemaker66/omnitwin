@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
-import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES } from "../task.js";
+import { describeError, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES } from "../task.js";
 import { isAmbiguousFailure, type OutputFile, type SandboxApi, type SessionEvent, type SessionRef } from "./api.js";
 import { outcomeFor, type RunFacts, VERIFY_COMMAND, verifyTaskJson } from "./brief.js";
 import { OUTPUT_CAPS, type OutputCaps, OutputTimeoutError, OutputTooLargeError, planOutputs } from "./outputs.js";
@@ -590,7 +590,8 @@ async function createOrFind(
     return await api.createSession(params);
   } catch (error) {
     if (!isAmbiguousFailure(error)) throw error;
-    log(`Creating the session failed (${describe(error)}); looking for it by its metadata before giving up.`);
+    // describeError: the line is printed as it is, and the error's text came from the network.
+    log(`Creating the session failed (${describeError(error)}); looking for it by its metadata before giving up.`);
     let lastLookup: unknown = null;
     for (const wait of LOOKUP_WAITS_MS) {
       if (wait > 0) await sleep(wait);

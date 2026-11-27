@@ -33,7 +33,7 @@ import {
   type SessionListing,
 } from "../sandbox/api.js";
 import { outcomeFor, promptSha, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
-import { appendCreditLine, checkSpend, ledgerHasSession, readCreditLedger } from "../sandbox/credit-ledger.js";
+import { appendCreditLine, appendCreditLineSync, checkSpend, ledgerHasSession, readCreditLedger } from "../sandbox/credit-ledger.js";
 import {
   bookSession,
   collectSandboxJob,
@@ -79,7 +79,7 @@ import { BASE_FILES, FIX, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit
 // Every ledger write goes through this spy, so a test can show that one did not happen.
 vi.mock("../sandbox/credit-ledger.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../sandbox/credit-ledger.js")>();
-  return { ...actual, appendCreditLine: vi.fn(actual.appendCreditLine) };
+  return { ...actual, appendCreditLine: vi.fn(actual.appendCreditLine), appendCreditLineSync: vi.fn(actual.appendCreditLineSync) };
 });
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -2503,6 +2503,34 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
     expect(second.exits).toEqual([1]);
     expect(await ledgerLines(twice.ledgerFile)).toEqual([expect.objectContaining({ batchId: null, runId: againRun, costUsd: 4.5, costKnown: false })]);
     expect(appendCreditLine).not.toHaveBeenCalled();
+  });
+
+  it("prints an error inside a log or signal line on one line, without control characters, as describeError does", async () => {
+    // A create that fails unclearly, with an escape sequence and a line break in its message.
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.createError = new Error("socket \u001b[31mreset\n  by peer");
+    const logged: string[] = [];
+    await expect(job(api, config, happy, { sleep: instant, log: (line) => logged.push(line) })).rejects.toBeInstanceOf(SessionMayExistError);
+    expect(logged).toContain("Creating the session failed (socket [31mreset by peer); looking for it by its metadata before giving up.");
+
+    // A second signal whose booking fails, with the same kind of message.
+    const books = await workspace();
+    const endlessApi = endless();
+    endlessApi.statuses = ["running", "idle"];
+    const { exits, printed, stopOnSignals } = seams();
+    const run = job(endlessApi, books, happy, { sleep: instant, stopOnSignals }).catch((caught: unknown) => caught);
+    await following(endlessApi);
+    vi.mocked(appendCreditLineSync).mockImplementationOnce(() => {
+      throw new Error("disk \u001b[31mfull\r\n  try again");
+    });
+    process.emit("SIGINT");
+    process.emit("SIGTERM");
+    expect(exits).toEqual([1]);
+    expect(printed).toEqual([
+      "session sesn_1 may still be running, and booking it failed (disk [31mfull try again); book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_1 --book",
+    ]);
+    expect(await run).toBeInstanceOf(RunStoppedError);
   });
 
   it("leaves no handler behind, whether the run succeeds, fails or is refused, and installs none unless asked", async () => {
