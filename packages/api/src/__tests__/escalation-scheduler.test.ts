@@ -249,15 +249,79 @@ describe("a pass that keeps failing (T-766)", () => {
     expect(h.reported).toEqual([["pass", T0], ["pass", T0 + PASS_RETRY_FIRST_MS + MIN_SLEEP_MS]]);
   });
 
-  it("a poke during a failing streak keeps the wait: a request raised meanwhile cannot reopen the loop", async () => {
+  it("a poke during a failing streak arms at the retry the failure set, neither sooner nor later", async () => {
     const h = overdue(["fails"]);
     h.scheduler.start();
     await settle();
     await wakeAt(h, T0);
+    // A request raised three seconds after the failure: two seconds are left.
+    h.clock.now = T0 + 3_000;
     h.scheduler.poke();
     await settle();
     expect(h.run).toHaveBeenCalledTimes(1);
-    expect(h.timers.map((timer) => [timer.ms, timer.cleared])).toEqual([[MIN_SLEEP_MS, false], [PASS_RETRY_FIRST_MS, true], [PASS_RETRY_FIRST_MS, false]]);
+    expect(h.timers.map((timer) => [timer.ms, timer.cleared])).toEqual([[MIN_SLEEP_MS, false], [PASS_RETRY_FIRST_MS, true], [PASS_RETRY_FIRST_MS - 3_000, false]]);
+  });
+
+  it("pokes under steady traffic cannot push the retry out: one failure, then a poke every 4 s for ten minutes, and the retry comes at the first step", async () => {
+    // The release lead's case (SF1): measured from each poke, a 5 s wait
+    // re-armed every 4 s would never come round, and every escalation would
+    // stall until the pokes stopped.
+    const clock = { now: T0 };
+    /** The one timer the scheduler has armed: firing or clearing it empties the slot. */
+    const slot: { pending: { readonly due: number; readonly callback: () => void } | null } = { pending: null };
+    let escalated = false;
+    const passesAt: number[] = [];
+    const scheduler = new EscalationScheduler({
+      db,
+      onEscalated: () => undefined,
+      now: () => clock.now,
+      plan: () => Promise.resolve(escalated ? null : T0 - 1_000),
+      run: () => {
+        passesAt.push(clock.now);
+        if (passesAt.length === 1) return Promise.reject(new Error("the database blipped"));
+        escalated = true;
+        return Promise.resolve([]);
+      },
+      report: () => undefined,
+      setTimer: (callback, ms) => {
+        const timer = { due: clock.now + ms, callback };
+        slot.pending = timer;
+        return timer;
+      },
+      clearTimer: (handle) => { if (slot.pending === handle) slot.pending = null; },
+    });
+    /** Fires the armed timer at its own due time while it falls due by `until`. */
+    const fireDue = async (until: number): Promise<void> => {
+      while (slot.pending !== null && slot.pending.due <= until) {
+        const { due, callback } = slot.pending;
+        slot.pending = null;
+        clock.now = due;
+        callback();
+        await settle();
+      }
+    };
+    scheduler.start();
+    await settle();
+    for (let at = T0 + 4_000; at <= T0 + 600_000; at += 4_000) {
+      await fireDue(at);
+      clock.now = at;
+      scheduler.poke();
+      await settle();
+    }
+    await fireDue(T0 + 600_000);
+    expect(passesAt).toEqual([T0 + MIN_SLEEP_MS, T0 + MIN_SLEEP_MS + PASS_RETRY_FIRST_MS]);
+  });
+
+  it("an announcement that throws is reported on its own, after a pass that succeeded: no wait, and the pass's streak is untouched", async () => {
+    const h = harness([T0 + 1_000, T0 - 1_000], [[{ request: { id: "r-1" } }]]);
+    h.onEscalated.mockImplementation(() => { throw new Error("a live frame's payload would not encode"); });
+    h.scheduler.start();
+    await settle();
+    await wakeAt(h, T0 + 1_000);
+    expect(h.reported).toEqual([["announce", T0 + 1_000]]);
+    // The plan after the pass finds an overdue window and wakes a beat later:
+    // no failing pass, so no wait.
+    expect(h.timers.map((timer) => timer.ms)).toEqual([1_000, MIN_SLEEP_MS]);
   });
 
   it("a plan that fails is reported on a streak of its own and tried again a minute later", async () => {
