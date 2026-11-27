@@ -57,6 +57,11 @@ export const StuckWorkSchema = z.object({
     oldPendingSends: z.number().int(),
   }),
   worker: z.union([z.object({ worker: z.literal("off") }), JobWorkerStatusSchema]),
+  /**
+   * The answering server's clock, epoch ms, when it answered: the clock the worker's `lastPassAt` is on, so the
+   * page counts how long ago the worker ran from this and never from the browser's own clock.
+   */
+  serverNowMs: z.number().int().positive(),
 });
 
 /** The note a person leaves when they close a dead job: 1 to 500 characters, no U+0000 (PostgreSQL text cannot hold it). */

@@ -313,6 +313,15 @@
   text-transform: uppercase;
 }
 
+/* A row's own header cell (Stuck work's job kind) looks like the row's other cells, not like a column heading. */
+.admin-panel-table th.admin-panel-table-row-header {
+  color: rgba(244, 239, 228, 0.78);
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 .admin-panel-chip {
   display: inline-flex;
   align-items: center;

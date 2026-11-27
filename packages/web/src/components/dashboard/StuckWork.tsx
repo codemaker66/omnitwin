@@ -2,18 +2,20 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from "rea
 import type { SelfTestResult, StuckJob, StuckWork as StuckWorkReading } from "@omnitwin/types";
 import { closeStuckJob, getStuckWork, retryStuckJob, runSelfTest } from "../../api/jobs.js";
 import { ActivityStatus } from "../shared/Activity.js";
-import { focusIsLost, StuckJobRow, type RefocusRequest, type RowWork } from "./StuckJobRow.js";
+import { CLOSE_MEANS_ID, focusIsLost, StuckJobRow, TRY_AGAIN_MEANS_ID, type RefocusRequest, type RowWork } from "./StuckJobRow.js";
 import "./AdminPanel.css";
 
 // ---------------------------------------------------------------------------
 // Stuck work: the jobs that ran out of tries, for platform administrators.
 // The list is read when the page opens and after each action, never on a
-// timer. A refusal is shown in the server's own words.
+// timer, and the page says when it was read. A refusal is shown in the
+// server's own words. The self-test's verdict and each action that went
+// through are said in one polite live region, there from the first render.
 // ---------------------------------------------------------------------------
 
 interface Reading {
   readonly work: StuckWorkReading;
-  /** The browser's clock when the list was read, the one moment "ago" is counted from. */
+  /** The browser's clock when the list was read: shown as the time it was read. "Ago" is counted on the server's. */
   readonly readAt: number;
 }
 
@@ -24,8 +26,9 @@ type ReadResult =
 
 type SelfTest =
   | { readonly state: "running" }
-  | { readonly state: "verdict"; readonly text: string }
   | { readonly state: "failed"; readonly message: string };
+
+const READ_AT_FORMAT = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
 
 function words(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
@@ -50,36 +53,57 @@ function ago(milliseconds: number): string {
   return `${unit(Math.floor(hours / 24), "day", "days")} ago`;
 }
 
-function workerSentence(reading: Reading): string {
-  const { worker } = reading.work;
+/** How long ago the worker last ran, counted on the answering server's own clock, the one `lastPassAt` is on. */
+function workerSentence(work: StuckWorkReading): string {
+  const { worker } = work;
   if ("worker" in worker) return "The worker is switched off.";
   if (worker.fault === "database") return "The worker cannot reach the database.";
   if (worker.fault === "loop") return "The worker has stopped after an error.";
   if (worker.lastPassAt === null) return "The worker has not run yet.";
-  return `The worker last ran ${ago(reading.readAt - worker.lastPassAt)}.`;
+  return `The worker last ran ${ago(work.serverNowMs - worker.lastPassAt)}.`;
 }
 
-/** One sentence of real counts, as separate parts so each reads on its own. */
+/** One sentence of real counts, as separate parts so each reads on its own, and when the list was read. */
 function summary(reading: Reading): readonly string[] {
   const { dead, queued } = reading.work.counts;
   return [
     dead === 0 ? "Nothing is stuck." : `${unit(dead, "job gave", "jobs gave")} up.`,
     ...(queued > 0 ? [`${String(queued)} ${queued === 1 ? "is" : "are"} waiting.`] : []),
-    workerSentence(reading),
+    workerSentence(reading.work),
+    `The list was read at ${READ_AT_FORMAT.format(new Date(reading.readAt))}.`,
   ];
+}
+
+/** A job as the page names it in a sentence: its kind and its venue. */
+function jobLabel(job: StuckJob): string {
+  return `${job.kind}, ${job.venueName ?? "The platform"}`;
 }
 
 function oldSendsSentence(count: number): string {
   return `${String(count)} old ${count === 1 ? "send was" : "sends were"} never recorded as sent or failed.`;
 }
 
-/** What the server said became of the self-test's job; whether the worker is off is the newest reading's word. */
+/**
+ * What the server said became of the self-test's job; whether this server's worker is off is the newest
+ * reading's word. Running with it off means another server's worker has the job.
+ */
 function verdictSentence(result: SelfTestResult, workerOff: boolean): string {
-  if (result.state === "done") return "The self-test ran.";
-  if (result.state === "dead" || result.state === "abandoned") return "The self-test did not finish. It is on the list above.";
-  return workerOff
-    ? "The self-test is waiting. The worker is switched off."
-    : "The self-test has not run yet. It is still waiting.";
+  switch (result.state) {
+    case "done":
+      return "The self-test ran.";
+    case "dead":
+      return "The self-test did not finish. It is in the list below.";
+    case "abandoned":
+      return "The self-test was closed by hand.";
+    case "running":
+      return workerOff
+        ? "The self-test is running on another server."
+        : "The self-test is running. It had not finished when the server stopped waiting.";
+    case "queued":
+      return workerOff
+        ? "The self-test is waiting. The worker is switched off."
+        : "The self-test has not run yet. It is still waiting.";
+  }
 }
 
 export function StuckWork(): ReactElement {
@@ -89,6 +113,8 @@ export function StuckWork(): ReactElement {
   const [busy, setBusy] = useState<ReadonlyMap<string, RowWork>>(new Map());
   const [failures, setFailures] = useState<ReadonlyMap<string, { readonly kind: string; readonly message: string }>>(new Map());
   const [selfTest, setSelfTest] = useState<SelfTest | null>(null);
+  /** The newest verdict or outcome, said in the page's one polite live region. */
+  const [news, setNews] = useState("");
   const [refocus, setRefocus] = useState<{ readonly id: string; readonly request: RefocusRequest } | null>(null);
   const [headingRequests, setHeadingRequests] = useState(0);
 
@@ -187,12 +213,21 @@ export function StuckWork(): ReactElement {
     busyIds.current.delete(job.id);
     if (!mounted()) return succeeded;
     setBusy((current) => without(current, job.id));
-    if (result.status === "read") {
-      if (result.work.jobs.some((listed) => listed.id === job.id)) setRefocus({ id: job.id, request: { target: work === "retry" ? "retry" : succeeded ? "close-button" : "note" } });
-      else setHeadingRequests((count) => count + 1);
+    if (succeeded) setNews(work === "retry" ? `Put back on the list: ${jobLabel(job)}.` : `Closed: ${jobLabel(job)}.`);
+    if (result.status === "read" && result.work.jobs.some((listed) => listed.id === job.id)) {
+      setRefocus({ id: job.id, request: { target: work === "retry" ? "retry" : succeeded ? "close-button" : "note" } });
+    } else if (result.status !== "replaced") {
+      // The row has gone, or the list could not be read again: the heading, if focus was lost.
+      setHeadingRequests((count) => count + 1);
     }
     return succeeded;
   }, [read]);
+
+  /** A read a person asked for, after an error: the heading, if focus was lost with the button that asked. */
+  const readAgain = async (): Promise<void> => {
+    await read();
+    if (mounted()) setHeadingRequests((count) => count + 1);
+  };
 
   const startSelfTest = async (): Promise<void> => {
     if (selfTestRunning.current) return;
@@ -211,10 +246,8 @@ export function StuckWork(): ReactElement {
     if (!mounted()) return;
     selfTestRunning.current = false;
     const worker = latestReading.current?.work.worker;
-    setSelfTest(answer === null ? failed : {
-      state: "verdict",
-      text: verdictSentence(answer, worker !== undefined && "worker" in worker),
-    });
+    setSelfTest(failed);
+    if (answer !== null) setNews(verdictSentence(answer, worker !== undefined && "worker" in worker));
   };
 
   const anyWork = busy.size > 0 || selfTest?.state === "running";
@@ -236,6 +269,10 @@ export function StuckWork(): ReactElement {
             </p>
           )}
           {reading !== null && reading.work.counts.oldPendingSends > 0 && <p>{oldSendsSentence(reading.work.counts.oldPendingSends)}</p>}
+          {/* The one polite region for verdicts and outcomes, there from the first render so a change is read out. */}
+          <div role="status" aria-live="polite" aria-atomic="true">
+            {news !== "" && <p>{news}</p>}
+          </div>
         </div>
         <div>
           <button type="button" className="admin-panel-button admin-panel-button--secondary"
@@ -244,7 +281,6 @@ export function StuckWork(): ReactElement {
             Run the self-test
           </button>
           {selfTest?.state === "running" && <ActivityStatus>Running the self-test…</ActivityStatus>}
-          {selfTest?.state === "verdict" && <p role="status">{selfTest.text}</p>}
           {selfTest?.state === "failed" && (
             <div className="admin-panel-inline-error" role="alert"><span>{selfTest.message}</span></div>
           )}
@@ -256,12 +292,12 @@ export function StuckWork(): ReactElement {
         <div className="admin-panel-inline-error" role="alert">
           <span>{readError}</span>
           <button type="button" className="admin-panel-button admin-panel-button--secondary" disabled={isReading}
-            onClick={() => { void read(); }}>
+            onClick={() => { void readAgain(); }}>
             {reading === null ? "Try again" : "Read the list again"}
           </button>
         </div>
       )}
-      {reading !== null && isReading && !anyWork && readError === null && <ActivityStatus>Reading the list again…</ActivityStatus>}
+      {reading !== null && isReading && !anyWork && <ActivityStatus>Reading the list again…</ActivityStatus>}
 
       {orphans.map(([id, failure]) => (
         <div key={id} className="admin-panel-inline-error" role="alert">
@@ -269,6 +305,12 @@ export function StuckWork(): ReactElement {
         </div>
       ))}
 
+      {jobs.length > 0 && (
+        <p className="admin-panel-field-note">
+          <span id={TRY_AGAIN_MEANS_ID}>Try again runs a job again now, from its first try.</span>{" "}
+          <span id={CLOSE_MEANS_ID}>Close with a note stops a job for good and keeps your note.</span>
+        </p>
+      )}
       {jobs.length > 0 && (
         <div className="admin-panel-table-wrap">
           <table className="admin-panel-table">

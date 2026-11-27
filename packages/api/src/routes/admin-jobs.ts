@@ -40,10 +40,15 @@ function isFinished(state: JobState): boolean {
 
 const JobIdParams = z.object({ id: z.uuid() });
 
-const NOT_STUCK = {
-  error: "This job is already back on the list.",
-  code: "JOB_NOT_STUCK",
-} as const;
+/**
+ * Try again or Close found the job not dead: the 409 says what it is instead. Queued or running, someone put it
+ * back first; dead only when it went dead again after the press found it back on the list.
+ */
+function notStuck(state: JobState): { readonly error: string; readonly code: "JOB_NOT_STUCK" } {
+  if (state === "abandoned") return { error: "Someone has already closed this job.", code: "JOB_NOT_STUCK" };
+  if (state === "done") return { error: "This job has already run.", code: "JOB_NOT_STUCK" };
+  return { error: "This job is already back on the list.", code: "JOB_NOT_STUCK" };
+}
 
 const NOT_FOUND = {
   error: "There is no such job.",
@@ -76,7 +81,8 @@ export async function adminJobsRoutes(
     const listed = await listStuckWork(db);
     // The same two shapes as GET /health/worker: its status, or "off" when no worker runs here.
     const worker = installedJobWorker()?.status() ?? { worker: "off" as const };
-    return { data: { ...listed, worker } };
+    // This server's clock, the one the worker's lastPassAt is on: the page counts "last ran" from it.
+    return { data: { ...listed, worker, serverNowMs: Date.now() } };
   });
 
   server.post("/selftest", { preHandler }, async (request): Promise<{ data: SelfTestResult }> => {
@@ -121,8 +127,8 @@ export async function adminJobsRoutes(
       return reply.status(500).send(PREPARATION_FAILED);
     }
     if (outcome === "not-found") return reply.status(404).send(NOT_FOUND);
-    if (outcome === "not-dead") return reply.status(409).send(NOT_STUCK);
     if (outcome === "unreadable") return reply.status(409).send(KIND_UNREADABLE);
+    if (outcome !== "retried") return reply.status(409).send(notStuck(outcome.notDead));
     pokeJobWorker();
     const data: StuckJobAction = { id: params.data.id };
     return { data };
@@ -135,7 +141,7 @@ export async function adminJobsRoutes(
     if (!body.success) return invalid(reply, body.error, "Invalid body");
     const closed = await abandonDeadJob(db, params.data.id, request.user.id, body.data.note);
     if (closed === "not-found") return reply.status(404).send(NOT_FOUND);
-    if (closed === "not-dead") return reply.status(409).send(NOT_STUCK);
+    if (closed !== "closed") return reply.status(409).send(notStuck(closed.notDead));
     const data: StuckJobAction = { id: params.data.id };
     return { data };
   });

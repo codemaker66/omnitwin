@@ -556,7 +556,7 @@ const stuckCountsRow = z.object({
 });
 
 const retriedRow = z.object({ kind: z.string(), venue_id: z.string().nullable(), payload: z.unknown() });
-const classifiedRow = z.object({ state: z.string(), readable: z.boolean() });
+const classifiedRow = z.object({ state: JobStateSchema, readable: z.boolean() });
 
 function isoFromMs(ms: number): string {
   return new Date(ms).toISOString();
@@ -577,7 +577,7 @@ function isoFromMs(ms: number): string {
  * failing the page. `oldPendingSends` is a send still `pending` after a day.
  * The database's clock decides every age.
  */
-export async function listStuckWork(db: Database): Promise<Omit<StuckWork, "worker">> {
+export async function listStuckWork(db: Database): Promise<Omit<StuckWork, "worker" | "serverNowMs">> {
   const counts = await db.execute(sql`
     SELECT
       (SELECT count(*) FROM jobs WHERE state = 'queued' AND run_at <= now())::int AS queued,
@@ -627,7 +627,16 @@ function readableBy(registry: JobRegistry): SQL {
     WHERE known.kind = j.kind AND known.version = j.version)`;
 }
 
-export type RetryOutcome = "retried" | "not-dead" | "not-found" | "unreadable";
+/**
+ * Try again or Close found the job was not dead, and the state it read just after: queued or running (another
+ * person put it back first), done (it has run since), abandoned (another person closed it). Dead only when it
+ * went dead again between the press and that read.
+ */
+export interface NotDead {
+  readonly notDead: JobState;
+}
+
+export type RetryOutcome = "retried" | "not-found" | "unreadable" | NotDead;
 
 /**
  * A kind's own preparation for Try again failed. It names the kind, the job
@@ -656,8 +665,8 @@ export class JobRetryPreparationError extends Error {
  * preparation throws, the transaction rolls back, the job stays dead and a
  * `JobRetryPreparationError` is thrown.
  *
- * `"not-found"`: no job has this id. `"not-dead"`: the job is not dead
- * (another person got there first). `"unreadable"`: it is dead, but no server
+ * `"not-found"`: no job has this id. `{ notDead }`: the job is not dead, and
+ * the state it is in (`NotDead`). `"unreadable"`: it is dead, but no server
  * of this release reads its kind or version, so putting it back would hide it
  * from Stuck work and no one would ever take it; it stays dead, to be closed
  * with a note.
@@ -680,21 +689,23 @@ export async function retryDeadJob(db: Database, registry: JobRegistry, id: stri
       }
       return "retried";
     }
-    // Nothing changed: say why. Another person's UPDATE that committed while
-    // this one waited has made the job queued, and that is `not-dead` too.
+    // Nothing changed: say why, with the state the job is in. Another person's
+    // UPDATE that committed while this one waited has made the job queued.
     const found = await tx.execute(sql`
       SELECT j.state, ${readableBy(registry)} AS readable FROM jobs j WHERE j.id = ${id}::uuid`);
     const [foundRaw] = found.rows;
     if (foundRaw === undefined) return "not-found";
     const row = classifiedRow.parse(foundRaw);
-    return row.state === "dead" && !row.readable ? "unreadable" : "not-dead";
+    if (row.state === "dead" && !row.readable) return "unreadable";
+    return { notDead: row.state };
   });
 }
 
 /**
- * Dead to abandoned, with who, when and the note. `"not-dead"` if the job
- * exists and was not dead, `"not-found"` if no job has this id. Works for any
- * kind, readable or not. The note is the caller's, already trimmed and checked
+ * Dead to abandoned, with who, when and the note. `{ notDead }` with the
+ * state the job is in if it exists and was not dead (`NotDead`),
+ * `"not-found"` if no job has this id. Works for any kind, readable or not.
+ * The note is the caller's, already trimmed and checked
  * (`CloseStuckJobSchema`).
  */
 export async function abandonDeadJob(
@@ -702,16 +713,17 @@ export async function abandonDeadJob(
   id: string,
   byUserId: string,
   note: string,
-): Promise<"closed" | "not-dead" | "not-found"> {
+): Promise<"closed" | "not-found" | NotDead> {
   const result = await db.execute(sql`
     UPDATE jobs SET state = 'abandoned', resolved_by = ${byUserId}::uuid, resolved_at = now(),
       resolution = ${note}::text, updated_at = now()
     WHERE id = ${id}::uuid AND state = 'dead'
     RETURNING id`);
   if (result.rows.length === 1) return "closed";
-  // Nothing changed: one read says whether the job is there at all.
-  const found = await db.execute(sql`SELECT 1 AS present FROM jobs WHERE id = ${id}::uuid`);
-  return found.rows.length === 0 ? "not-found" : "not-dead";
+  // Nothing changed: one read says whether the job is there at all, and in what state.
+  const found = await db.execute(sql`SELECT state FROM jobs WHERE id = ${id}::uuid`);
+  const [foundRaw] = found.rows;
+  return foundRaw === undefined ? "not-found" : { notDead: stateRow.parse(foundRaw).state };
 }
 
 const stateRow = z.object({ state: JobStateSchema });

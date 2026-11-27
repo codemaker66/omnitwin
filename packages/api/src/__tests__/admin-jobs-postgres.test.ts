@@ -321,6 +321,8 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     expect(body.counts).toEqual({ queued: 1, running: 0, dead: 2, oldPendingSends: 1 });
     // No worker runs in this process.
     expect(body.worker).toEqual({ worker: "off" });
+    // The server's own clock, the one a worker's lastPassAt is on (this test runs in the server's process).
+    expect(Math.abs(body.serverNowMs - Date.now())).toBeLessThan(60_000);
     // The whole answer is the contract's shape, and holds no payload, address or name.
     expect(StuckWorkSchema.parse(body)).toEqual(body);
     for (const job of body.jobs) expect(StuckJobSchema.strict().safeParse(job).success).toBe(true);
@@ -451,7 +453,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     expect((await rowOf(deadId)).state).toBe("queued");
   });
 
-  it("Try again and Close at the same moment: one wins, the other is told the job is not stuck", async () => {
+  it("Try again and Close at the same moment: one wins, the other is told in its own words what became of the job", async () => {
     const deadId = await seed({ state: "dead", attempts: 6 });
     const [retry, close] = await Promise.all([
       asPlatformAdmin("POST", `/admin/jobs/${deadId}/retry`),
@@ -459,6 +461,10 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     ]);
     expect([retry.statusCode, close.statusCode].sort()).toEqual([200, 409]);
     expect((await rowOf(deadId)).state).toBe(retry.statusCode === 200 ? "queued" : "abandoned");
+    // The one refused is told what the other did: put back on the list, or closed.
+    expect(retry.statusCode === 200 ? close.json() : retry.json()).toEqual(retry.statusCode === 200
+      ? { error: "This job is already back on the list.", code: "JOB_NOT_STUCK" }
+      : { error: "Someone has already closed this job.", code: "JOB_NOT_STUCK" });
   });
 
   it("does not put back a dead job no server of this release can run: it stays dead, to be closed with a note", async () => {
@@ -516,25 +522,31 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     ]);
     expect(both.map((response) => response.statusCode).sort()).toEqual([200, 409]);
     expect((await rowOf(deadId)).resolution).toBe(both[0]?.statusCode === 200 ? "First note" : "Second note");
+    // The one refused is told the job was closed, not that it is back on the list.
+    expect(both.find((response) => response.statusCode === 409)?.json())
+      .toEqual({ error: "Someone has already closed this job.", code: "JOB_NOT_STUCK" });
   });
 
   // ---- What is refused --------------------------------------------------------
 
-  it("a job that is not dead cannot be tried again or closed, and is left as it was", async () => {
-    const ids = [
-      await seed({ state: "queued" }),
-      await seed({ state: "running" }),
-      await seed({ state: "done" }),
-      await seed({ state: "abandoned" }),
-    ];
+  it("a job that is not dead cannot be tried again or closed, is left as it was, and the answer says what it is", async () => {
+    const cases = [
+      { state: "queued", words: "This job is already back on the list." },
+      { state: "running", words: "This job is already back on the list." },
+      { state: "done", words: "This job has already run." },
+      { state: "abandoned", words: "Someone has already closed this job." },
+    ] as const;
+    const ids = new Map<string, string>();
+    for (const { state } of cases) ids.set(state, await seed({ state }));
     const before = await wholeTable();
-    for (const id of ids) {
+    for (const { state, words } of cases) {
+      const id = ids.get(state) ?? "";
       const retry = await asPlatformAdmin("POST", `/admin/jobs/${id}/retry`);
-      expect(retry.statusCode, `retry ${id}`).toBe(409);
-      expect(retry.json()).toEqual({ error: "This job is already back on the list.", code: "JOB_NOT_STUCK" });
+      expect(retry.statusCode, `retry ${state}`).toBe(409);
+      expect(retry.json(), `retry ${state}`).toEqual({ error: words, code: "JOB_NOT_STUCK" });
       const close = await asPlatformAdmin("POST", `/admin/jobs/${id}/close`, { note: "A note" });
-      expect(close.statusCode, `close ${id}`).toBe(409);
-      expect(close.json()).toEqual({ error: "This job is already back on the list.", code: "JOB_NOT_STUCK" });
+      expect(close.statusCode, `close ${state}`).toBe(409);
+      expect(close.json(), `close ${state}`).toEqual({ error: words, code: "JOB_NOT_STUCK" });
     }
     expect(await wholeTable()).toEqual(before);
   });

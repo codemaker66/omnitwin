@@ -5,10 +5,15 @@ import { ActivityStatus } from "../shared/Activity.js";
 // ---------------------------------------------------------------------------
 // One job on Stuck work: its row, and under it the working state, the note
 // form and any refusal. The row owns its own note draft and its own focus, so
-// nothing another row does can touch what a person is typing here.
+// nothing another row does can touch what a person is typing here. The kind
+// is the row's header cell; each control is described by the row's kind and
+// venue and by what it will do, so no two rows' controls sound alike.
 // ---------------------------------------------------------------------------
 
 export const STUCK_JOB_COLUMN_COUNT = 6;
+/** The page's own lines that say what Try again and Close with a note do; each row's buttons point at them. */
+export const TRY_AGAIN_MEANS_ID = "stuck-work-try-again-means";
+export const CLOSE_MEANS_ID = "stuck-work-close-means";
 const NOTE_MAX_LENGTH = 500;
 const WHEN_FORMAT = new Intl.DateTimeFormat("en-GB", {
   day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
@@ -77,6 +82,12 @@ export function StuckJobRow({ job, working, failure, refocus, onRefocusHandled, 
   }, [refocus, onRefocusHandled]);
 
   const parsedNote = CloseStuckJobSchema.safeParse({ note });
+  // The row's own header cell and venue: what each of its controls is described by, so no two rows' sound alike.
+  const kindId = `stuck-job-${job.id}-kind`;
+  const venueId = `stuck-job-${job.id}-venue`;
+  const hintId = `stuck-note-hint-${job.id}`;
+  const closeMeansId = `stuck-note-means-${job.id}`;
+  const venueName = job.venueName ?? "The platform";
 
   const openNote = (): void => {
     if (editing) noteInput.current?.focus();
@@ -102,18 +113,20 @@ export function StuckJobRow({ job, working, failure, refocus, onRefocusHandled, 
   return (
     <>
       <tr ref={mainRow}>
-        <td>{job.kind}</td>
-        <td>{job.venueName ?? "The platform"}</td>
+        <th scope="row" id={kindId} className="admin-panel-table-row-header">{job.kind}</th>
+        <td id={venueId}>{venueName}</td>
         <td><time dateTime={job.gaveUpAt}>{WHEN_FORMAT.format(new Date(job.gaveUpAt))}</time></td>
         <td>{job.attempts}</td>
         <td className="admin-panel-table-cell--wrap">{job.reason ?? "No reason was recorded."}</td>
         <td>
           <div className="admin-panel-row-actions">
             <button type="button" className="admin-panel-button admin-panel-button--secondary" ref={retryButton}
+              aria-describedby={`${kindId} ${venueId} ${TRY_AGAIN_MEANS_ID}`}
               disabled={working !== undefined} onClick={onTryAgain}>
               Try again
             </button>
             <button type="button" className="admin-panel-button admin-panel-button--danger-subtle" ref={closeButton}
+              aria-describedby={`${kindId} ${venueId} ${CLOSE_MEANS_ID}`}
               aria-expanded={editing} disabled={working !== undefined} onClick={openNote}>
               Close with a note
             </button>
@@ -132,20 +145,22 @@ export function StuckJobRow({ job, working, failure, refocus, onRefocusHandled, 
                 onKeyDown={(event: KeyboardEvent) => { if (event.key === "Escape" && working === undefined) cancelNote(); }}
               >
                 <label className="admin-panel-field">
-                  <span>Note</span>
+                  <span>Note<span className="vv-sr-only"> for {job.kind}, {venueName}</span></span>
                   <input ref={noteInput} type="text" value={note} maxLength={NOTE_MAX_LENGTH}
-                    aria-describedby={`stuck-note-hint-${job.id}`} disabled={working !== undefined}
+                    aria-describedby={`${closeMeansId} ${hintId}`} disabled={working !== undefined}
                     onChange={(event) => { setNote(event.target.value); }} />
                 </label>
-                <p id={`stuck-note-hint-${job.id}`}>
+                <p id={closeMeansId}>Closing stops this job for good. It will not run again. Your note is kept with it.</p>
+                <p id={hintId}>
                   {note.trim().length > 0 && !parsedNote.success
                     ? "The note holds a character that cannot be stored."
                     : `1 to ${String(NOTE_MAX_LENGTH)} characters.`}
                 </p>
                 <div className="admin-panel-row-actions">
                   <button type="submit" className="admin-panel-button admin-panel-button--primary"
+                    aria-describedby={`${kindId} ${venueId} ${closeMeansId}`}
                     disabled={!parsedNote.success || working !== undefined}>
-                    Close
+                    Close the job
                   </button>
                   <button type="button" className="admin-panel-button admin-panel-button--secondary"
                     disabled={working !== undefined} onClick={cancelNote}>
