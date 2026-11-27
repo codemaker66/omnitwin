@@ -1683,3 +1683,124 @@ describe("guest list page state: nothing rejects and no name escapes", () => {
     for (const log of logs) expect(log).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Found by a second, independent read of the two-tab code before it was pushed.
+// ---------------------------------------------------------------------------
+
+describe("guest list page state: what a second read of the two-tab code found", () => {
+  it("a save that goes over another tab's printed copy keeps that print's number, on the device and on the page", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)], paperVersion: 3, changedSincePrint: true }));
+    await state().flush();
+    // The other tab prints that copy as version 4, and saves.
+    const other = otherTabOn(backend);
+    const theirs = await loadedBy(other, PLAN_A);
+    const printed = markPrinted(theirs.list, "2026-11-14T09:00:00.000Z");
+    expect(printed.paperVersion).toBe(4);
+    expect((await other.save({ ...printed, updatedAt: "2026-11-14T09:00:00.000Z" }, theirs.stamp)).kind).toBe("saved");
+
+    // This tab has not seen that. Its change goes over their copy, and says so.
+    state().apply(titled("Changed here"));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "other-tab" });
+    const kept = await reopened(backend, PLAN_A);
+    if (kept.kind !== "ready") throw new Error("nothing is kept");
+    expect([kept.list.title, kept.list.paperVersion, kept.list.printedAt, kept.list.changedSincePrint])
+      .toEqual(["Changed here", 4, "2026-11-14T09:00:00.000Z", true]);
+    // The page has the number too: its next print is 5, and no two sheets share 4.
+    const onPage = state().list;
+    if (onPage === null) throw new Error("no list on the page");
+    expect([onPage.paperVersion, onPage.printedAt, onPage.changedSincePrint]).toEqual([4, "2026-11-14T09:00:00.000Z", true]);
+    expect(markPrinted(onPage, "2026-11-15T09:00:00.000Z").paperVersion).toBe(5);
+    // The page's list is the copy kept: nothing more is waiting.
+    expect(state().changeWaiting()).toBe(false);
+  });
+
+  it("a take-up puts away what the page was saying about the copy before", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    // Another tab deletes the list: this page takes an empty one and says it is no longer kept.
+    await otherTabOn(backend).erase(PLAN_A);
+    await state().refresh();
+    expect(state().notice).toEqual({ kind: "removed-elsewhere" });
+    // Then another tab stores a list again. Taking it up, the page no longer says the list is not kept.
+    const again = { ...emptyGuestList(PLAN_A, "2026-11-14T09:00:00.000Z"), guests: [guest(7)] };
+    expect((await otherTabOn(backend).save(again, null)).kind).toBe("saved");
+    await state().refresh();
+    expect(state().list?.guests).toEqual([guest(7)]);
+    expect(state().notice).toBeNull();
+  });
+
+  it("a take-up keeps the word that a printout was made from an older copy, which is still true", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    const other = otherTabOn(backend);
+    const first = await loadedBy(other, PLAN_A);
+    expect((await other.save({ ...first.list, title: "Theirs", updatedAt: "2026-11-14T09:00:00.000Z" }, first.stamp)).kind).toBe("saved");
+    // A print here gives way to their list.
+    state().apply((list) => markPrinted(list, "2026-11-14T10:00:00.000Z"), {
+      undo: false,
+      ifOtherCopy: (theirs) => printedFromOlderCopy(theirs, 1, "2026-11-14T10:00:00.000Z"),
+    });
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+    // They change it again. This page takes that up too, and the printout is still of an older copy.
+    const second = await loadedBy(other, PLAN_A);
+    expect((await other.save({ ...second.list, title: "Theirs again", updatedAt: "2026-11-14T11:00:00.000Z" }, second.stamp)).kind).toBe("saved");
+    await state().refresh();
+    expect(state().list?.title).toBe("Theirs again");
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+  });
+
+  it("starting again over a value that could not be read takes up a list another tab has stored since, and erases nothing", async () => {
+    const { backend, store } = device();
+    await backend.put(PLAN_A, { storedAt: START, value: { junk: true } });
+    await state().open(PLAN_A, store, clock());
+    expect(state().phase).toBe("unreadable");
+    // Another tab starts a new list there, over the value that could not be read, and saves it.
+    const theirs = { ...emptyGuestList(PLAN_A, "2026-11-14T09:00:00.000Z"), guests: [guest(7)] };
+    expect((await otherTabOn(backend).save(theirs, null)).kind).toBe("saved-over-other");
+
+    await state().startAgain();
+    expect(state().phase).toBe("ready");
+    expect(state().list?.guests).toEqual([guest(7)]);
+    const kept = await reopened(backend, PLAN_A);
+    expect(kept.kind === "ready" ? kept.list.guests : null).toEqual([guest(7)]);
+    // A change here is then an ordinary save over the copy this page holds.
+    state().apply(titled("Kept"));
+    await state().flush();
+    expect(state().notice).toBeNull();
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Kept");
+  });
+
+  it("a change still waiting when the page goes to another plan is kept over another tab's copy, and the plan says so when it is next opened", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    // Another tab saves a change this page does not see.
+    const other = otherTabOn(backend);
+    const theirs = await loadedBy(other, PLAN_A);
+    expect((await other.save({ ...theirs.list, guests: [guest(1), guest(7)], updatedAt: "2026-11-14T09:00:00.000Z" }, theirs.stamp)).kind).toBe("saved");
+    // A change here, and within the autosave's wait the page opens another plan.
+    state().apply(titled("Changed here"));
+    await state().open(PLAN_B, store, clock());
+    expect(state().notice).toBeNull();
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Changed here");
+
+    // Back on the first plan, the page says its version was kept over the other tab's.
+    await state().open(PLAN_A, store, clock());
+    expect(state().list?.title).toBe("Changed here");
+    expect(state().notice).toEqual({ kind: "other-tab" });
+    // It is said once.
+    await state().open(PLAN_B, store, clock());
+    await state().open(PLAN_A, store, clock());
+    expect(state().notice).toBeNull();
+  });
+});

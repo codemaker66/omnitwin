@@ -195,6 +195,12 @@ const systemNow = (): string => new Date().toISOString();
 let current: Session | null = null;
 /** The save still running for a session that has been replaced, if any. */
 let retiring: Promise<void> | null = null;
+/**
+ * The plans whose last change was kept, after the page had left them, over a
+ * copy another tab had stored. Nobody was on the page to be told, so the plan
+ * says so when it is next opened.
+ */
+const wentOverAnother = new Set<string>();
 
 async function openSafely(store: GuestListStore, planId: string): Promise<Opened> {
   try {
@@ -360,6 +366,15 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           session.sweptHere = false;
           if (isCurrent(session)) {
             set(answer.kind === "saved-over-other" ? { kept: true, notice: { kind: "other-tab" } } : { kept: true });
+            // The device kept another tab's larger print number with this list. The page takes it
+            // too, so its next print follows on and no two sheets share a number.
+            const onPage = get().list;
+            if (answer.paper !== undefined && onPage !== null && answer.paper.paperVersion > onPage.paperVersion) {
+              set({ list: { ...onPage, ...answer.paper } });
+            }
+          } else if (answer.kind === "saved-over-other") {
+            // Nobody is on this plan's page to be told: it is said when the plan is next opened.
+            wentOverAnother.add(session.planId);
           }
         }
       })();
@@ -444,18 +459,23 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         if (!isCurrent(session)) return;
 
         switch (opened.kind) {
-          case "ready":
+          case "ready": {
             session.loaded = stampOf(opened.list);
+            // A change left waiting when the page last went from this plan was kept over another tab's copy.
+            const keptOverAnother = wentOverAnother.delete(planId);
+            let notice: KitNotice = keptOverAnother ? { kind: "other-tab" } : null;
+            if (opened.repaired > 0) notice = { kind: "repaired", unseated: opened.repaired };
             set({
               phase: "ready",
               list: opened.list,
               kept: true,
-              notice: opened.repaired > 0 ? { kind: "repaired", unseated: opened.repaired } : null,
+              notice,
             });
             if (opened.repaired > 0) {
               saveRepair(session);
             }
             return;
+          }
           case "new":
             set({
               phase: "ready",
@@ -522,7 +542,28 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         const session = current;
         if (session === null || get().phase !== "unreadable") return;
         // A session that has not read the device clears the page only.
-        if (!session.unread) await eraseSafely(session.store, session.planId);
+        if (!session.unread) {
+          // The device is read first: another tab may have started a list here since this page
+          // found a value it could not read. That list is taken up, and nothing is erased; only a
+          // value that still cannot be read is removed.
+          const now = await openSafely(session.store, session.planId);
+          if (!isCurrent(session) || get().phase !== "unreadable") return;
+          if (now.kind === "ready") {
+            session.undo = [];
+            session.loaded = stampOf(now.list);
+            set({
+              phase: "ready",
+              list: now.list,
+              kept: true,
+              notice: now.repaired > 0 ? { kind: "repaired", unseated: now.repaired } : null,
+              canUndo: false,
+              takeUps: get().takeUps + 1,
+            });
+            if (now.repaired > 0) saveRepair(session);
+            return;
+          }
+          if (now.kind === "unreadable") await eraseSafely(session.store, session.planId);
+        }
         if (!isCurrent(session) || get().phase !== "unreadable") return;
         session.undo = [];
         session.loaded = null;
@@ -629,7 +670,10 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         session.unread = false;
         session.loaded = stored;
         session.undo = [];
-        let notice = get().notice;
+        // What the page was saying belonged to the copy before, and goes with it. Only the word that
+        // a printout was made from an older copy still holds over the list now taken up.
+        const before = get().notice;
+        let notice: KitNotice = before?.kind === "print-of-older-copy" ? before : null;
         if (addedAfterDelete) notice = { kind: "added-after-delete" };
         else if (opened.repaired > 0) notice = { kind: "repaired", unseated: opened.repaired };
         set({
@@ -648,6 +692,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
       reset() {
         if (current !== null) retire(current, false);
         current = null;
+        wentOverAnother.clear();
         set({ ...INITIAL });
       },
     };
