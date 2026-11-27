@@ -949,7 +949,7 @@ export interface DutyAdmin {
  *  that person is still an administrator or manager of the venue; otherwise
  *  every administrator of the venue, as before. */
 export async function dutyAdminsFor(
-  db: Database,
+  db: Pick<Database, "select">,
   venueId: string,
   settings: { readonly dutyAdminUserId: string | null } | null,
 ): Promise<readonly DutyAdmin[]> {
@@ -1036,13 +1036,30 @@ export interface EscalationPassDeps {
   readonly appUrl?: string;
 }
 
+/** A due request the pass could not escalate, or escalated but could not
+ *  email, and why. */
+export interface EscalationPassFailure {
+  readonly requestId: string;
+  readonly error: unknown;
+}
+
+/** What one escalation pass did: the requests it escalated, every one of
+ *  which is to be announced, and the ones it failed on. One request's
+ *  failure costs no other its escalation or its announcement (T-768). */
+export interface EscalationPassResult {
+  readonly escalated: readonly EscalatedRequest[];
+  readonly failed: readonly EscalationPassFailure[];
+}
+
 export async function runRequestEscalationPass(
   db: Database,
   deps: EscalationPassDeps = {},
-): Promise<readonly EscalatedRequest[]> {
+): Promise<EscalationPassResult> {
   const now = deps.now ?? new Date();
   const send = deps.send ?? sendEmail;
 
+  // A failure here comes before any claim, so the whole pass fails and
+  // nothing is lost: every due request is still due.
   const candidates = await db
     .select()
     .from(requests)
@@ -1057,57 +1074,87 @@ export async function runRequestEscalationPass(
 
   const due = selectDueRequestEscalations(candidates, now);
   const escalated: EscalatedRequest[] = [];
+  const failed: EscalationPassFailure[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
+  const fail = (requestId: string, error: unknown, step: string): void => {
+    failed.push({ requestId, error });
+    deps.logger?.warn({ err: error, requestId, step }, "request escalation failed");
+  };
 
   for (const candidate of due) {
-    // Claim it. A second process (or a second sweep) matches nothing, and
-    // neither does a request somebody took between the reading and now.
-    const claimed = await db
-      .update(requests)
-      .set({ escalatedAt: now, updatedAt: now })
-      .where(and(eq(requests.id, candidate.id), eq(requests.state, candidate.state), isNull(requests.escalatedAt)))
-      .returning();
-    const row = claimed[0];
-    if (row === undefined) continue;
-    const escalatedAt = row.escalatedAt ?? now;
+    let claim: {
+      readonly row: RequestRow;
+      readonly reason: EscalationReason;
+      readonly roomName: string | null;
+      readonly settings: Awaited<ReturnType<typeof readOperatingSettings>>;
+      readonly admins: readonly DutyAdmin[];
+      readonly notificationIds: readonly string[];
+    } | null;
+    try {
+      // The claim, the reads and the inbox copy commit together (T-768): a
+      // request whose inbox copy cannot be written stays unclaimed, so the
+      // next pass escalates it, rather than staying claimed with nobody told.
+      claim = await db.transaction(async (tx) => {
+        // Claim it. A second process (or a second sweep) matches nothing, and
+        // neither does a request somebody took between the reading and now.
+        const [row] = await tx
+          .update(requests)
+          .set({ escalatedAt: now, updatedAt: now })
+          .where(and(eq(requests.id, candidate.id), eq(requests.state, candidate.state), isNull(requests.escalatedAt)))
+          .returning();
+        if (row === undefined) return null;
 
-    const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
-    const roomName = await roomNameFor(db, row.roomId);
-    let settings = settingsByVenue.get(row.venueId);
-    if (settings === undefined) {
-      settings = await readOperatingSettings(db, row.venueId);
-      settingsByVenue.set(row.venueId, settings);
+        const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
+        const roomName = await roomNameFor(tx, row.roomId);
+        let settings = settingsByVenue.get(row.venueId);
+        if (settings === undefined) {
+          settings = await readOperatingSettings(tx, row.venueId);
+          settingsByVenue.set(row.venueId, settings);
+        }
+        const admins = await dutyAdminsFor(tx, row.venueId, settings);
+
+        const title = `Still waiting: ${summariseRequest({ kind: row.kind, quantity: row.quantity, roomName })}`;
+        const body = reason === "handover"
+          ? `${row.ownerName ?? "A colleague"} handed this to ${row.handoverToName ?? "a colleague"}, who has not taken it yet.`
+          : row.state === "reopened"
+            ? `${row.requestedByName}'s request was reopened and nobody has picked it up yet.`
+            : `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
+        const notificationIds = await insertNotifications(tx, admins.map((admin) => ({
+          venueId: row.venueId,
+          eventId: row.eventId,
+          audienceRole: "admin" as AudienceRole,
+          recipientUserId: admin.id,
+          title,
+          body,
+          severity: "urgent" as const,
+        })));
+        return { row, reason, roomName, settings, admins, notificationIds };
+      });
+    } catch (error: unknown) {
+      fail(candidate.id, error, "claim");
+      continue;
     }
-    const admins = await dutyAdminsFor(db, row.venueId, settings);
-
-    const title = `Still waiting: ${summariseRequest({ kind: row.kind, quantity: row.quantity, roomName })}`;
-    const body = reason === "handover"
-      ? `${row.ownerName ?? "A colleague"} handed this to ${row.handoverToName ?? "a colleague"}, who has not taken it yet.`
-      : row.state === "reopened"
-        ? `${row.requestedByName}'s request was reopened and nobody has picked it up yet.`
-        : `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
-    const notificationIds = await insertNotifications(db, admins.map((admin) => ({
-      venueId: row.venueId,
-      eventId: row.eventId,
-      audienceRole: "admin" as AudienceRole,
-      recipientUserId: admin.id,
-      title,
-      body,
-      severity: "urgent" as const,
-    })));
+    if (claim === null) continue;
+    const { row, reason, roomName, settings, admins, notificationIds } = claim;
+    const escalatedAt = row.escalatedAt ?? now;
 
     // Email outside quiet hours only; inside them the inbox copy stands and
     // the email pass sends when they end, if the request is still unowned.
-    // The mark is set once every admin's email went; a send that failed
-    // leaves it for the email pass to try again (each email is keyed per
-    // request and person, so nobody hears twice).
+    // The mark is set once every admin's email went; a send that failed, or
+    // threw, leaves it for the email pass to try again (each email is keyed
+    // per request and person, so nobody hears twice). Either way the request
+    // is escalated, with its inbox copy, and is announced.
     const quiet = quietHoursOf(settings);
     const emailDeferred = quiet !== null && withinQuietHours(now.getTime(), quiet);
     let emailedAdmins = 0;
     if (!emailDeferred) {
-      emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
-      if (emailedAdmins === admins.length) {
-        await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
+      try {
+        emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
+        if (emailedAdmins === admins.length) {
+          await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
+        }
+      } catch (error: unknown) {
+        fail(row.id, error, "email");
       }
     }
 
@@ -1125,7 +1172,7 @@ export async function runRequestEscalationPass(
     });
   }
 
-  return escalated;
+  return { escalated, failed };
 }
 
 export interface EscalationEmailSent {
@@ -1157,33 +1204,43 @@ export async function runEscalationEmailPass(
     .limit(100);
 
   const sent: EscalationEmailSent[] = [];
+  const failures: unknown[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
   for (const row of waiting) {
     const escalatedAt = row.escalatedAt;
     if (escalatedAt === null) continue;
-    let settings = settingsByVenue.get(row.venueId);
-    if (settings === undefined) {
-      settings = await readOperatingSettings(db, row.venueId);
-      settingsByVenue.set(row.venueId, settings);
-    }
-    const quiet = quietHoursOf(settings);
-    if (quiet !== null && withinQuietHours(now.getTime(), quiet)) continue;
+    // Each row on its own (T-768): one that throws leaves its mark unset, so
+    // a later pass tries it again, and costs no other row its email.
+    try {
+      let settings = settingsByVenue.get(row.venueId);
+      if (settings === undefined) {
+        settings = await readOperatingSettings(db, row.venueId);
+        settingsByVenue.set(row.venueId, settings);
+      }
+      const quiet = quietHoursOf(settings);
+      if (quiet !== null && withinQuietHours(now.getTime(), quiet)) continue;
 
-    // Send first, mark after: each email is keyed per request and person in
-    // email_sends, so a second process sends nothing twice, and a send that
-    // failed is tried again on the next pass instead of being marked done.
-    const roomName = await roomNameFor(db, row.roomId);
-    const admins = await dutyAdminsFor(db, row.venueId, settings);
-    const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
-    const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
-    if (emailedAdmins === admins.length) {
-      await db.update(requests).set({ escalationEmailedAt: now }).where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)));
+      // Send first, mark after: each email is keyed per request and person in
+      // email_sends, so a second process sends nothing twice, and a send that
+      // failed is tried again on the next pass instead of being marked done.
+      const roomName = await roomNameFor(db, row.roomId);
+      const admins = await dutyAdminsFor(db, row.venueId, settings);
+      const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
+      const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
+      if (emailedAdmins === admins.length) {
+        await db.update(requests).set({ escalationEmailedAt: now }).where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)));
+      }
+      deps.logger?.info(
+        { event: "request.escalation_emailed", requestId: row.id, venueId: row.venueId, admins: admins.length, emailedAdmins },
+        "request.escalation_emailed",
+      );
+      sent.push({ requestId: row.id, venueId: row.venueId, emailedAdmins });
+    } catch (error: unknown) {
+      failures.push(error);
+      deps.logger?.warn({ err: error, requestId: row.id }, "request escalation email failed");
     }
-    deps.logger?.info(
-      { event: "request.escalation_emailed", requestId: row.id, venueId: row.venueId, admins: admins.length, emailedAdmins },
-      "request.escalation_emailed",
-    );
-    sent.push({ requestId: row.id, venueId: row.venueId, emailedAdmins });
   }
+  // Every row was tried; the pass fails if any one did, so the sweep reports it.
+  if (failures.length > 0) throw new AggregateError(failures, `${String(failures.length)} escalation email(s) could not be sent`);
   return sent;
 }

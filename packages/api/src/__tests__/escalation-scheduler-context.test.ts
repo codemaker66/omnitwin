@@ -198,7 +198,7 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
           Sentry.setContext("pass", { first: true });
         }
         Sentry.captureException(new Error(`${PASS_ERROR} ${String(passes)}`));
-        return [];
+        return { escalated: [], failures: [] };
       },
     });
     scheduler.start();

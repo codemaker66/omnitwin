@@ -2,7 +2,7 @@ import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 import { inOwnScope } from "../observability/sentry.js";
-import { EscalationScheduler, FAILURE_REPORT_EVERY_MS, MAX_SLEEP_MS, MIN_SLEEP_MS, PASS_RETRY_FIRST_MS, PASS_RETRY_MAX_MS, sleepFor, soonest } from "../services/escalation-scheduler.js";
+import { EscalationScheduler, FAILURE_REPORT_EVERY_MS, MAX_SLEEP_MS, MIN_SLEEP_MS, PASS_RETRY_FIRST_MS, PASS_RETRY_MAX_MS, runSweepPasses, sleepFor, soonest } from "../services/escalation-scheduler.js";
 
 // Sentry is off here, as with SENTRY_DSN unset: nothing the scheduler does may
 // load the SDK (observability/sentry.ts imports it only inside initSentry).
@@ -35,14 +35,17 @@ interface Harness {
   readonly clock: { now: number };
 }
 
+/** A wake's passes that escalated these and failed on nothing. */
+const swept = (escalated: readonly unknown[] = []): { readonly escalated: readonly unknown[]; readonly failures: readonly unknown[] } => ({ escalated, failures: [] });
+
 function harness(plans: readonly (number | null)[], runs: readonly unknown[][] = [[]]): Harness {
   const timers: FakeTimer[] = [];
   const plan = vi.fn();
   for (const wake of plans) plan.mockResolvedValueOnce(wake);
   plan.mockResolvedValue(null);
   const run = vi.fn();
-  for (const outcome of runs) run.mockResolvedValueOnce(outcome);
-  run.mockResolvedValue([]);
+  for (const escalated of runs) run.mockResolvedValueOnce(swept(escalated));
+  run.mockResolvedValue(swept());
   const onEscalated = vi.fn();
   const reported: (readonly [string, number])[] = [];
   const clock = { now: T0 };
@@ -111,12 +114,12 @@ describe("the escalation scheduler", () => {
   });
 
   it("a poke during a run is covered by the plan that follows the run, without a second run", async () => {
-    let finishRun: (value: unknown[]) => void = () => undefined;
-    const run = new Promise<unknown[]>((resolve) => { finishRun = resolve; });
+    let finishRun: (value: ReturnType<typeof swept>) => void = () => undefined;
+    const run = new Promise<ReturnType<typeof swept>>((resolve) => { finishRun = resolve; });
     const h = harness([T0 + 1_000, T0 + 2_000]);
     h.run.mockReset();
     h.run.mockReturnValueOnce(run);
-    h.run.mockResolvedValue([]);
+    h.run.mockResolvedValue(swept());
     h.scheduler.start();
     await settle();
     h.timers[0]?.callback();
@@ -124,7 +127,7 @@ describe("the escalation scheduler", () => {
     h.scheduler.poke();
     h.scheduler.poke();
     expect(h.plan).toHaveBeenCalledTimes(1);
-    finishRun([]);
+    finishRun(swept());
     await settle();
     expect(h.run).toHaveBeenCalledTimes(1);
     expect(h.plan).toHaveBeenCalledTimes(2);
@@ -213,7 +216,7 @@ describe("a pass that keeps failing (T-766)", () => {
     h.run.mockReset();
     for (const outcome of outcomes) {
       if (outcome === "fails") h.run.mockRejectedValueOnce(new Error("a malformed row stops every pass"));
-      else h.run.mockResolvedValueOnce([]);
+      else h.run.mockResolvedValueOnce(swept());
     }
     return h;
   }
@@ -280,7 +283,7 @@ describe("a pass that keeps failing (T-766)", () => {
         passesAt.push(clock.now);
         if (passesAt.length === 1) return Promise.reject(new Error("the database blipped"));
         escalated = true;
-        return Promise.resolve([]);
+        return Promise.resolve({ escalated: [], failures: [] });
       },
       report: () => undefined,
       setTimer: (callback, ms) => {
@@ -337,6 +340,40 @@ describe("a pass that keeps failing (T-766)", () => {
   });
 });
 
+describe("a wake's two passes (T-768)", () => {
+  const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+  it("an email pass that throws costs nothing the escalation pass escalated, and a request that pass failed on is a failure", async () => {
+    const escalate = vi.fn();
+    escalate.mockResolvedValue({ escalated: [{ request: { id: "r-1" } }], failed: [{ requestId: "r-2", error: new Error("the inbox refused r-2") }] });
+    const email = vi.fn();
+    email.mockRejectedValue(new Error("the email pass fell over"));
+    const outcome = await runSweepPasses(db, undefined, { escalate, email });
+    expect(outcome.escalated).toEqual([{ request: { id: "r-1" } }]);
+    expect(outcome.failures.map(message)).toEqual(["the inbox refused r-2", "the email pass fell over"]);
+    expect(email).toHaveBeenCalledTimes(1);
+  });
+
+  it("a wake whose pass failed on some requests announces the others, reports the failure, and waits before trying again", async () => {
+    const h = harness([]);
+    h.plan.mockReset();
+    h.plan.mockResolvedValueOnce(T0 + 1_000);
+    // The failed request's claim rolled back, so the plan after the pass still finds it due.
+    h.plan.mockResolvedValue(T0 - 1_000);
+    h.run.mockReset();
+    h.run.mockResolvedValueOnce({ escalated: [{ request: { id: "r-1" } }], failures: [new Error("the inbox refused r-2")] });
+    h.run.mockResolvedValue(swept());
+    h.scheduler.start();
+    await settle();
+    h.clock.now = T0 + 1_000;
+    h.timers[0]?.callback();
+    await settle();
+    expect(h.onEscalated).toHaveBeenCalledWith([{ request: { id: "r-1" } }]);
+    expect(h.reported).toEqual([["pass", T0 + 1_000]]);
+    expect(h.timers.map((timer) => timer.ms)).toEqual([1_000, PASS_RETRY_FIRST_MS]);
+  });
+});
+
 describe("the escalation scheduler with Sentry off", () => {
   it("runs a whole wake without loading the SDK, and inOwnScope runs the work as it is", async () => {
     const store = new AsyncLocalStorage<string>();
@@ -373,7 +410,7 @@ describe("the escalation scheduler's own context", () => {
     const run = vi.fn();
     run.mockImplementation(() => {
       seen.push(["pass", requestContext.getStore()]);
-      return Promise.resolve([{ request: { id: "r-1" } }]);
+      return Promise.resolve(swept([{ request: { id: "r-1" } }]));
     });
     const scheduler = new EscalationScheduler({
       db,

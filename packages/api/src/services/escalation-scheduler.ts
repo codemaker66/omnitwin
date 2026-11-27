@@ -6,7 +6,7 @@ import type { Database } from "../db/client.js";
 import { captureBackgroundError, inOwnScope } from "../observability/sentry.js";
 import { quietHoursEndAfter } from "./escalation-clock.js";
 import { readOperatingSettings } from "./venue-operating-settings.js";
-import { UNOWNED_ESCALATING_STATES, runEscalationEmailPass, runRequestEscalationPass, type EscalatedRequest } from "./requests.js";
+import { UNOWNED_ESCALATING_STATES, runEscalationEmailPass, runRequestEscalationPass, type EscalatedRequest, type EscalationPassResult } from "./requests.js";
 
 // ---------------------------------------------------------------------------
 // When the escalation sweep runs (goal 19 S7; the 18 October outage).
@@ -124,7 +124,7 @@ export interface EscalationSchedulerDeps {
   readonly now?: () => number;
   /** Injected in tests; default: the two passes, then the plan. */
   readonly plan?: (db: Database, nowMs: number) => Promise<number | null>;
-  readonly run?: (db: Database) => Promise<readonly EscalatedRequest[]>;
+  readonly run?: (db: Database) => Promise<SweepOutcome>;
   /** Where a failure goes beyond the log, at the start of its streak and
    *  hourly after. Injected in tests; default: Sentry, on the wake's own
    *  scope and trace (`captureBackgroundError`). */
@@ -172,10 +172,39 @@ class FailureStreak {
   }
 }
 
-async function runBothPasses(db: Database, logger?: FastifyBaseLogger): Promise<readonly EscalatedRequest[]> {
-  const escalated = await runRequestEscalationPass(db, { logger });
-  await runEscalationEmailPass(db, { logger });
-  return escalated;
+/** What a wake's passes did: the requests escalated, every one of which is
+ *  to be announced, and what failed (T-768). */
+export interface SweepOutcome {
+  readonly escalated: readonly EscalatedRequest[];
+  readonly failures: readonly unknown[];
+}
+
+/** The two passes a wake runs. Injected in tests. */
+export interface SweepPasses {
+  readonly escalate: (db: Database, deps: { readonly logger?: FastifyBaseLogger }) => Promise<EscalationPassResult>;
+  readonly email: (db: Database, deps: { readonly logger?: FastifyBaseLogger }) => Promise<unknown>;
+}
+
+const SWEEP_PASSES: SweepPasses = { escalate: runRequestEscalationPass, email: runEscalationEmailPass };
+
+/** Runs the escalation pass, then the email pass, each on its own: an email
+ *  pass that throws costs the escalation pass's list nothing, and a request
+ *  the escalation pass failed on costs the email pass nothing (T-768). A
+ *  throw from the escalation pass itself comes before any claim. */
+export async function runSweepPasses(db: Database, logger?: FastifyBaseLogger, passes: SweepPasses = SWEEP_PASSES): Promise<SweepOutcome> {
+  const pass = await passes.escalate(db, { logger });
+  const failures: unknown[] = pass.failed.map((failure) => failure.error);
+  try {
+    await passes.email(db, { logger });
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  return { escalated: pass.escalated, failures };
+}
+
+/** One error for a wake's failures: the one itself, or all of them together. */
+function sweepFailure(failures: readonly unknown[]): unknown {
+  return failures.length === 1 ? failures[0] : new AggregateError(failures, `${String(failures.length)} parts of the escalation sweep failed`);
 }
 
 function defaultSetTimer(callback: () => void, ms: number): unknown {
@@ -301,9 +330,13 @@ export class EscalationScheduler {
     if (this.#stopped || this.#running) return;
     this.#running = true;
     try {
-      const escalated = await (this.#deps.run ?? ((db: Database) => runBothPasses(db, this.#deps.logger)))(this.#deps.db);
-      this.#succeeded("pass");
-      if (escalated.length > 0) this.#announce(escalated);
+      const outcome = await (this.#deps.run ?? ((db: Database) => runSweepPasses(db, this.#deps.logger)))(this.#deps.db);
+      // A request the pass failed on is still due (its claim rolled back), so
+      // the wake counts as failed: the wait and the report apply (T-766). What
+      // did escalate is announced all the same (T-768).
+      if (outcome.failures.length === 0) this.#succeeded("pass");
+      else this.#failed("pass", sweepFailure(outcome.failures), "request escalation sweep failed");
+      if (outcome.escalated.length > 0) this.#announce(outcome.escalated);
     } catch (error: unknown) {
       this.#failed("pass", error, "request escalation sweep failed");
     } finally {

@@ -61,6 +61,14 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     return result;
   }
 
+  /** One escalation pass that must fail on nothing: what it escalated. The
+   *  pass reports a request it failed on rather than throwing (T-768). */
+  async function escalate(...args: Parameters<typeof runRequestEscalationPass>): Promise<Awaited<ReturnType<typeof runRequestEscalationPass>>["escalated"]> {
+    const pass = await runRequestEscalationPass(...args);
+    expect(pass.failed).toEqual([]);
+    return pass.escalated;
+  }
+
   beforeAll(async () => {
     if (target === undefined) throw new Error("Explicit test database required");
     pool = new Pool({
@@ -459,7 +467,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
     if (!("request" in made)) throw new Error("expected a request");
     await db.update(schema.requests).set({ escalationDueAt: new Date(daytime.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
-    const first = await runRequestEscalationPass(db, { now: daytime, send });
+    const first = await escalate(db, { now: daytime, send });
     const mine = first.find((item) => item.request.id === made.request.id);
     expect(mine?.recipientUserIds).toEqual([f.admin.id]);
     expect(mine?.reason).toBe("unowned");
@@ -471,7 +479,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     const again = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
     if (!("request" in again)) throw new Error("expected a request");
     await db.update(schema.requests).set({ escalationDueAt: new Date(daytime.getTime() - 1000) }).where(eq(schema.requests.id, again.request.id));
-    const second = await runRequestEscalationPass(db, { now: daytime, send });
+    const second = await escalate(db, { now: daytime, send });
     expect(second.find((item) => item.request.id === again.request.id)?.recipientUserIds).toEqual([secondAdminId]);
   });
 
@@ -490,7 +498,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
       await db.update(schema.requests).set({ escalationDueAt: new Date(night.getTime() - 1000) }).where(eq(schema.requests.id, id));
     }
 
-    const escalated = await runRequestEscalationPass(db, { now: night, send });
+    const escalated = await escalate(db, { now: night, send });
     const ids = new Set([waiting.request.id, taken.request.id]);
     const mine = escalated.filter((item) => ids.has(item.request.id));
     expect(mine).toHaveLength(2);
@@ -529,7 +537,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     const later = new Date("2026-06-10T13:00:00.000Z");
     await db.update(schema.requests).set({ escalationDueAt: new Date(later.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
 
-    const first = await runRequestEscalationPass(db, { now: later, send });
+    const first = await escalate(db, { now: later, send });
     expect(first.filter((item) => item.request.id === made.request.id)).toHaveLength(1);
     expect(sentTo).toContain(f.adminEmail);
     const sentCount = sentTo.length;
@@ -547,7 +555,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(mine?.notificationIds).toHaveLength(mine?.recipientUserIds.length ?? -1);
 
     // A second sweep finds nothing: the claim is the row, not the schedule.
-    const second = await runRequestEscalationPass(db, { now: later, send });
+    const second = await escalate(db, { now: later, send });
     expect(second.filter((item) => item.request.id === made.request.id)).toHaveLength(0);
     expect(sentTo).toHaveLength(sentCount);
   });
@@ -558,7 +566,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     if (!("request" in made)) throw new Error("expected a request");
     await transitionRequestCore(db, f.staff, made.request.id, { to: "acknowledged" });
 
-    const escalated = await runRequestEscalationPass(db, {
+    const escalated = await escalate(db, {
       now: new Date(Date.now() + 200_000),
       send: () => Promise.resolve(true),
     });
@@ -605,13 +613,13 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     // reason, and still the outgoing person's.
     const late = new Date(Date.parse(handed.handedOver[0]?.handedOverAt ?? "") + 301_000);
     const sentTo: string[] = [];
-    const escalated = await runRequestEscalationPass(db, { now: late, send: (payload) => { sentTo.push(payload.to); return Promise.resolve(true); } });
+    const escalated = await escalate(db, { now: late, send: (payload) => { sentTo.push(payload.to); return Promise.resolve(true); } });
     const mine = escalated.filter((item) => item.request.id === c.request.id);
     expect(mine).toHaveLength(1);
     expect(mine[0]?.reason).toBe("handover");
     expect(mine[0]?.request.ownerUserId).toBe(f.hallkeeper.id);
     expect(escalated.some((item) => item.request.id === b.request.id)).toBe(false);
-    expect(await runRequestEscalationPass(db, { now: late, send: () => Promise.resolve(true) })).toEqual(
+    expect(await escalate(db, { now: late, send: () => Promise.resolve(true) })).toEqual(
       expect.not.arrayContaining([expect.objectContaining({ request: expect.objectContaining({ id: c.request.id }) })]),
     );
 
@@ -634,7 +642,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(second.handedOver.map((row) => row.id)).toEqual([c.request.id]);
     expect(second.refused).toBe(0);
     const later = new Date(Date.parse(second.handedOver[0]?.handedOverAt ?? "") + 301_000);
-    const twice = await runRequestEscalationPass(db, { now: later, send: () => Promise.resolve(true) });
+    const twice = await escalate(db, { now: later, send: () => Promise.resolve(true) });
     expect(twice.filter((item) => item.request.id === c.request.id).map((item) => item.reason)).toEqual(["handover"]);
     // This test escalates on the real clock, so from 22:00 to 07:00 on the
     // venue's clock both emails wait for the morning. The planner is
@@ -691,7 +699,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
       async function escalateAt(instant: string, due: "escalationDueAt" | "handoverDueAt"): Promise<string> {
         const now = new Date(instant);
         await db.update(schema.requests).set({ [due]: new Date(now.getTime() - 1000) }).where(eq(schema.requests.id, id));
-        const escalated = (await runRequestEscalationPass(db, { now })).filter((item) => item.request.id === id);
+        const escalated = (await escalate(db, { now })).filter((item) => item.request.id === id);
         expect(escalated.map((item) => item.emailedAdmins)).toEqual([2]);
         for (const item of escalated) await pushForRequestEscalated(db, item.request, item.recipientUserIds, pushDeps);
         return escalated[0]?.reason ?? "none";
@@ -719,7 +727,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
       // Within one escalation nothing goes twice: the pass claims nothing
       // more, and the email pass, made to retry the latest, sends no second copy.
       const again = new Date("2026-01-21T12:21:00.000Z");
-      expect((await runRequestEscalationPass(db, { now: again })).filter((item) => item.request.id === id)).toEqual([]);
+      expect((await escalate(db, { now: again })).filter((item) => item.request.id === id)).toEqual([]);
       await db.update(schema.requests).set({ escalationEmailedAt: null }).where(eq(schema.requests.id, id));
       const retried = (await runEscalationEmailPass(db, { now: again })).filter((item) => item.requestId === id);
       expect(retried.map((item) => item.emailedAdmins)).toEqual([2]);
@@ -744,7 +752,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     const noon = new Date("2026-01-21T12:00:00.000Z");
     await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
 
-    const escalated = await runRequestEscalationPass(db, { now: noon, send: () => Promise.resolve(false) });
+    const escalated = await escalate(db, { now: noon, send: () => Promise.resolve(false) });
     expect(escalated.map((item) => item.request.id)).toContain(made.request.id);
     const [afterFailure] = await db.select().from(schema.requests).where(eq(schema.requests.id, made.request.id));
     expect(afterFailure?.escalatedAt).not.toBeNull();
@@ -767,6 +775,64 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(emailed?.escalationEmailedAt).not.toBeNull();
   });
 
+  /** The escalation inbox copies of one venue (a request's own creation writes others). */
+  async function escalationInbox(venueId: string): Promise<readonly string[]> {
+    const rows = await db.select({ title: schema.eventPlanNotifications.title }).from(schema.eventPlanNotifications).where(eq(schema.eventPlanNotifications.venueId, venueId));
+    return rows.map((row) => row.title).filter((title) => title.startsWith("Still waiting"));
+  }
+
+  it("a request whose inbox copy cannot be written is not left claimed: the others escalate and are announced, the failure is reported, and the next pass takes it (T-768)", async () => {
+    const good = await fixture(180);
+    const broken = await fixture(180);
+    const a = await createRequestCore(db, good.hallkeeper, good.venueId, press(good));
+    const b = await createRequestCore(db, broken.hallkeeper, broken.venueId, press(broken));
+    if (!("request" in a) || !("request" in b)) throw new Error("expected requests");
+    const noon = new Date("2026-01-22T12:00:00.000Z");
+    for (const id of [a.request.id, b.request.id]) {
+      await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - 1000) }).where(eq(schema.requests.id, id));
+    }
+    // The database refuses the broken venue's inbox copy, as a constraint or an outage would.
+    await pool.query("CREATE OR REPLACE FUNCTION t768_refuse_inbox() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'the inbox refused this row'; END $$");
+    await pool.query(`CREATE TRIGGER t768_refuse_inbox BEFORE INSERT ON event_plan_notifications FOR EACH ROW WHEN (NEW.venue_id = '${broken.venueId}') EXECUTE FUNCTION t768_refuse_inbox()`);
+    try {
+      const pass = await runRequestEscalationPass(db, { now: noon, send: () => Promise.resolve(true) });
+      expect(pass.escalated.map((item) => item.request.id)).toContain(a.request.id);
+      expect(pass.escalated.map((item) => item.request.id)).not.toContain(b.request.id);
+      expect(pass.failed.filter((failure) => failure.requestId === b.request.id)).toHaveLength(1);
+      const [left] = await db.select().from(schema.requests).where(eq(schema.requests.id, b.request.id));
+      expect(left?.escalatedAt).toBeNull();
+      expect(await escalationInbox(broken.venueId)).toEqual([]);
+      expect(await escalationInbox(good.venueId)).toHaveLength(1);
+    } finally {
+      await pool.query("DROP TRIGGER IF EXISTS t768_refuse_inbox ON event_plan_notifications");
+    }
+    const retried = await runRequestEscalationPass(db, { now: noon, send: () => Promise.resolve(true) });
+    expect(retried.escalated.map((item) => item.request.id)).toContain(b.request.id);
+    expect(await escalationInbox(broken.venueId)).toHaveLength(1);
+  });
+
+  it("an escalation whose email step throws is still announced and reported, and the email pass sends it later: nothing is lost (T-768)", async () => {
+    const f = await fixture(180);
+    const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+    if (!("request" in made)) throw new Error("expected a request");
+    const noon = new Date("2026-01-23T12:00:00.000Z");
+    await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
+
+    const pass = await runRequestEscalationPass(db, { now: noon, send: () => Promise.reject(new Error("the provider threw")) });
+    const mine = pass.escalated.find((item) => item.request.id === made.request.id);
+    expect(mine?.notificationIds.length).toBeGreaterThan(0);
+    expect(pass.failed.filter((failure) => failure.requestId === made.request.id)).toHaveLength(1);
+    const [row] = await db.select().from(schema.requests).where(eq(schema.requests.id, made.request.id));
+    expect(row?.escalatedAt).not.toBeNull();
+    expect(row?.escalationEmailedAt).toBeNull();
+
+    const sentTo: string[] = [];
+    await runEscalationEmailPass(db, { now: new Date(noon.getTime() + EMAIL_RETRY_MS), send: (payload) => { sentTo.push(payload.to); return Promise.resolve(true); } });
+    expect(sentTo).toContain(f.adminEmail);
+    const [emailed] = await db.select().from(schema.requests).where(eq(schema.requests.id, made.request.id));
+    expect(emailed?.escalationEmailedAt).not.toBeNull();
+  });
+
   it("plans the next wake from the database: the soonest window, then the end of quiet hours for an email waiting, then nothing (goal 19 S7)", async () => {
     const f = await fixture(180);
     await db.update(schema.requests).set({ state: "resolved", escalationDueAt: null, escalatedAt: new Date(), escalationEmailedAt: new Date() }).where(eq(schema.requests.venueId, f.venueId));
@@ -783,7 +849,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     // Escalated inside quiet hours: the email waits, and the wake is 07:00 on the venue's clock.
     const night = new Date("2026-01-20T22:30:00.000Z");
     await db.update(schema.requests).set({ escalationDueAt: new Date(night.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
-    await runRequestEscalationPass(db, { now: night, send: () => Promise.resolve(true) });
+    await escalate(db, { now: night, send: () => Promise.resolve(true) });
     const morning = await planNextWake(db, night.getTime());
     expect(morning).toBe(Date.parse("2026-01-21T07:00:00.000Z"));
     // Leave nothing waiting for the next run's quiet-hours test to find.

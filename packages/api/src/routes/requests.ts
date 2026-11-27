@@ -323,12 +323,17 @@ export async function venueRequestRoutes(
 
     // The pass is house-wide (the claim is per request); every escalation it
     // made is announced to its own venue's boards, and this venue's are counted.
-    const escalated = await runRequestEscalationPass(db, { logger: request.log });
-    for (const item of escalated) {
+    const pass = await runRequestEscalationPass(db, { logger: request.log });
+    for (const item of pass.escalated) {
       publishRequestChange(request, "request.escalated", item.request, item.notificationIds);
       tell(pushForRequestEscalated(db, item.request, item.recipientUserIds, { logger: request.log }), request.log, "request.escalated");
     }
-    const mine = escalated.filter((item) => item.request.venueId === params.data.venueId);
+    // Every escalation is announced first. A request the pass failed on makes
+    // the run an error, so the caller (a cron) and Sentry hear of it (T-768).
+    if (pass.failed.length > 0) {
+      throw new AggregateError(pass.failed.map((failure) => failure.error), `${String(pass.failed.length)} due request(s) could not be escalated`);
+    }
+    const mine = pass.escalated.filter((item) => item.request.venueId === params.data.venueId);
     return { data: { escalated: mine.length } };
   });
 }
