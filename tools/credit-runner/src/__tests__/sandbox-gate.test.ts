@@ -532,6 +532,71 @@ describe("install-time code in a package.json, read by the review from real patc
   }, SLOW);
 });
 
+/** What a reason adds when only a commit inside the series shows the change: the patch that does, and why it still matters. */
+function onlyAfter(patch: string): string {
+  return `, after ${patch} though not at the series' end (that commit stays in the branch's history and can be checked out and installed)`;
+}
+
+describe("install-time code in a package.json, judged after every commit of the series", () => {
+  it("rejects an install script one commit adds and a later one takes out, naming the first patch that shows it, and gives a change the series ends with one reason", async () => {
+    const withScript = edited(WEB_MANIFEST, '"build": "vite build"', '"build": "vite build",\n    "postinstall": "node ./evil.mjs"');
+    const result = await review(
+      [
+        {
+          subject: "Add a build step",
+          write: {
+            "packages/web/package.json": withScript,
+            "packages/web/evil.mjs": "export {};\n",
+            // Kept to the end, so the series' own reason names it once and no patch does.
+            "package.json": edited(ROOT_MANIFEST, '"test": "pnpm -r run test",', '"test": "pnpm -r run test",\n    "pnpm:devPreinstall": "node ./tools/x.mjs",'),
+          },
+        },
+        { subject: "Tune the tests", write: { "packages/web/package.json": edited(withScript, '"test": "vitest run"', '"test": "vitest run --reporter=dot"') } },
+        { subject: "Take the build step out", write: { "packages/web/package.json": WEB_MANIFEST } },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual(
+      [`package.json: adds scripts.pnpm:devPreinstall, ${INSTALL_SCRIPT}`, `packages/web/package.json: adds scripts.postinstall, ${INSTALL_SCRIPT}${onlyAfter("patch-0001.patch")}`].sort(),
+    );
+  }, SLOW);
+
+  it("rejects the pnpm field changed by one commit and changed back by the next", async () => {
+    const patched = edited(
+      ROOT_MANIFEST,
+      '"three@0.186.0": "patches/three@0.186.0.patch"',
+      '"three@0.186.0": "patches/three@0.186.0.patch",\n      "fastify@5.2.0": "src/patches/x.patch"',
+    );
+    const result = await review(
+      [
+        { subject: "Patch a dependency", write: { "package.json": patched, "src/patches/x.patch": "diff --git a/package.json b/package.json\n" } },
+        { subject: "Drop the patch entry", write: { "package.json": ROOT_MANIFEST } },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect(result.reasons).toEqual([
+      `package.json: changes the pnpm field (pnpm's own settings, such as patched dependencies, overrides and which dependencies may run build scripts, applied on install)${onlyAfter("patch-0001.patch")}`,
+    ]);
+  }, SLOW);
+
+  it("passes a series whose every commit changes only a dependency version or the test script", async () => {
+    const bumped = edited(WEB_MANIFEST, '"three": "0.186.0"', '"three": "0.186.1"');
+    const result = await review(
+      [
+        { subject: "Bump three", write: { "packages/web/package.json": bumped } },
+        { subject: "Quieter tests", write: { "packages/web/package.json": edited(bumped, '"test": "vitest run"', '"test": "vitest run --reporter=dot"') } },
+        { subject: "Bump TypeScript", write: { "package.json": edited(ROOT_MANIFEST, '"typescript": "5.7.3"', '"typescript": "5.7.4"') } },
+        { subject: "Back to the old reporter", write: { "packages/web/package.json": bumped } },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.reasons).toEqual([]);
+    expect(result.verdict).toBe("ready-for-review");
+  }, SLOW);
+});
+
 /**
  * Characters that show nothing though they are not format characters: the
  * Hangul fillers and the blank Braille pattern, which are letters and a symbol,
