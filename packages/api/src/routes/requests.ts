@@ -304,9 +304,14 @@ export async function venueRequestRoutes(
   });
 
   // The escalation sweep as an endpoint, for an external cron and for a
-  // rehearsal on a disposable stack. The API also sweeps on its own short
-  // timer (see ws/diary-live.ts); both are safe to run together because the
-  // claim is a conditional UPDATE, not a schedule.
+  // rehearsal on a disposable stack. The API also sweeps on its own, waking
+  // when something is due (services/escalation-scheduler.ts, started in
+  // ws/diary-live.ts); both are safe to run together because the claim is a
+  // conditional UPDATE, not a schedule. This endpoint shares neither the
+  // scheduler's per-request floors nor its report cadence (#495's review,
+  // LQ5): every call tries every due request, and any it fails on makes the
+  // call an error, so a cron calling it often retries a request that keeps
+  // failing at every call.
   server.post("/:venueId/requests/escalation-pass", { preHandler: [authenticate] }, async (request, reply) => {
     const params = VenueParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);

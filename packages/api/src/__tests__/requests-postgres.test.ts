@@ -4,7 +4,7 @@ import Fastify from "fastify";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { STAFF_AUDIENCE_ROLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
@@ -762,15 +762,21 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     // The sweep does not spin on it: the retry is a while off, not now.
     const retry = await planNextWake(db, noon.getTime());
     expect(retry).toBe(noon.getTime() + EMAIL_RETRY_MS);
+    // Counted from the email pass's last run, not from each plan: a plan ten
+    // minutes on (a raise, a handover) keeps the retry where it was, and a
+    // plan after it is due wakes now (F-B).
+    expect(await planNextWake(db, noon.getTime() + 10 * 60_000, new Map(), noon.getTime())).toBe(noon.getTime() + EMAIL_RETRY_MS);
+    expect(await planNextWake(db, noon.getTime() + 20 * 60_000, new Map(), noon.getTime())).toBe(noon.getTime() + 20 * 60_000);
 
     const stillDown = await runEscalationEmailPass(db, { now: new Date(noon.getTime() + EMAIL_RETRY_MS), send: () => Promise.resolve(false) });
-    expect(stillDown.filter((item) => item.requestId === made.request.id).map((item) => item.emailedAdmins)).toEqual([0]);
+    // Tried, sent to nobody, and not marked: it is not an email that went (F-A).
+    expect(stillDown.filter((item) => item.requestId === made.request.id).map((item) => [item.emailedAdmins, item.marked])).toEqual([[0, false]]);
     const [stillWaiting] = await db.select().from(schema.requests).where(eq(schema.requests.id, made.request.id));
     expect(stillWaiting?.escalationEmailedAt).toBeNull();
 
     const sentTo: string[] = [];
     const sent = await runEscalationEmailPass(db, { now: new Date(noon.getTime() + 2 * EMAIL_RETRY_MS), send: (payload) => { sentTo.push(payload.to); return Promise.resolve(true); } });
-    expect(sent.filter((item) => item.requestId === made.request.id).map((item) => item.emailedAdmins)).toEqual([1]);
+    expect(sent.filter((item) => item.requestId === made.request.id).map((item) => [item.emailedAdmins, item.marked])).toEqual([[1, true]]);
     expect(sentTo).toContain(f.adminEmail);
     const [emailed] = await db.select().from(schema.requests).where(eq(schema.requests.id, made.request.id));
     expect(emailed?.escalationEmailedAt).not.toBeNull();
@@ -928,28 +934,62 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(retried?.escalationEmailedAt).not.toBeNull();
   });
 
-  it("takes the longest-waiting first, and leaves a held request out of the pass and out of the plan until its own deadline (LN1)", async () => {
+  it("takes the longest-waiting first, and leaves a held request out of the pass and the plan only while it is still due at the instant its claim failed (LN1, LQ2, LQ3)", async () => {
     const f = await fixture(180);
     const made = await Promise.all([0, 1, 2].map(() => createRequestCore(db, f.hallkeeper, f.venueId, press(f))));
     const ids = made.map((one) => { if (!("request" in one)) throw new Error("expected a request"); return one.request.id; });
     const [first, second, third] = ids;
     if (first === undefined || second === undefined || third === undefined) throw new Error("expected three requests");
-    const noon = new Date("2026-01-29T12:00:00.000Z");
-    // Raised first, second, third; fallen due first, then third, then second.
-    const dues = new Map([[first, 9_000], [second, 3_000], [third, 6_000]]);
-    for (const [id, before] of dues) {
-      await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - before) }).where(eq(schema.requests.id, id));
-    }
+    // Instants no other row in the house can precede, so the house-wide plan
+    // can only be these requests' (as the reopen suite does).
+    const noon = new Date("1999-01-29T12:00:00.000Z");
+    const send = (): Promise<boolean> => Promise.resolve(true);
     const mine = new Set(ids);
-    const held = await runRequestEscalationPass(db, { now: noon, send: () => Promise.resolve(true), skip: new Set([first]) });
-    expect(held.escalated.map((item) => item.request.id).filter((id) => mine.has(id))).toEqual([third, second]);
-    // The plan reads the held request at its deadline, not at its window.
-    const deadline = noon.getTime() + 60_000;
-    const wake = await planNextWake(db, noon.getTime(), new Map([[first, deadline]]));
-    expect(wake).not.toBeNull();
-    expect(wake ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(deadline);
-    const later = await runRequestEscalationPass(db, { now: noon, send: () => Promise.resolve(true) });
-    expect(later.escalated.map((item) => item.request.id).filter((id) => mine.has(id))).toEqual([first]);
+    const escalatedOf = (result: Awaited<ReturnType<typeof runRequestEscalationPass>>): (readonly [string, string])[] =>
+      result.escalated.filter((item) => mine.has(item.request.id)).map((item) => [item.request.id, item.reason] as const);
+    try {
+      // Raised first, second, third; fallen due first, then third, then second.
+      const dues = new Map([[first, 9_000], [second, 3_000], [third, 6_000]]);
+      for (const [id, before] of dues) {
+        await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - before) }).where(eq(schema.requests.id, id));
+      }
+      // first's window carries microseconds, as an instant written in SQL
+      // would; the driver reads it to the millisecond, and the hold is kept
+      // to what was read (LQ2).
+      await pool.query("UPDATE requests SET escalation_due_at = escalation_due_at + interval '123 microseconds' WHERE id = $1", [first]);
+      const firstDue = noon.getTime() - 9_000;
+      // first's claim failed at its window: it is held, kept to that instant.
+      const passed = await runRequestEscalationPass(db, { now: noon, send, skip: new Map([[first, firstDue]]) });
+      expect(escalatedOf(passed).map(([id]) => id)).toEqual([third, second]);
+
+      // With nothing else due, the plan is the hold's deadline, not first's own
+      // window. A plan that kept the held request in would wake at its window,
+      // overdue, so a beat from now, four times a second (LQ3).
+      const deadline = noon.getTime() + 60_000;
+      const hold = new Map([[first, { dueAt: firstDue, until: deadline }]]);
+      expect(await planNextWake(db, noon.getTime())).toBe(firstDue);
+      expect(await planNextWake(db, noon.getTime(), hold)).toBe(deadline);
+
+      // first is taken, then handed over, and its relief falls due 30 s after
+      // noon, inside the hold (LQ2).
+      expect((await transitionRequestCore(db, f.hallkeeper, first, { to: "accepted" })).ok).toBe(true);
+      expect((await transitionRequestCore(db, f.hallkeeper, first, { to: "handed-over", toUserId: f.staff.id })).ok).toBe(true);
+      const reliefDue = noon.getTime() + 30_000;
+      await db.update(schema.requests).set({ handoverDueAt: new Date(reliefDue) }).where(eq(schema.requests.id, first));
+      // The hold kept to its window no longer matches: the plan is the relief deadline.
+      expect(await planNextWake(db, noon.getTime(), hold)).toBe(reliefDue);
+      // A hold kept to the relief deadline leaves it out of the relief query as well (LR1).
+      expect(await planNextWake(db, noon.getTime(), new Map([[first, { dueAt: reliefDue, until: deadline }]]))).toBe(deadline);
+
+      // So too the pass: held at its relief deadline it is left out; held at its old window it is taken.
+      const atRelief = new Date(reliefDue);
+      expect(escalatedOf(await runRequestEscalationPass(db, { now: atRelief, send, skip: new Map([[first, reliefDue]]) }))).toEqual([]);
+      expect(escalatedOf(await runRequestEscalationPass(db, { now: atRelief, send, skip: new Map([[first, firstDue]]) }))).toEqual([[first, "handover"]]);
+    } finally {
+      // Nothing of these is left due or waiting for the cases that plan the
+      // whole house after this one: escalated and emailed, whatever their state.
+      await db.update(schema.requests).set({ escalatedAt: noon, escalationEmailedAt: noon }).where(inArray(schema.requests.id, ids));
+    }
   });
 
   it("plans the next wake from the database: the soonest window, then the end of quiet hours for an email waiting, then nothing (goal 19 S7)", async () => {

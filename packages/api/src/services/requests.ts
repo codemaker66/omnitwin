@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import {
   STAFF_AUDIENCE_ROLES,
@@ -193,10 +193,12 @@ interface NotificationSeed {
   readonly severity: "info" | "attention" | "urgent";
 }
 
-/** event_plan_notifications.title is varchar(180). A request's title holds
- *  its room's name, which may be 200 characters, and the escalation's adds
- *  "Still waiting: ": unclipped, a long room refused every escalation there
- *  (22001), and the request stayed due for ever (#495's review, LN2). */
+/** event_plan_notifications.title is varchar(180), and insertNotifications is
+ *  the request paths' one insert into it. A request's title holds its room's
+ *  name, which may be 200 characters, and the escalation's adds "Still
+ *  waiting: ". Unclipped, a room renamed past about 140 to 157 characters
+ *  after a request was raised there refused that request's escalation at
+ *  every pass (22001), so it stayed due for ever (#495's review, LN2, LR3). */
 export const NOTIFICATION_TITLE_MAX = 180;
 
 async function insertNotifications(
@@ -1040,25 +1042,40 @@ export interface EscalationPassDeps {
   /** Injected for tests; defaults to the house email service. */
   readonly send?: (payload: EmailPayload, options: SendOptions) => Promise<boolean>;
   readonly appUrl?: string;
-  /** Requests held back until their own retry deadline: a request the
-   *  escalation pass keeps failing on is not tried at every wake (#495's
-   *  review, LN1). Nothing is dropped: it is tried again once its deadline
-   *  passes. */
-  readonly skip?: ReadonlySet<string>;
+  /** Requests held back until their own retry deadline, each with the due
+   *  instant (epoch ms) its claim failed at: a request the escalation pass
+   *  keeps failing on is not tried at every wake (#495's review, LN1), and a
+   *  request that has moved since (taken and handed over, or reopened) is not
+   *  held at all (LQ2). Nothing is dropped: it is tried again once its
+   *  deadline passes. */
+  readonly skip?: ReadonlyMap<string, number>;
 }
 
 /** The instant a candidate fell due: a handed-over request's relief deadline,
  *  otherwise its escalation window. */
 const dueInstant = sql`case when ${requests.state} = 'handed-over' then ${requests.handoverDueAt} else ${requests.escalationDueAt} end`;
 
-/** A request a pass failed on, at which step, and why: at the claim (its
- *  claim rolled back, so it is still due), or at its email (it is escalated
- *  and announced; only its email waits). */
-export interface EscalationPassFailure {
-  readonly requestId: string;
-  readonly step: "claim" | "email";
-  readonly error: unknown;
+/** The same instant, read from a row. */
+function dueInstantOf(row: Pick<RequestRow, "state" | "handoverDueAt" | "escalationDueAt">): Date | null {
+  return row.state === "handed-over" ? row.handoverDueAt : row.escalationDueAt;
 }
+
+/** Leaves out each held request only while it is still due at the instant its
+ *  claim failed (#495's review, LQ2): one that has moved since falls due anew
+ *  at once. The columns hold microseconds and the driver reads milliseconds,
+ *  so the stored instant is compared to the millisecond, as it was read. */
+export function notHeldAt(held: ReadonlyMap<string, number>): SQL | undefined {
+  if (held.size === 0) return undefined;
+  return and(...[...held].map(([id, dueMs]) =>
+    sql`not (${requests.id} = ${id} and date_trunc('milliseconds', ${dueInstant}) = ${new Date(dueMs).toISOString()}::timestamptz)`));
+}
+
+/** A request a pass failed on, at which step, and why: at the claim (its
+ *  claim rolled back, so it is still due, at `dueAt`), or at its email (it is
+ *  escalated and announced; only its email waits). */
+export type EscalationPassFailure =
+  | { readonly requestId: string; readonly step: "claim"; readonly dueAt: Date; readonly error: unknown }
+  | { readonly requestId: string; readonly step: "email"; readonly error: unknown };
 
 /** One escalation email that threw, naming its request (a UUID, no person
  *  value); the original error is its cause. */
@@ -1103,7 +1120,6 @@ export async function runRequestEscalationPass(
 
   // A failure here comes before any claim, so the whole pass fails and
   // nothing is lost: every due request is still due.
-  const skip = [...(deps.skip ?? [])];
   const candidates = await db
     .select()
     .from(requests)
@@ -1113,7 +1129,7 @@ export async function runRequestEscalationPass(
         and(inArray(requests.state, [...UNOWNED_ESCALATING_STATES]), isNotNull(requests.escalationDueAt), lte(requests.escalationDueAt, now)),
         and(eq(requests.state, "handed-over"), isNotNull(requests.handoverDueAt), lte(requests.handoverDueAt, now)),
       ),
-      skip.length > 0 ? notInArray(requests.id, skip) : undefined,
+      notHeldAt(deps.skip ?? new Map()),
     ))
     // The longest-waiting first: with more than a hundred due, the oldest go out (LN1).
     .orderBy(asc(dueInstant), asc(requests.id))
@@ -1123,9 +1139,9 @@ export async function runRequestEscalationPass(
   const escalated: EscalatedRequest[] = [];
   const failed: EscalationPassFailure[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
-  const fail = (requestId: string, error: unknown, step: EscalationPassFailure["step"]): void => {
-    failed.push({ requestId, step, error });
-    deps.logger?.warn({ err: error, requestId, step }, "the escalation pass failed on a request");
+  const fail = (failure: EscalationPassFailure): void => {
+    failed.push(failure);
+    deps.logger?.warn({ err: failure.error, requestId: failure.requestId, step: failure.step }, "the escalation pass failed on a request");
   };
 
   for (const candidate of due) {
@@ -1178,7 +1194,8 @@ export async function runRequestEscalationPass(
         return { row, reason, roomName, settings, admins, notificationIds };
       });
     } catch (error: unknown) {
-      fail(candidate.id, error, "claim");
+      // The instant it was due at: a hold on it lasts only while it still is (LQ2).
+      fail({ requestId: candidate.id, step: "claim", dueAt: dueInstantOf(candidate) ?? now, error });
       continue;
     }
     if (claim === null) continue;
@@ -1201,7 +1218,7 @@ export async function runRequestEscalationPass(
           await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
         }
       } catch (error: unknown) {
-        fail(row.id, error, "email");
+        fail({ requestId: row.id, step: "email", error });
       }
     }
 
@@ -1222,10 +1239,15 @@ export async function runRequestEscalationPass(
   return { escalated, failed };
 }
 
+/** One row the email pass tried without a throw. `marked` is whether its
+ *  email went to every duty admin and the row was marked sent; a send that
+ *  failed (sendEmail answers false) leaves it unmarked, to be tried again,
+ *  and is not an email that went (#495, F-A). */
 export interface EscalationEmailSent {
   readonly requestId: string;
   readonly venueId: string;
   readonly emailedAdmins: number;
+  readonly marked: boolean;
 }
 
 /** The emails quiet hours held back: every escalated request whose email
@@ -1274,14 +1296,15 @@ export async function runEscalationEmailPass(
       const admins = await dutyAdminsFor(db, row.venueId, settings);
       const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
       const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
-      if (emailedAdmins === admins.length) {
+      const marked = emailedAdmins === admins.length;
+      if (marked) {
         await db.update(requests).set({ escalationEmailedAt: now }).where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)));
       }
       deps.logger?.info(
         { event: "request.escalation_emailed", requestId: row.id, venueId: row.venueId, admins: admins.length, emailedAdmins },
         "request.escalation_emailed",
       );
-      sent.push({ requestId: row.id, venueId: row.venueId, emailedAdmins });
+      sent.push({ requestId: row.id, venueId: row.venueId, emailedAdmins, marked });
     } catch (error: unknown) {
       failures.push(new EscalationEmailFailed(row.id, error));
       deps.logger?.warn({ err: error, requestId: row.id }, "request escalation email failed");

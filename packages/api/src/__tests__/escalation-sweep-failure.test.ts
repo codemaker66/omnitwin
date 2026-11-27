@@ -158,7 +158,7 @@ describe("a failed escalation pass reaches Sentry (the real SDK)", () => {
       run: () => Promise.resolve({
         escalated: [],
         failed: [
-          { requestId: CLAIM_FAILED, step: "claim" as const, error: new Error(`invalid input syntax for type uuid: "${GUEST_EMAIL}"`) },
+          { requestId: CLAIM_FAILED, step: "claim" as const, dueAt: new Date(), error: new Error(`invalid input syntax for type uuid: "${GUEST_EMAIL}"`) },
           { requestId: EMAIL_FAILED, step: "email" as const, error: new Error(`Failed query: update "requests" set "escalation_emailed_at" = $1 where "id" = $2\nparams: ${GUEST},${GUEST_EMAIL}`) },
         ],
         emailed: [],
