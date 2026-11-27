@@ -6,7 +6,7 @@ import { memoryBackend, withBackend, type CacheBackend } from "../../lib/idb-cac
 import { KIT_STORAGE_KEY } from "../../lib/guest-list/kit-switch.js";
 import { emptyGuestList, type Guest, type GuestList, type KitTable } from "../../lib/guest-list/model.js";
 import { createGuestListStore, stampOf, type GuestListStore, type Opened } from "../../lib/guest-list/store.js";
-import { useGuestListStore } from "../../stores/guest-list-store.js";
+import { AUTOSAVE_MS, useGuestListStore } from "../../stores/guest-list-store.js";
 import { GuestPaperPage } from "../GuestPaperPage.js";
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,7 @@ const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It
 const ADDED_AFTER_DELETE_WORDS = "This list was changed in another tab after it was deleted here. It is kept in this browser again.";
 const PRINT_OF_OLDER_COPY_WORDS = "That printout was made from an older copy of this list, which was changed in another tab. Print it again.";
 const REMOVED_BY_RULE_WORDS ="This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
+const OTHER_TAB_BUSY_WORDS = "Another tab is busy with this list, so your last change is not kept yet. It will be kept as soon as that tab has finished.";
 const SHEET_LINKS = [
   ["Table plan", "table-plan"],
   ["Guests by table", "by-table"],
@@ -1411,5 +1412,65 @@ describe("the guest paper page: what a second read of the print path found", () 
       await Promise.resolve();
     });
     expect(saves).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Another tab is busy with the list: the save is tried again only while the
+// paper is there.
+// ---------------------------------------------------------------------------
+
+describe("the guest paper page: another tab is busy with the list", () => {
+  it("stops trying a print's save again once the paper is left: by its own link, or as the browser hides the page", async () => {
+    const real = await storeHolding(list180());
+    // Another tab holds the list's lock past the bound: every save here answers busy.
+    const save = vi.fn<GuestListStore["save"]>(() => Promise.resolve({ kind: "busy" }));
+    const store: GuestListStore = { ...real, save };
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    /** Lets the device's answers settle: the clock does not move. (A `findBy` would wait on a timer the fake clock holds.) */
+    const settle = async (): Promise<void> => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    };
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // The browser's own Print command records the print; its save meets the busy tab.
+      act(() => {
+        window.dispatchEvent(new Event("beforeprint"));
+      });
+      await act(async () => {
+        await state().flush();
+      });
+      expect(within(tools()).getByText(OTHER_TAB_BUSY_WORDS).closest("[data-notice]")?.getAttribute("data-notice")).toBe("other-tab-busy");
+      expect(currentList().paperVersion).toBe(1);
+      // While the paper is here, the save is tried again shortly.
+      let tried = save.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(tried + 1);
+
+      // Left by its own link: one attempt as it goes, then nothing more, however long.
+      fireEvent.click(within(tools()).getByRole("link", { name: "Back to the list" }));
+      expect(screen.getByTestId("list")).toBeTruthy();
+      expect(screen.queryByTestId("guest-paper-page")).toBeNull();
+      const atLeaving = save.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(5 * AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(atLeaving);
+      expect(atLeaving).toBe(tried + 2);
+      expect(state().changeWaiting()).toBe(true);
+
+      // Back on the paper, the save is tried again shortly; then the browser hides the page, and it stops again.
+      fireEvent.click(screen.getByRole("link", { name: "Back to the paper" }));
+      await settle();
+      expect(screen.getByTestId("guest-paper-sheet").getAttribute("data-sheet")).toBe("table-plan");
+      tried = save.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(tried + 1);
+      act(() => { window.dispatchEvent(new Event("pagehide")); });
+      expect(save).toHaveBeenCalledTimes(tried + 2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(5 * AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(tried + 2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

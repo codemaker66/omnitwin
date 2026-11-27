@@ -123,17 +123,22 @@ function useRoom(planId: string): RoomState {
 /**
  * A change waiting to be kept is kept as the tab goes out of sight, and as the
  * page is left (a close, a reload, a move to another site): the save starts at
- * once, without waiting out the autosave. Nothing is written in the first
- * moments after a change, and a save started as a tab closes may not finish,
- * so while a change is waiting to be kept, or being kept, the browser is asked
- * to confirm leaving. When the page is seen again, or its window gains focus,
- * what another tab did to the list is taken up, unless a change here is still
- * unsaved.
+ * once, without waiting out the autosave, and once the page has gone nothing is
+ * tried again. Nothing is written in the first moments after a change, and a
+ * save started as a tab closes may not finish, so while a change is waiting to
+ * be kept, or being kept, the browser is asked to confirm leaving. When the
+ * page is seen again, or its window gains focus, what another tab did to the
+ * list is taken up, unless a change here is still unsaved. A page the browser
+ * brings back from its back-forward cache is on the screen again.
  */
 function useKeepWhenHidden(): void {
   useEffect(() => {
     const takeUp = (): void => { void useGuestListStore.getState().refresh(); };
     const keep = (): void => { void useGuestListStore.getState().flush(); };
+    const gone = (): void => { useGuestListStore.getState().pageGone(); };
+    const back = (event: PageTransitionEvent): void => {
+      if (event.persisted) useGuestListStore.getState().pageHere();
+    };
     const onVisibility = (): void => {
       if (document.visibilityState === "hidden") keep();
       else takeUp();
@@ -147,12 +152,14 @@ function useKeepWhenHidden(): void {
     };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", takeUp);
-    window.addEventListener("pagehide", keep);
+    window.addEventListener("pagehide", gone);
+    window.addEventListener("pageshow", back);
     window.addEventListener("beforeunload", onLeaving);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", takeUp);
-      window.removeEventListener("pagehide", keep);
+      window.removeEventListener("pagehide", gone);
+      window.removeEventListener("pageshow", back);
       window.removeEventListener("beforeunload", onLeaving);
     };
   }, []);
@@ -164,6 +171,11 @@ function GuestDesk({ planId, store }: { readonly planId: string; readonly store:
   const list = useGuestListStore((s) => s.list);
   const room = useRoom(planId);
   const read = useOpenedList(planId, store);
+  // While this page is here, a save another tab was busy over is tried again; once it has gone, nothing is.
+  useEffect(() => {
+    useGuestListStore.getState().pageHere();
+    return () => { useGuestListStore.getState().pageGone(); };
+  }, []);
   useKeepWhenHidden();
   // Each delete draws the desk afresh, so nothing the planner typed, pasted or was told about a guest stays on the page.
   const [erasures, setErasures] = useState(0);

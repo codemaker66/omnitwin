@@ -1815,6 +1815,8 @@ describe("guest list page state: another tab is busy with the list", () => {
       save: (list, loaded, opts) => (busy ? Promise.resolve({ kind: "busy" }) : store.save(list, loaded, opts)),
     };
     await state().open(PLAN_A, waits, clock());
+    // The save is tried again only while a kit page is there.
+    state().pageHere();
     state().apply((list) => ({ ...list, guests: [guest(1)] }));
     await state().flush();
 
@@ -1833,5 +1835,129 @@ describe("guest list page state: another tab is busy with the list", () => {
     expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Waiting");
     expect(state().notice).toBeNull();
     expect(state().changeWaiting()).toBe(false);
+  });
+
+  it("stops trying again when the page goes: nothing stays scheduled, the change waits on the page, and is kept once a page is back", async () => {
+    const { backend, store } = device();
+    let busy = false;
+    let saves = 0;
+    const waits: GuestListStore = {
+      ...store,
+      save: (list, loaded, opts) => {
+        saves += 1;
+        return busy ? Promise.resolve({ kind: "busy" }) : store.save(list, loaded, opts);
+      },
+    };
+    await state().open(PLAN_A, waits, clock());
+    state().pageHere();
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+
+    busy = true;
+    state().apply(titled("Waiting"));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "other-tab-busy" });
+    // With the page there, the save is to be tried again shortly.
+    expect(vi.getTimerCount()).toBe(1);
+
+    // The page goes. Its one attempt meets the busy tab too, and nothing is left scheduled.
+    state().pageGone();
+    await state().flush();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(state().list?.title).toBe("Waiting");
+    expect(state().changeWaiting()).toBe(true);
+    const tried = saves;
+    await vi.advanceTimersByTimeAsync(5 * AUTOSAVE_MS);
+    expect(saves).toBe(tried);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(storedTitle(await reopened(backend, PLAN_A))).not.toBe("Waiting");
+
+    // The other tab finishes, and a page is there again: the change is kept shortly, and the words go.
+    busy = false;
+    state().pageHere();
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS - 1);
+    expect(saves).toBe(tried);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(saves).toBe(tried + 1);
+    await state().flush();
+    expect(saves).toBe(tried + 1);
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Waiting");
+    expect(state().notice).toBeNull();
+    expect(state().changeWaiting()).toBe(false);
+  });
+
+  it("keeps an ordinary change made a moment before the page goes, at once, and leaves nothing scheduled", async () => {
+    const { backend, store } = device();
+    const save = vi.spyOn(store, "save");
+    await state().open(PLAN_A, store, clock());
+    state().pageHere();
+    state().apply(titled("Kept as the page went"));
+    expect(vi.getTimerCount()).toBe(1);
+
+    // Within the autosave's wait, the page goes: the save is asked for at once, and the wait is cleared.
+    state().pageGone();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    await state().flush();
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Kept as the page went");
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("drops a change another tab was busy over when the page goes to another plan, schedules nothing, and says so once when the plan is next opened", async () => {
+    const { backend, store } = device();
+    let busy = false;
+    const waits: GuestListStore = {
+      ...store,
+      save: (list, loaded, opts) => (busy ? Promise.resolve({ kind: "busy" }) : store.save(list, loaded, opts)),
+    };
+    await state().open(PLAN_A, waits, clock());
+    state().pageHere();
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+
+    busy = true;
+    state().apply(titled("Waiting"));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "other-tab-busy" });
+
+    // The page goes to another plan while the other tab is still at work: the change is not kept, and nothing is tried again.
+    await state().open(PLAN_B, waits, clock());
+    expect(vi.getTimerCount()).toBe(0);
+    expect(state().planId).toBe(PLAN_B);
+    expect(state().notice).toBeNull();
+    expect(state().changeWaiting()).toBe(false);
+    await vi.advanceTimersByTimeAsync(5 * AUTOSAVE_MS);
+    const kept = await reopened(backend, PLAN_A);
+    if (kept.kind !== "ready") throw new Error("nothing is kept");
+    expect(kept.list.title).not.toBe("Waiting");
+    expect(kept.list.guests).toEqual([guest(1)]);
+
+    // Back on the first plan, the page says its last change was not kept. It is said once.
+    busy = false;
+    await state().open(PLAN_A, waits, clock());
+    expect(state().list?.title).not.toBe("Waiting");
+    expect(state().notice).toEqual({ kind: "last-change-not-kept" });
+    await state().open(PLAN_B, waits, clock());
+    await state().open(PLAN_A, waits, clock());
+    expect(state().notice).toBeNull();
+  });
+
+  it("says the last change was not kept on opening a plan whose first change was dropped so, with nothing stored", async () => {
+    const { backend, store } = device();
+    const waits: GuestListStore = { ...store, save: () => Promise.resolve({ kind: "busy" }) };
+    await state().open(PLAN_A, waits, clock());
+    state().pageHere();
+    state().apply(titled("Never kept"));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "other-tab-busy" });
+
+    await state().open(PLAN_B, waits, clock());
+    expect(vi.getTimerCount()).toBe(0);
+    expect(await reopened(backend, PLAN_A)).toEqual({ kind: "new" });
+    await state().open(PLAN_A, store, clock());
+    expect(state().list?.title).toBe("");
+    expect(state().notice).toEqual({ kind: "last-change-not-kept" });
   });
 });

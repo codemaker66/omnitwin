@@ -9,7 +9,7 @@ import { memoryBackend, withBackend, type CacheBackend } from "../../lib/idb-cac
 import { KIT_STORAGE_KEY } from "../../lib/guest-list/kit-switch.js";
 import { deleteAfter, earliestEventDate, emptyGuestList, type Guest, type GuestList, type KitTable } from "../../lib/guest-list/model.js";
 import { createGuestListStore, stampOf, type GuestListStore, type Opened } from "../../lib/guest-list/store.js";
-import { useGuestListStore } from "../../stores/guest-list-store.js";
+import { AUTOSAVE_MS, useGuestListStore } from "../../stores/guest-list-store.js";
 import { GuestListPage } from "../GuestListPage.js";
 
 // ---------------------------------------------------------------------------
@@ -155,6 +155,11 @@ const OTHER_TAB_WORDS = "This list was also changed in another tab. This tab's v
 const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
 const ADDED_AFTER_DELETE_WORDS = "This list was changed in another tab after it was deleted here. It is kept in this browser again.";
 const REMOVED_BY_RULE_WORDS = "This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
+const OTHER_TAB_BUSY_WORDS = "Another tab is busy with this list, so your last change is not kept yet. It will be kept as soon as that tab has finished.";
+const LAST_CHANGE_NOT_KEPT_WORDS = "The last change made to this list before you left it was not kept: another tab was busy with the list.";
+/** Another plan, for a case that goes from one plan's list to another's. */
+const OTHER_PLAN_ID = "7a3c9d2f-0e5b-4c7a-9b2d-3f8e6a1b0c45";
+const OTHER_PAGE = `/plan/${OTHER_PLAN_ID}/guests?kit=on`;
 
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
   let resolve: (value: T) => void = () => undefined;
@@ -1062,6 +1067,98 @@ describe("the guest list page: leaving with a change not yet kept", () => {
     const kept = await store.open(PLAN_ID);
     expect(kept.kind === "ready" ? kept.list.title : null).toBe("Fraser and Okafor");
     expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops trying the save again once the page is left while another tab is busy with the list: by its own link, or as the browser hides the page", async () => {
+    const { store: inner } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    // Another tab holds the list's lock past the bound: every save here answers busy.
+    const save = vi.fn<GuestListStore["save"]>(() => Promise.resolve({ kind: "busy" }));
+    const store: GuestListStore = { ...inner, save };
+    open(PAGE, store);
+    await desk();
+    /** Lets the device's answers settle: the clock does not move. (A `findBy` would wait on a timer the fake clock holds.) */
+    const settle = async (): Promise<void> => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    };
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+      await flush();
+      expect(screen.getByText(OTHER_TAB_BUSY_WORDS).closest("[data-notice]")?.getAttribute("data-notice")).toBe("other-tab-busy");
+      // While the page is here, the save is tried again shortly.
+      let tried = save.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(tried + 1);
+
+      // Left by its own link: one attempt as it goes, then nothing more, however long.
+      fireEvent.click(screen.getByRole("link", { name: "Open the room" }));
+      expect(screen.getByTestId("room")).toBeTruthy();
+      expect(screen.queryByTestId("guest-list-page")).toBeNull();
+      const atLeaving = save.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(5 * AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(atLeaving);
+      expect(atLeaving).toBe(tried + 2);
+      expect(state().changeWaiting()).toBe(true);
+
+      // Back on the list, the save is tried again shortly; then the browser hides the page, and it stops again.
+      fireEvent.click(screen.getByRole("link", { name: "Back to the guest list" }));
+      await settle();
+      expect(screen.getByTestId("guest-list-desk")).toBeTruthy();
+      expect(screen.getByLabelText<HTMLInputElement>("The event's name").value).toBe("Fraser and Okafor");
+      tried = save.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(tried + 1);
+      act(() => { window.dispatchEvent(new Event("pagehide")); });
+      expect(save).toHaveBeenCalledTimes(tried + 2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(5 * AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(tried + 2);
+
+      // Brought back from the browser's back-forward cache, the page tries again; a first showing does not count.
+      act(() => { window.dispatchEvent(new Event("pageshow")); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(5 * AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(tried + 2);
+      const restored = new Event("pageshow");
+      Object.defineProperty(restored, "persisted", { value: true });
+      act(() => { window.dispatchEvent(restored); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(tried + 3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says, back on a plan, that its last change was not kept when the planner went to another plan while another tab was busy with the list", async () => {
+    const { store: inner } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    const store: GuestListStore = { ...inner, save: () => Promise.resolve({ kind: "busy" }) };
+    render(
+      <MemoryRouter initialEntries={[PAGE]}>
+        <Routes>
+          <Route path="/plan/:code/guests" element={<GuestListPage store={store} />} />
+        </Routes>
+        <nav>
+          <Link to={OTHER_PAGE}>Another plan's guest list</Link>
+          <Link to={PAGE}>This plan's guest list</Link>
+        </nav>
+      </MemoryRouter>,
+    );
+    await desk();
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+    await flush();
+    expect(screen.getByText(OTHER_TAB_BUSY_WORDS)).toBeTruthy();
+
+    // The planner goes to another plan's list while the other tab is still at work: the change is not kept.
+    fireEvent.click(screen.getByRole("link", { name: "Another plan's guest list" }));
+    await waitFor(() => { expect(state().planId).toBe(OTHER_PLAN_ID); });
+    await desk();
+    expect(state().changeWaiting()).toBe(false);
+    const kept = await inner.open(PLAN_ID);
+    expect(kept.kind === "ready" ? kept.list.title : null).toBe("");
+
+    // Back on the first plan, the page says so.
+    fireEvent.click(screen.getByRole("link", { name: "This plan's guest list" }));
+    const words = await screen.findByText(LAST_CHANGE_NOT_KEPT_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("last-change-not-kept");
+    expect(screen.getByLabelText<HTMLInputElement>("The event's name").value).toBe("");
   });
 });
 

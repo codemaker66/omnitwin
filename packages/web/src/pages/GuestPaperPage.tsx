@@ -157,13 +157,17 @@ function useOpenedList(planId: string, store: GuestListStore): boolean {
  * When the page is seen again, or its window gains focus, what another tab did
  * to the list is taken up. And as on the list page: a save still waiting (a
  * change made there a moment ago, or a print's record) starts as this page is
- * left, and while one is waiting or being kept the browser is asked to confirm
- * leaving.
+ * left, and is not tried again once it has gone; while one is waiting or being
+ * kept the browser is asked to confirm leaving; and a page the browser brings
+ * back from its back-forward cache is on the screen again.
  */
 function useTakeUpOtherTabs(): void {
   useEffect(() => {
     const takeUp = (): void => { void useGuestListStore.getState().refresh(); };
-    const keep = (): void => { void useGuestListStore.getState().flush(); };
+    const gone = (): void => { useGuestListStore.getState().pageGone(); };
+    const back = (event: PageTransitionEvent): void => {
+      if (event.persisted) useGuestListStore.getState().pageHere();
+    };
     const onVisibility = (): void => {
       if (document.visibilityState === "visible") takeUp();
     };
@@ -176,12 +180,14 @@ function useTakeUpOtherTabs(): void {
     };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", takeUp);
-    window.addEventListener("pagehide", keep);
+    window.addEventListener("pagehide", gone);
+    window.addEventListener("pageshow", back);
     window.addEventListener("beforeunload", onLeaving);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", takeUp);
-      window.removeEventListener("pagehide", keep);
+      window.removeEventListener("pagehide", gone);
+      window.removeEventListener("pageshow", back);
       window.removeEventListener("beforeunload", onLeaving);
     };
   }, []);
@@ -192,6 +198,11 @@ function GuestPaper({ planId, store }: { readonly planId: string; readonly store
   const phase = useGuestListStore((s) => s.phase);
   const list = useGuestListStore((s) => s.list);
   const read = useOpenedList(planId, store);
+  // While this page is here, a save another tab was busy over is tried again; once it has gone, nothing is.
+  useEffect(() => {
+    useGuestListStore.getState().pageHere();
+    return () => { useGuestListStore.getState().pageGone(); };
+  }, []);
   useTakeUpOtherTabs();
 
   let body: ReactElement;

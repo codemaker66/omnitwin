@@ -43,7 +43,9 @@ export type KitNotice =
   /** The device refused a delete asked for here: the list is still kept, and still on the page. */
   | { readonly kind: "not-deleted" }
   /** Another tab is at work on the list: a change here is not kept yet, and is being tried again. */
-  | { readonly kind: "other-tab-busy" };
+  | { readonly kind: "other-tab-busy" }
+  /** The page left this plan with a change waiting while another tab was busy with the list: that change was not kept. */
+  | { readonly kind: "last-change-not-kept" };
 
 export interface ApplyOptions {
   /** False for a change undo does not step back through. */
@@ -128,6 +130,19 @@ export interface GuestListState {
    * later save is what finds it gone.
    */
   refresh(mount?: MountRead): Promise<void>;
+  /**
+   * A kit page is on the screen: it has mounted, or the browser has brought it
+   * back from its back-forward cache. A change still waiting to be kept, with
+   * no save scheduled or running for it, is saved shortly.
+   */
+  pageHere(): void;
+  /**
+   * A kit page has gone: it has unmounted, or the browser is hiding it as it is
+   * left. Once no kit page is there, nothing stays scheduled, and a change still
+   * waiting is tried once, at once; a save that finds another tab busy is then
+   * not tried again until a page is back or the next change.
+   */
+  pageGone(): void;
   reset(): void;
 }
 
@@ -203,6 +218,17 @@ let retiring: Promise<void> | null = null;
  * says so when it is next opened.
  */
 const wentOverAnother = new Set<string>();
+/**
+ * The plans whose last change was not kept, after the page had left them,
+ * because another tab was busy with the list. Nobody was on the page to be
+ * told, so the plan says so when it is next opened.
+ */
+const notKeptOnLeaving = new Set<string>();
+/**
+ * How many kit pages are on the screen. A save that found another tab busy is
+ * tried again only while one is, so no timer outlives the page.
+ */
+let pagesHere = 0;
 
 async function openSafely(store: GuestListStore, planId: string): Promise<Opened> {
   try {
@@ -275,6 +301,9 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
     /**
      * Saves one at a time, in order, always the latest list, until nothing is
      * unsaved. A "not-kept" answer stops the loop; the next change tries again.
+     * A "busy" answer stops it too: the change waits, and is tried again
+     * shortly while a kit page is there; a session no longer on the page drops
+     * it, and its plan says so when it is next opened.
      * An unread session reads the device first and writes only when nothing is
      * stored; otherwise the change stays unsaved and the list is not kept.
      * When the list has been removed from the device since this session loaded
@@ -318,12 +347,21 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             return;
           }
           if (answer.kind === "busy") {
-            // Another tab is at work on the lists and did not finish in time. Nothing was written:
-            // the change stays on the page, the page says so, and the save is tried again shortly.
+            // Another tab is at work on the lists and did not finish in time. Nothing was written.
+            if (!isCurrent(session)) {
+              // The page has gone to another plan: nothing waits on that tab for it. The change is
+              // dropped, and the plan says so when it is next opened.
+              nothingWaiting(session);
+              notKeptOnLeaving.add(session.planId);
+              return;
+            }
+            // The change stays on the page, and the page says so. It is tried again shortly while a
+            // kit page is there; with none, it waits here for a page to come back, or the next change.
+            session.unsaved = true;
             session.ordinary = since.ordinary || waiting.ordinary;
             session.ifOther = since.ifOther ?? waiting.ifOther;
-            if (isCurrent(session)) set({ notice: { kind: "other-tab-busy" } });
-            scheduleSave(session);
+            set({ notice: { kind: "other-tab-busy" } });
+            if (pagesHere > 0) scheduleSave(session);
             return;
           }
           if (answer.kind === "removed-elsewhere") {
@@ -474,9 +512,12 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         switch (opened.kind) {
           case "ready": {
             session.loaded = stampOf(opened.list);
-            // A change left waiting when the page last went from this plan was kept over another tab's copy.
+            // A change left waiting when the page last went from this plan was kept over another tab's copy,
+            // or was not kept at all, as another tab was busy with the list. A repair is said before either.
             const keptOverAnother = wentOverAnother.delete(planId);
+            const notKept = notKeptOnLeaving.delete(planId);
             let notice: KitNotice = keptOverAnother ? { kind: "other-tab" } : null;
+            if (notKept) notice = { kind: "last-change-not-kept" };
             if (opened.repaired > 0) notice = { kind: "repaired", unseated: opened.repaired };
             set({
               phase: "ready",
@@ -489,15 +530,15 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             }
             return;
           }
-          case "new":
-            set({
-              phase: "ready",
-              list: emptyGuestList(planId, now()),
-              kept: true,
-              // The page's own sweep removed the list just before this read, and nothing is stored: say why.
-              notice: mount?.sweptHere === true ? { kind: "removed-by-rule" } : null,
-            });
+          case "new": {
+            // The first change made to this plan's list was not kept when the page left it.
+            const notKept = notKeptOnLeaving.delete(planId);
+            let notice: KitNotice = notKept ? { kind: "last-change-not-kept" } : null;
+            // The page's own sweep removed the list just before this read, and nothing is stored: say why.
+            if (mount?.sweptHere === true) notice = { kind: "removed-by-rule" };
+            set({ phase: "ready", list: emptyGuestList(planId, now()), kept: true, notice });
             return;
+          }
           case "unreadable":
             set({ phase: "unreadable", list: null });
             return;
@@ -702,10 +743,31 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         }
       },
 
+      pageHere() {
+        pagesHere += 1;
+        const session = current;
+        // A change left waiting while no page was here (another tab was busy) is tried again shortly.
+        if (session !== null && session.unsaved && session.timer === null && session.running === null && !session.erasing) {
+          scheduleSave(session);
+        }
+      },
+
+      pageGone() {
+        pagesHere = Math.max(0, pagesHere - 1);
+        const session = current;
+        if (pagesHere > 0 || session === null) return;
+        // No page is left to wait on: nothing stays scheduled, and a change still waiting is tried
+        // once, now. An ordinary change made a moment before leaving is kept so.
+        clearTimer(session);
+        if (session.unsaved && !session.erasing) void saveLoop(session);
+      },
+
       reset() {
         if (current !== null) retire(current, false);
         current = null;
+        pagesHere = 0;
         wentOverAnother.clear();
+        notKeptOnLeaving.clear();
         set({ ...INITIAL });
       },
     };
