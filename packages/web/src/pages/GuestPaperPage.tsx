@@ -279,17 +279,22 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
   const [printing, setPrinting] = useState(false);
 
   // The browser's own Print command (a menu, a keyboard shortcut) records the
-  // version too, so no sheet goes out carrying an earlier version's number.
-  // It makes no read of the device first: the browser lays the sheet out as
-  // this handler returns, so a read awaited here would print the old number.
-  // The reads at each mount, on focus and when the page is seen again are
-  // what keep the list current before it.
+  // version too, so a list changed since its last print does not go out under
+  // that print's number. It makes no read of the device first and waits for
+  // no lock: the browser lays the sheet out as this handler returns, so
+  // anything awaited here would print the old number. The reads at each
+  // mount, on focus and when the page is seen again are what keep the list
+  // current before it. In the moment before such a read returns, the sheet
+  // can be of an older copy, and can then share its number with a sheet
+  // another tab has printed. That cannot be prevented here: the save that
+  // follows keeps their list, and the page says not to use the printout.
+  // What holds is that no later sheet is given a number a sheet has carried.
   useEffect(() => {
     here.current = true;
     const onBeforePrint = (): void => {
       // The button records its own print before it opens the dialog. Every other print is recorded
       // here, one asked of the browser while the button is still waiting included: that sheet goes
-      // out too, and must not carry an earlier sheet's number.
+      // out too, and its print is recorded like any other.
       if (ours.current) return;
       recordPrint();
       void useGuestListStore.getState().flush();
@@ -305,7 +310,9 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
   const stillHere = (): boolean => here.current;
   /** The print's save found another tab's list and gave way to it: the page state says so in its notice. */
   const gaveWay = (): boolean => useGuestListStore.getState().notice?.kind === "print-of-older-copy";
-  /** The read just made took up an empty list in place of one that is no longer stored. */
+  /** The page's list says it has changed since its last print. */
+  const changedSincePrint = (): boolean => useGuestListStore.getState().list?.changedSincePrint === true;
+  /** A save or a read since took up an empty list in place of one that is no longer stored. */
   const foundGone = (takenUpBefore: number): boolean => {
     const { takeUps, notice } = useGuestListStore.getState();
     return takeUps !== takenUpBefore && (notice?.kind === "removed-elsewhere" || notice?.kind === "removed-by-rule");
@@ -315,23 +322,33 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
     try {
       await fontsLoaded();
       if (!stillHere()) return;
-      // A print is of the newest list kept on this device: another tab's change is taken up first.
       const takenUp = useGuestListStore.getState().takeUps;
+      // A change still waiting here is kept first. The read below reads nothing while one waits;
+      // and when that save goes over a copy another tab has printed, their print record comes
+      // with it before this print takes its number.
+      await useGuestListStore.getState().flush();
+      if (!stillHere()) return;
+      // A print is of the newest list kept on this device: another tab's change is taken up first.
       await useGuestListStore.getState().refresh();
       if (!stillHere()) return;
-      // That read found the list gone (deleted in another tab, or removed under the rule). There is
-      // nothing to print, and the page says so; recording a print would store an empty list again.
+      // That save or that read found the list gone (deleted in another tab, or removed under the
+      // rule). There is nothing to print, and the page says so; recording a print would store an
+      // empty list again.
       if (foundGone(takenUp)) return;
       recordPrint();
       await useGuestListStore.getState().flush();
       if (!stillHere()) return;
-      // Another tab saved in the moment between that read and this save, so the save gave way and
-      // the page now shows their list. Nothing has been printed yet: there is no older printout to
-      // speak of. The words are put away and the print is recorded once more, on the list the page
-      // shows. Whatever that second save finds, the dialog opens on the list now on the page, and
-      // no two sheets share a number.
-      if (gaveWay()) {
-        useGuestListStore.getState().dismissNotice();
+      // Nothing has been printed yet, and the save of that record may have met another tab's copy.
+      // Either it gave way (another tab saved in the moment between the read and the save): the
+      // page now shows their list, with the print recorded on it as made from an older copy.
+      // There is no older printout to speak of, so those words are put away. Or it went over
+      // their copy with a change that was still waiting here, and their print record came with
+      // it: their sheet has the number just recorded, or a larger one. Either way the page's list
+      // now says it has changed since its print, so the print is recorded once more, on the list
+      // the page shows, under the next number. Whatever that second save finds, the dialog opens
+      // on the list now on the page, and no later sheet is given its number.
+      if (gaveWay() || changedSincePrint()) {
+        if (gaveWay()) useGuestListStore.getState().dismissNotice();
         recordPrint();
         await useGuestListStore.getState().flush();
         if (!stillHere()) return;

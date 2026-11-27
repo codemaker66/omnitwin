@@ -11,6 +11,7 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { emptyGuestList, type GuestList } from "../lib/guest-list/model.js";
 import {
+  anotherSheet,
   sameStamp,
   stampOf,
   type GuestListStore,
@@ -439,10 +440,12 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             if (answer.kind === "saved-over-other" && get().notice?.kind !== "print-of-older-copy") {
               set({ notice: { kind: "other-tab" } });
             }
-            // The device kept another tab's larger print number with this list. The page takes it
-            // too, so its next print follows on and no two sheets share a number.
+            // The device kept another tab's print record with this list: its sheet has a larger
+            // number, or the same number printed at another moment. The page takes that record too,
+            // marked changed since, so its next print takes the next number and no later sheet is
+            // given one a sheet has carried.
             const onPage = get().list;
-            if (answer.paper !== undefined && onPage !== null && answer.paper.paperVersion > onPage.paperVersion) {
+            if (answer.paper !== undefined && onPage !== null && anotherSheet(answer.paper, onPage)) {
               set({ list: { ...onPage, ...answer.paper } });
             }
           } else if (answer.kind === "saved-over-other") {

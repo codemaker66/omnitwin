@@ -113,9 +113,11 @@ export function emptyGuestList(planId: string, nowIso: string): GuestList {
  * A print that turns out to have been made from an older copy of the list:
  * another tab had changed it, and that tab's list, `theirs`, is the one kept.
  * The print is still recorded on it. The version is the larger of theirs and
- * the number the stale sheet carried, so that number is never given to a
- * different sheet; the print's moment is this print's; and the list is marked
- * changed since that print, because what was printed is not this list.
+ * the number the stale sheet carried, so no later sheet is given that number;
+ * the print's moment is this print's; and the list is marked changed since
+ * that print, because what was printed is not this list. The stale sheet
+ * itself can share its number with a sheet the other tab printed in the
+ * meantime: that is why the page says not to use it.
  * (`markPrinted`, for a print of the list as it stands, is in `paper.ts`.)
  */
 export function printedFromOlderCopy(theirs: GuestList, printedVersion: number, printedAtIso: string): GuestList {

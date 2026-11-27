@@ -109,9 +109,13 @@ export const ADDED_AFTER_DELETE = "This list was changed in another tab after it
 export const REMOVED_BY_RULE =
   `This list was removed from this browser: a list is removed ${String(KEEP_DAYS_AFTER_EVENT)} days after its event, or ${String(KEEP_DAYS_AFTER_CHANGE)} days after its last change.`;
 
-/** A print's save found another tab's list and gave way to it: the sheet printed was of the copy before. */
+/**
+ * A print's save found another tab's list and gave way to it: the sheet
+ * printed was of the copy before. It may carry the same version number as a
+ * sheet the other tab printed, so the words say not to use it.
+ */
 export const PRINT_OF_OLDER_COPY =
-  "That printout was made from an older copy of this list, which was changed in another tab. Print it again.";
+  "That printout was made from an older copy of this list, which was changed in another tab. Do not use that printout: print it again.";
 
 /**
  * A delete asked for in this tab was refused by the device, or could not be seen to have taken.

@@ -30,7 +30,7 @@ const TABLE_CANARY = "Morag Quillfeather";
 const TITLE = "Fraser and Okafor";
 const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
 const ADDED_AFTER_DELETE_WORDS = "This list was changed in another tab after it was deleted here. It is kept in this browser again.";
-const PRINT_OF_OLDER_COPY_WORDS = "That printout was made from an older copy of this list, which was changed in another tab. Print it again.";
+const PRINT_OF_OLDER_COPY_WORDS = "That printout was made from an older copy of this list, which was changed in another tab. Do not use that printout: print it again.";
 const REMOVED_BY_RULE_WORDS ="This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
 const OTHER_TAB_BUSY_WORDS = "Another tab is busy with this list, so your last change is not kept yet. It will be kept as soon as that tab has finished.";
 const SHEET_LINKS = [
@@ -1116,7 +1116,7 @@ describe("the guest paper page: a print gives way to another tab's list", () => 
     expect(within(tools()).queryByText(PRINT_OF_OLDER_COPY_WORDS)).toBeNull();
     expect(state().notice).toBeNull();
     // Their newest list stands on the device. The sheet in the dialog is number 2; the record says the
-    // list has changed since a print, so the next print takes the next number and none is shared.
+    // list has changed since a print, so the next print takes the next number: no later sheet is given 2.
     const kept = await memoryStore(backend).open(PLAN_ID);
     if (kept.kind !== "ready") throw new Error("the list was not kept");
     expect(kept.list.title).toBe(`${TITLE}, changed, changed`);
@@ -1124,6 +1124,144 @@ describe("the guest paper page: a print gives way to another tab's list", () => 
     expect(kept.list.paperVersion).toBe(2);
     expect(kept.list.changedSincePrint).toBe(true);
     expect(text(sheet.querySelector(".gp-running"))).toContain("Version 2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two sheets must not carry one version number. The Print button keeps a
+// change still waiting before it reads the device, so another tab's print is
+// known before this one takes its number. And when the button's own save met
+// another tab's print record, it records the print again, under the next
+// number, before the dialog opens.
+// ---------------------------------------------------------------------------
+
+describe("the guest paper page: the Print button's sheet has a number no other sheet has", () => {
+  const THEIR_PRINT = "2026-11-14T10:00:00.000Z";
+
+  /** Another tab prints the list as version 1 and keeps it. This page gets no focus or visibility event. */
+  async function otherTabPrintsVersionOne(backend: CacheBackend): Promise<void> {
+    await otherTabSaves(backend, (kept) => ({
+      ...kept,
+      title: "Theirs",
+      paperVersion: 1,
+      changedSincePrint: false,
+      printedAt: THEIR_PRINT,
+      updatedAt: THEIR_PRINT,
+    }));
+  }
+
+  /** What is on the paper as the dialog opens: the footer every page carries, and the event's name. */
+  function sheetAtPrint(): { readonly version: () => string; readonly title: () => string } {
+    let version = "";
+    let title = "";
+    printSpy.mockImplementation(() => {
+      version = text(document.querySelector(".gp-running"));
+      title = text(document.querySelector(".gp-leaf__title"));
+    });
+    return { version: () => version, title: () => title };
+  }
+
+  /** A change made a moment ago (on the list page, whose state this page shares), still waiting to be kept. */
+  function changeStillWaiting(): void {
+    act(() => {
+      state().apply((list) => ({ ...list, title: "Ours", changedSincePrint: true }));
+    });
+    expect(state().changeWaiting()).toBe(true);
+  }
+
+  it("with a change still waiting here and another tab's print kept unseen, keeps the change first, then prints once, under the next number", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-15T10:00:00.000Z"));
+    const backend = memoryBackend();
+    const inner = await storeHolding(list180(), backend);
+    const saves: string[] = [];
+    const store: GuestListStore = {
+      ...inner,
+      save: (list, loaded, opts) => {
+        saves.push(`version ${String(list.paperVersion)}, ${list.title}`);
+        return inner.save(list, loaded, opts);
+      },
+    };
+    const sheet = sheetAtPrint();
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    await otherTabPrintsVersionOne(backend);
+    changeStillWaiting();
+
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+
+    // The waiting change was kept before any print was recorded, and the print was then recorded once.
+    expect(saves).toEqual(["version 0, Ours", "version 2, Ours"]);
+    // The dialog's sheet is the newest list kept here, as version 2: version 1 is the other tab's sheet.
+    expect(sheet.title()).toBe("Ours");
+    expect(sheet.version()).toBe("Version 2 · printed 15 November 2026");
+    const kept = await memoryStore(backend).open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect([kept.list.title, kept.list.paperVersion, kept.list.changedSincePrint]).toEqual(["Ours", 2, false]);
+    // The tools say this tab's version was kept, and nothing of an older printout.
+    expect(within(tools()).queryByText(PRINT_OF_OLDER_COPY_WORDS)).toBeNull();
+    expect(await within(tools()).findByText("This list was also changed in another tab. This tab's version was kept.")).toBeTruthy();
+  });
+
+  it("records the print again when its own save carried another tab's print record, so the sheet in the dialog has the next number", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-15T10:00:00.000Z"));
+    const backend = memoryBackend();
+    const inner = await storeHolding(list180(), backend);
+    let refuseNext = false;
+    const saves: string[] = [];
+    const store: GuestListStore = {
+      ...inner,
+      save: (list, loaded, opts) => {
+        if (refuseNext) {
+          refuseNext = false;
+          saves.push("refused");
+          return Promise.resolve({ kind: "not-kept" });
+        }
+        saves.push(`version ${String(list.paperVersion)}`);
+        return inner.save(list, loaded, opts);
+      },
+    };
+    const sheet = sheetAtPrint();
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    await otherTabPrintsVersionOne(backend);
+    // The device refuses the next save, so the change is still waiting when the print is recorded:
+    // the print's own save is then an ordinary one, and it is that save which meets their copy.
+    changeStillWaiting();
+    refuseNext = true;
+
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+
+    // The dialog's sheet is version 2: version 1 is on the other tab's sheet, printed at another moment.
+    expect(sheet.version()).toBe("Version 2 · printed 15 November 2026");
+    expect(sheet.title()).toBe("Ours");
+    // The print was recorded as version 1 from this tab's older copy and saved with the change. That save
+    // met their version 1 and carried their record, so the print was recorded again as version 2.
+    expect(saves).toEqual(["refused", "version 1", "version 2"]);
+    const kept = await memoryStore(backend).open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect([kept.list.title, kept.list.paperVersion, kept.list.changedSincePrint]).toEqual(["Ours", 2, false]);
+    expect(within(tools()).queryByText(PRINT_OF_OLDER_COPY_WORDS)).toBeNull();
+  });
+
+  it("stops when keeping a change still waiting finds the list deleted elsewhere: nothing is stored again, and no dialog opens", async () => {
+    const backend = memoryBackend();
+    const store = await storeHolding(list180(), backend);
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    // Another tab deletes the list; this page has had no focus or visibility event.
+    await memoryStore(backend).erase(PLAN_ID);
+    changeStillWaiting();
+
+    const button = within(tools()).getByRole("button", { name: "Print" });
+    fireEvent.click(button);
+    expect(await within(tools()).findByText(REMOVED_ELSEWHERE_WORDS)).toBeTruthy();
+    await waitFor(() => { expect(button.getAttribute("aria-busy")).toBe("false"); });
+    expect(printSpy).not.toHaveBeenCalled();
+    expect((await memoryStore(backend).open(PLAN_ID)).kind).toBe("new");
   });
 });
 

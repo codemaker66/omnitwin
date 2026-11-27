@@ -50,14 +50,29 @@ export interface PaperRecord {
   readonly changedSincePrint: boolean;
 }
 
+/**
+ * Whether the print recorded on another tab's copy (`theirs`) is of a sheet
+ * that the print recorded on this list (`ours`) does not account for: a larger
+ * number, or the same number printed at another moment, which is another sheet
+ * under that number. A copy never printed has no sheet.
+ */
+export function anotherSheet(
+  theirs: Pick<PaperRecord, "paperVersion" | "printedAt">,
+  ours: Pick<PaperRecord, "paperVersion" | "printedAt">,
+): boolean {
+  if (theirs.paperVersion !== ours.paperVersion) return theirs.paperVersion > ours.paperVersion;
+  return theirs.paperVersion > 0 && theirs.printedAt !== ours.printedAt;
+}
+
 export type Saved =
   /** Written over nothing, or over the very copy the caller had loaded. */
   | { readonly kind: "saved"; readonly stamp: Stamp; readonly paper?: PaperRecord }
   /**
    * Written over a stored copy the caller had not loaded (another tab's), or
    * over a value that was not a list. `paper` is there when that copy had been
-   * printed under a larger number than the caller's list: the record written
-   * in its place, for the caller to take up.
+   * printed under a larger number than the caller's list, or under the same
+   * number at another moment: the record written in its place, for the caller
+   * to take up.
    */
   | { readonly kind: "saved-over-other"; readonly stamp: Stamp; readonly paper?: PaperRecord }
   /**
@@ -97,10 +112,12 @@ export interface GuestListStore {
    * loaded a copy, nothing is written.
    *
    * The paper's version never goes down on the device. When another tab's
-   * copy had been printed under a larger number than the list being saved,
-   * that number and its print day are written with the list, marked changed
-   * since that print, so the number of a sheet that went out is never given
-   * to a different sheet.
+   * copy had been printed under a larger number than the list being saved, or
+   * under the same number at another moment (another sheet under that
+   * number), that number and its print day are written with the list, marked
+   * changed since that print. So the next print takes the next number, and no
+   * later sheet is given a number a sheet has carried. Two sheets printed in
+   * the same moment by two tabs can still share one: see the paper page.
    */
   save(list: GuestList, loaded: Stamp | null, opts?: SaveOptions): Promise<Saved>;
   erase(planId: string): Promise<void>;
@@ -199,7 +216,7 @@ export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Ex
       // A stored value that is not a list is another's too; it is replaced.
       let anothers = false;
       let storedRevision = 0;
-      /** Another tab's print record, when its sheet went out under a larger number than this list's. */
+      /** Another tab's print record, when its sheet went out under a larger number than this list's, or under the same number at another moment. */
       let carried: PaperRecord | null = null;
       if (stored !== null) {
         const parsed = GuestListSchema.safeParse(stored.value);
@@ -209,7 +226,7 @@ export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Ex
         if (anothers && parsed.success && opts?.yieldToOther === true) {
           return { kind: "other-kept", list: repairGuestList(parsed.data).list };
         }
-        if (anothers && parsed.success && parsed.data.paperVersion > checked.data.paperVersion) {
+        if (anothers && parsed.success && anotherSheet(parsed.data, checked.data)) {
           // Their sheet is out under that number, and it was not this list: changed since that print.
           carried = { paperVersion: parsed.data.paperVersion, printedAt: parsed.data.printedAt, changedSincePrint: true };
         }

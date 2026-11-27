@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { memoryBackend, withBackend, type CacheBackend } from "../../idb-cache.js";
 import { emptyGuestList, type Guest, type GuestList } from "../model.js";
+import { markPrinted } from "../paper.js";
 import { createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE, LOCK_WAIT_MS, stampOf, type Exclusive, type GuestListStore, type Stamp } from "../store.js";
 
 const PLAN_A = "5b0a6f0e-7f0b-4d7e-9c3a-2f6f6f0a1b11";
@@ -540,7 +541,32 @@ describe("guest list store: a save over another tab's copy never lowers the pape
       .toEqual(["Changed in B", 4, PRINTED_AT, true]);
   });
 
-  it("leaves this tab's print record as it is when its version is the larger, or the same", async () => {
+  it("a copy printed under the same number at another moment is another sheet: the list is written as changed since that print, and the next print takes the next number", async () => {
+    const { a, b, base, bLoaded } = await aPrintsWhileBHoldsTheOlderCopy();
+    // Tab B, from the copy before A's print, prints version 4 itself a minute later, and saves over A's copy.
+    const ours = {
+      ...base,
+      title: "Printed in B",
+      paperVersion: 4,
+      changedSincePrint: false,
+      printedAt: "2026-11-13T10:01:00.000Z",
+      updatedAt: "2026-11-13T10:01:00.000Z",
+    };
+    const over = await b.save(ours, bLoaded);
+    if (over.kind !== "saved-over-other") throw new Error("the save did not go over the other tab's copy");
+    // The answer carries the record written, for the page to take up.
+    expect(over.paper).toEqual({ paperVersion: 4, printedAt: PRINTED_AT, changedSincePrint: true });
+
+    const kept = await a.open(PLAN_A);
+    if (kept.kind !== "ready") throw new Error("nothing is kept");
+    // B's content stands. Number 4 is on A's sheet as well, which was not this list: changed since that print.
+    expect([kept.list.title, kept.list.paperVersion, kept.list.printedAt, kept.list.changedSincePrint])
+      .toEqual(["Printed in B", 4, PRINTED_AT, true]);
+    // So the next print of the list is version 5, a number neither sheet has.
+    expect(markPrinted(kept.list, "2026-11-13T10:02:00.000Z").paperVersion).toBe(5);
+  });
+
+  it("leaves this tab's print record as it is when its version is the larger, or it is the same sheet (the same number, printed at the same moment)", async () => {
     const { a, b, base, bLoaded } = await aPrintsWhileBHoldsTheOlderCopy();
     const ours = { ...base, paperVersion: 5, changedSincePrint: false, printedAt: "2026-11-13T11:00:00.000Z", updatedAt: "2026-11-13T11:00:00.000Z" };
     const larger = await b.save(ours, bLoaded);

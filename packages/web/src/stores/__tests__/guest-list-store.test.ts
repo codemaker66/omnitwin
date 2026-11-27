@@ -1468,7 +1468,7 @@ describe("guest list page state: a print gives way to another tab's list", () =>
     expect(state().notice).toBeNull();
   });
 
-  it("never gives the stale sheet's number to a different sheet: the larger of the two versions is kept", async () => {
+  it("gives no later sheet the stale sheet's number: the larger of the two versions is kept", async () => {
     const { backend } = await changedElsewhereUnseen({ paperVersion: 4, printedAt: "2026-11-14T09:00:00.000Z", changedSincePrint: false });
     recordPrint();
     expect(state().list?.paperVersion).toBe(1);
@@ -1803,7 +1803,7 @@ describe("guest list page state: what a second read of the two-tab code found", 
     if (kept.kind !== "ready") throw new Error("nothing is kept");
     expect([kept.list.title, kept.list.paperVersion, kept.list.printedAt, kept.list.changedSincePrint])
       .toEqual(["Changed here", 4, "2026-11-14T09:00:00.000Z", true]);
-    // The page has the number too: its next print is 5, and no two sheets share 4.
+    // The page has the number too: its next print is 5, and no later sheet is given 4.
     const onPage = state().list;
     if (onPage === null) throw new Error("no list on the page");
     expect([onPage.paperVersion, onPage.printedAt, onPage.changedSincePrint]).toEqual([4, "2026-11-14T09:00:00.000Z", true]);
@@ -2053,6 +2053,50 @@ describe("guest list page state: another tab is busy with the list", () => {
     await state().open(PLAN_A, store, clock());
     expect(state().list?.title).toBe("");
     expect(state().notice).toEqual({ kind: "last-change-not-kept" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two tabs can each print a sheet under the same number. A save that meets the
+// other tab's copy of that number takes its record up, marked changed since,
+// so the next print takes the next number.
+// ---------------------------------------------------------------------------
+
+describe("guest list page state: another tab's sheet under the same number", () => {
+  it("a save that goes over another tab's print of the same number marks the list changed since that print, on the device and on the page", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)], paperVersion: 3, changedSincePrint: true }));
+    await state().flush();
+    // The other tab prints that copy as version 4, and saves.
+    const other = otherTabOn(backend);
+    const theirs = await loadedBy(other, PLAN_A);
+    const printed = markPrinted(theirs.list, "2026-11-14T09:00:00.000Z");
+    expect(printed.paperVersion).toBe(4);
+    expect((await other.save({ ...printed, updatedAt: "2026-11-14T09:00:00.000Z" }, theirs.stamp)).kind).toBe("saved");
+
+    // This tab has not seen that. It changes the list and prints it an hour later, as version 4 too.
+    // An ordinary change is waiting with the print, so the save keeps this tab's list.
+    state().apply(titled("Changed here"));
+    state().apply((list) => markPrinted(list, "2026-11-14T10:00:00.000Z"), {
+      undo: false,
+      ifOtherCopy: (theirList) => printedFromOlderCopy(theirList, 4, "2026-11-14T10:00:00.000Z"),
+    });
+    expect(state().list?.paperVersion).toBe(4);
+    await state().flush();
+
+    expect(state().notice).toEqual({ kind: "other-tab" });
+    const kept = await reopened(backend, PLAN_A);
+    if (kept.kind !== "ready") throw new Error("nothing is kept");
+    // This tab's content stands. Number 4 is on the other tab's sheet too, which was not this list.
+    expect([kept.list.title, kept.list.paperVersion, kept.list.printedAt, kept.list.changedSincePrint])
+      .toEqual(["Changed here", 4, "2026-11-14T09:00:00.000Z", true]);
+    // The page has that record too: its next print is version 5, a number neither sheet has.
+    const onPage = state().list;
+    if (onPage === null) throw new Error("no list on the page");
+    expect([onPage.paperVersion, onPage.printedAt, onPage.changedSincePrint]).toEqual([4, "2026-11-14T09:00:00.000Z", true]);
+    expect(markPrinted(onPage, "2026-11-15T09:00:00.000Z").paperVersion).toBe(5);
+    expect(state().changeWaiting()).toBe(false);
   });
 });
 
