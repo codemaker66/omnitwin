@@ -119,6 +119,10 @@ export const PRINT_OF_OLDER_COPY =
  */
 export const NOT_DELETED = "This list could not be deleted from this browser just now. Try again.";
 
+/** Another tab is at work on this list and has not finished: the change made here waits, and is tried again. */
+export const OTHER_TAB_BUSY =
+  "Another tab is busy with this list, so your last change is not kept yet. It will be kept as soon as that tab has finished.";
+
 /** The words of a notice from the page's state. Each is a fixed sentence, or a count in one. */
 export function noticeWords(notice: Exclude<KitNotice, null>): string {
   switch (notice.kind) {
@@ -136,6 +140,8 @@ export function noticeWords(notice: Exclude<KitNotice, null>): string {
       return PRINT_OF_OLDER_COPY;
     case "not-deleted":
       return NOT_DELETED;
+    case "other-tab-busy":
+      return OTHER_TAB_BUSY;
   }
 }
 

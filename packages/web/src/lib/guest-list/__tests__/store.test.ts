@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { memoryBackend, withBackend, type CacheBackend } from "../../idb-cache.js";
 import { emptyGuestList, type Guest, type GuestList } from "../model.js";
-import { createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE, stampOf, type Exclusive, type GuestListStore, type Stamp } from "../store.js";
+import { createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE, LOCK_WAIT_MS, stampOf, type Exclusive, type GuestListStore, type Stamp } from "../store.js";
 
 const PLAN_A = "5b0a6f0e-7f0b-4d7e-9c3a-2f6f6f0a1b11";
 const PLAN_B = "6c1b7a1f-8a1c-4e8f-8d4b-3a7a7a1b2c22";
@@ -672,10 +672,10 @@ describe("guest list store: a save, a delete and a sweep run one at a time acros
   /** The browser's lock, as two tabs share it: whoever asks second waits for the first to finish. */
   function sharedLock(): Exclusive {
     let last: Promise<unknown> = Promise.resolve();
-    return <T>(work: () => Promise<T>): Promise<T> => {
+    return <T>(work: () => Promise<T>) => {
       const run = last.then(work, work);
       last = run.catch(() => undefined);
-      return run;
+      return run.then((value) => ({ ran: true as const, value }));
     };
   }
 
@@ -722,7 +722,7 @@ describe("guest list store: a save, a delete and a sweep run one at a time acros
     const names: string[] = [];
     let refuse = false;
     const locks = {
-      request: (name: string, work: () => Promise<unknown>): Promise<unknown> => {
+      request: (name: string, _options: unknown, work: () => Promise<unknown>): Promise<unknown> => {
         names.push(name);
         return refuse ? Promise.reject(new Error("refused")) : work();
       },
@@ -742,5 +742,39 @@ describe("guest list store: a save, a delete and a sweep run one at a time acros
     } finally {
       Reflect.deleteProperty(navigator, "locks");
     }
+  });
+});
+
+describe("guest list store: a lock that is never let go does not hold the page up", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    Reflect.deleteProperty(navigator, "locks");
+  });
+
+  it("waits for the lock no longer than its bound, then answers that another tab is busy, and writes nothing", async () => {
+    vi.useFakeTimers();
+    let asked = 0;
+    const locks = {
+      // Another tab holds the lock and never lets go: the request ends only when it is given up.
+      request: (_name: string, options: { readonly signal: AbortSignal }, _work: () => Promise<unknown>): Promise<unknown> =>
+        new Promise((_resolve, reject) => {
+          asked += 1;
+          options.signal.addEventListener("abort", () => { reject(new Error("given up")); });
+        }),
+    };
+    Object.defineProperty(navigator, "locks", { value: locks, configurable: true });
+    const s = store();
+    const answers: string[] = [];
+    void s.save(listFor(PLAN_A), null).then((saved) => { answers.push(saved.kind); });
+
+    await vi.advanceTimersByTimeAsync(LOCK_WAIT_MS - 1);
+    expect(asked).toBe(1);
+    expect(answers).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    vi.useRealTimers();
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    // Nothing was written: writing without the lock is how a deleted list came back.
+    expect(answers).toEqual(["busy"]);
+    expect((await s.open(PLAN_A)).kind).toBe("new");
   });
 });

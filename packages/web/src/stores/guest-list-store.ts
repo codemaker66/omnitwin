@@ -41,7 +41,9 @@ export type KitNotice =
   /** A print's save gave way to another tab's list: the sheet printed was of an older copy. */
   | { readonly kind: "print-of-older-copy" }
   /** The device refused a delete asked for here: the list is still kept, and still on the page. */
-  | { readonly kind: "not-deleted" };
+  | { readonly kind: "not-deleted" }
+  /** Another tab is at work on the list: a change here is not kept yet, and is being tried again. */
+  | { readonly kind: "other-tab-busy" };
 
 export interface ApplyOptions {
   /** False for a change undo does not step back through. */
@@ -315,6 +317,15 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             if (isCurrent(session)) set({ kept: false });
             return;
           }
+          if (answer.kind === "busy") {
+            // Another tab is at work on the lists and did not finish in time. Nothing was written:
+            // the change stays on the page, the page says so, and the save is tried again shortly.
+            session.ordinary = since.ordinary || waiting.ordinary;
+            session.ifOther = since.ifOther ?? waiting.ifOther;
+            if (isCurrent(session)) set({ notice: { kind: "other-tab-busy" } });
+            scheduleSave(session);
+            return;
+          }
           if (answer.kind === "removed-elsewhere") {
             // A change made while this save ran belongs to the removed list, and goes with it.
             if (isCurrent(session)) takeEmpty(session);
@@ -366,6 +377,8 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           session.sweptHere = false;
           if (isCurrent(session)) {
             set(answer.kind === "saved-over-other" ? { kept: true, notice: { kind: "other-tab" } } : { kept: true });
+            // The change that was waiting on another tab is kept now.
+            if (get().notice?.kind === "other-tab-busy") set({ notice: null });
             // The device kept another tab's larger print number with this list. The page takes it
             // too, so its next print follows on and no two sheets share a number.
             const onPage = get().list;

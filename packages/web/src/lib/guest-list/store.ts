@@ -71,6 +71,8 @@ export type Saved =
    * loaded: nothing was written. `list` is that copy, as `open` would return it.
    */
   | { readonly kind: "other-kept"; readonly list: GuestList }
+  /** Another tab was at work on the lists and did not finish in time: nothing was written, and the save can be tried again. */
+  | { readonly kind: "busy" }
   | { readonly kind: "not-kept" };
 
 export interface SaveOptions {
@@ -112,32 +114,52 @@ export interface GuestListStore {
  * steps of the store, so without this another tab's delete could land between
  * them and its names be written back.
  */
-export type Exclusive = <T>(work: () => Promise<T>) => Promise<T>;
+export type Exclusive = <T>(work: () => Promise<T>) => Promise<Alone<T>>;
+
+/** What became of work asked to run alone: it ran, or another tab held the lock too long and it was not started. */
+export type Alone<T> = { readonly ran: true; readonly value: T } | { readonly ran: false };
 
 /** The one name every tab asks the browser's lock by. It says nothing of any plan or guest. */
 const LOCK_NAME = "venviewer-guest-lists";
 
+/** How long a save, a delete or a sweep waits for another tab to let the lock go. */
+export const LOCK_WAIT_MS = 2_000;
+
 /**
  * One at a time across every tab of this browser, by the browser's own lock
- * (the Web Locks API). A browser without it, or one that refuses the request,
- * still gets the work done, unguarded, as every browser did before.
+ * (the Web Locks API). The lock is held only while the store's own steps run,
+ * never across anything a person waits on. The wait for it is bounded: when
+ * another tab still holds it after that, the work is not started at all, for
+ * work done without the lock is how a deleted list came back. A browser
+ * without the lock, or one that refuses the request outright, does the work
+ * unguarded, as every browser did before.
  */
-const acrossTabs: Exclusive = async <T>(work: () => Promise<T>): Promise<T> => {
+const acrossTabs: Exclusive = async <T>(work: () => Promise<T>): Promise<Alone<T>> => {
   // Typed as always present, but an older browser has no `locks`, or has it empty.
   const locks = typeof navigator === "undefined" ? undefined : (navigator.locks as LockManager | null | undefined);
-  if (locks === undefined || locks === null) return work();
-  const asked: { work: Promise<T> | null } = { work: null };
+  if (locks === undefined || locks === null) return { ran: true, value: await work() };
+  const asked: { work: Promise<T> | null; gaveUp: boolean } = { work: null, gaveUp: false };
+  const waiting = new AbortController();
+  const bound = setTimeout(() => {
+    asked.gaveUp = true;
+    waiting.abort();
+  }, LOCK_WAIT_MS);
   // The lock is held until the work has settled, whichever way it settles.
   const run = (): Promise<void> => {
+    clearTimeout(bound);
     asked.work = work();
     return asked.work.then(() => undefined, () => undefined);
   };
   try {
-    await locks.request(LOCK_NAME, run);
+    await locks.request(LOCK_NAME, { signal: waiting.signal }, run);
   } catch {
-    // The browser refused the lock: the work is still done, unguarded, as every browser did before.
+    // Not granted in time, or refused: settled below.
+  } finally {
+    clearTimeout(bound);
   }
-  return asked.work ?? work();
+  if (asked.work !== null) return { ran: true, value: await asked.work };
+  if (asked.gaveUp) return { ran: false };
+  return { ran: true, value: await work() };
 };
 
 export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Exclusive = acrossTabs): GuestListStore {
@@ -237,11 +259,21 @@ export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Ex
 
   // A save (its read, its write and its read-back), a delete and a sweep each run alone, across
   // every tab: a delete cannot land inside another tab's save, nor one save inside another.
+  // When another tab holds the lock too long, nothing is done: the save answers "busy", the delete
+  // leaves the list (the page reads back and says so), and the sweep removes nothing this time.
   return {
     open,
-    save: (list, loaded, opts) => exclusive(() => save(list, loaded, opts)),
-    erase: (planId) => exclusive(() => erase(planId)),
-    sweep: (nowMs) => exclusive(() => sweep(nowMs)),
+    save: async (list, loaded, opts) => {
+      const alone = await exclusive(() => save(list, loaded, opts));
+      return alone.ran ? alone.value : { kind: "busy" };
+    },
+    erase: async (planId) => {
+      await exclusive(() => erase(planId));
+    },
+    sweep: async (nowMs) => {
+      const alone = await exclusive(() => sweep(nowMs));
+      return alone.ran ? alone.value : [];
+    },
   };
 }
 

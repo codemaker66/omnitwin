@@ -1804,3 +1804,34 @@ describe("guest list page state: what a second read of the two-tab code found", 
     expect(state().notice).toBeNull();
   });
 });
+
+describe("guest list page state: another tab is busy with the list", () => {
+  it("writes nothing, says so, keeps the change on the page and saves it again shortly", async () => {
+    const { backend, store } = device();
+    let busy = false;
+    // The device store's answer when another tab holds the list's lock past the bound.
+    const waits: GuestListStore = {
+      ...store,
+      save: (list, loaded, opts) => (busy ? Promise.resolve({ kind: "busy" }) : store.save(list, loaded, opts)),
+    };
+    await state().open(PLAN_A, waits, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+
+    busy = true;
+    state().apply(titled("Waiting"));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "other-tab-busy" });
+    expect(state().list?.title).toBe("Waiting");
+    expect(state().changeWaiting()).toBe(true);
+    expect(storedTitle(await reopened(backend, PLAN_A))).not.toBe("Waiting");
+
+    // The other tab finishes: the change is saved without another keystroke, and the words go.
+    busy = false;
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    await state().flush();
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Waiting");
+    expect(state().notice).toBeNull();
+    expect(state().changeWaiting()).toBe(false);
+  });
+});
