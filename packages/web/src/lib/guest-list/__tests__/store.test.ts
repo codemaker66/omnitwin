@@ -493,11 +493,75 @@ describe("guest list store: sweep", () => {
     expect((await s.open(PLAN_A)).kind).toBe("ready");
   });
 
-  it("leaves a value it cannot read alone", async () => {
-    const { raw, a } = twoTabs();
-    await raw.put(PLAN_A, { junk: true });
+  it("leaves a value it cannot read alone until 90 days after it was last stored, then removes it", async () => {
+    const { backend, a } = twoTabs();
+    // Stored on 1 August 2026: 90 days later is 30 October.
+    await backend.put(PLAN_A, { storedAt: "2026-08-01T00:00:00.000Z", value: { junk: true } });
+    expect(await a.sweep(Date.parse("2026-10-29T23:59:59.999Z"))).toEqual([]);
+    expect(await backend.get(PLAN_A)).not.toBeNull();
+    // No name kept in this browser outlives the rule because the value holding it cannot be read.
+    expect(await a.sweep(Date.parse("2026-10-30T00:00:00.000Z"))).toEqual([PLAN_A]);
+    expect(await backend.get(PLAN_A)).toBeNull();
+  });
+
+  it("never removes a value it cannot read when the time it was stored cannot be read either", async () => {
+    const { backend, a } = twoTabs();
+    await backend.put(PLAN_A, { storedAt: "not a time", value: { junk: true } });
     expect(await a.sweep(Date.parse("2099-01-01T00:00:00Z"))).toEqual([]);
-    expect((await raw.get(PLAN_A))?.value).toEqual({ junk: true });
+    expect(await backend.get(PLAN_A)).not.toBeNull();
+  });
+});
+
+describe("guest list store: a save over another tab's copy never lowers the paper's version", () => {
+  const PRINTED_AT = "2026-11-13T10:00:00.000Z";
+
+  /** Both tabs hold version 3, changed since its print; tab A then prints it as version 4 and saves. */
+  async function aPrintsWhileBHoldsTheOlderCopy(): Promise<{ readonly a: GuestListStore; readonly b: GuestListStore; readonly base: GuestList; readonly bLoaded: Stamp }> {
+    const { a, b } = twoTabs();
+    const base = listFor(PLAN_A, { paperVersion: 3, changedSincePrint: true, printedAt: "2026-11-10T09:00:00.000Z" });
+    const first = await a.save(base, null);
+    if (first.kind !== "saved") throw new Error("the first save was not kept");
+    const printed = await a.save({ ...base, paperVersion: 4, changedSincePrint: false, printedAt: PRINTED_AT, updatedAt: PRINTED_AT }, first.stamp);
+    expect(printed.kind).toBe("saved");
+    return { a, b, base, bLoaded: first.stamp };
+  }
+
+  it("keeps the stored copy's larger version and its print day, marks the list changed since, and answers with what it wrote", async () => {
+    const { a, b, base, bLoaded } = await aPrintsWhileBHoldsTheOlderCopy();
+    // Tab B, which loaded the copy before the print, saves a change over the printed one.
+    const over = await b.save({ ...base, title: "Changed in B", updatedAt: "2026-11-13T10:00:01.000Z" }, bLoaded);
+    if (over.kind !== "saved-over-other") throw new Error("the save did not go over the other tab's copy");
+    expect(over.paper).toEqual({ paperVersion: 4, printedAt: PRINTED_AT, changedSincePrint: true });
+
+    const kept = await a.open(PLAN_A);
+    if (kept.kind !== "ready") throw new Error("nothing is kept");
+    // B's content stands; the number of the sheet that went out is not given back.
+    expect([kept.list.title, kept.list.paperVersion, kept.list.printedAt, kept.list.changedSincePrint])
+      .toEqual(["Changed in B", 4, PRINTED_AT, true]);
+  });
+
+  it("leaves this tab's print record as it is when its version is the larger, or the same", async () => {
+    const { a, b, base, bLoaded } = await aPrintsWhileBHoldsTheOlderCopy();
+    const ours = { ...base, paperVersion: 5, changedSincePrint: false, printedAt: "2026-11-13T11:00:00.000Z", updatedAt: "2026-11-13T11:00:00.000Z" };
+    const larger = await b.save(ours, bLoaded);
+    if (larger.kind !== "saved-over-other") throw new Error("the save did not go over the other tab's copy");
+    expect(larger.paper).toBeUndefined();
+    const kept = await a.open(PLAN_A);
+    expect(kept.kind === "ready" ? [kept.list.paperVersion, kept.list.printedAt, kept.list.changedSincePrint] : null)
+      .toEqual([5, "2026-11-13T11:00:00.000Z", false]);
+
+    const same = await a.save({ ...ours, paperVersion: 5, title: "A again", updatedAt: "2026-11-13T12:00:00.000Z" }, null);
+    if (same.kind !== "saved-over-other") throw new Error("the save did not go over the other tab's copy");
+    expect(same.paper).toBeUndefined();
+  });
+
+  it("a save over the very copy this tab loaded carries nothing forward", async () => {
+    const { a } = twoTabs();
+    const first = await a.save(listFor(PLAN_A, { paperVersion: 4, printedAt: PRINTED_AT }), null);
+    if (first.kind !== "saved") throw new Error("the first save was not kept");
+    // An undo here can take the page's list back before a print; that is this tab's own doing.
+    const second = await a.save(listFor(PLAN_A, { paperVersion: 4, printedAt: PRINTED_AT, title: "Later" }), first.stamp);
+    expect(second.kind === "saved" ? second.paper : "not saved").toBeUndefined();
   });
 });
 

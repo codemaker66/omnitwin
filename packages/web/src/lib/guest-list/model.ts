@@ -201,6 +201,16 @@ function removedFromAfterEvent(eventDate: string): number {
 }
 
 /**
+ * The moment a stored value that cannot be read as a list is removed: 90 days
+ * after it was last stored. Its event date and last change cannot be read, so
+ * the longer of the two periods is counted from the one time that can. Not a
+ * number when that time cannot be read either: such a value is never removed.
+ */
+export function removedFromWhenUnreadable(storedAtIso: string): number {
+  return Date.parse(storedAtIso) + KEEP_DAYS_AFTER_CHANGE * MS_PER_DAY;
+}
+
+/**
  * Whether an event date is refused: a list with that date would be removed at
  * once, because its removal day (30 days after the event, from 00:00 UTC, as
  * the sweep counts it) is today or earlier. A year typed wrong, or as two

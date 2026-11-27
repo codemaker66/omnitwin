@@ -9,7 +9,7 @@
  */
 
 import { openCache, type CacheHandle } from "../idb-cache.js";
-import { GuestListSchema, deleteAfter, repairGuestList, type GuestList } from "./model.js";
+import { GuestListSchema, deleteAfter, removedFromWhenUnreadable, repairGuestList, type GuestList } from "./model.js";
 
 export const GUEST_LIST_DB = "venviewer-guest-lists";
 export const GUEST_LIST_STORE = "lists";
@@ -43,11 +43,23 @@ export function sameStamp(a: Stamp, b: Stamp): boolean {
   return a.revision === b.revision && a.updatedAt === b.updatedAt;
 }
 
+/** The paper's record on a list: the number of its last printed sheet, when that was, and whether the list has changed since. */
+export interface PaperRecord {
+  readonly paperVersion: number;
+  readonly printedAt: string | null;
+  readonly changedSincePrint: boolean;
+}
+
 export type Saved =
   /** Written over nothing, or over the very copy the caller had loaded. */
-  | { readonly kind: "saved"; readonly stamp: Stamp }
-  /** Written over a stored copy the caller had not loaded (another tab's), or over a value that was not a list. */
-  | { readonly kind: "saved-over-other"; readonly stamp: Stamp }
+  | { readonly kind: "saved"; readonly stamp: Stamp; readonly paper?: PaperRecord }
+  /**
+   * Written over a stored copy the caller had not loaded (another tab's), or
+   * over a value that was not a list. `paper` is there when that copy had been
+   * printed under a larger number than the caller's list: the record written
+   * in its place, for the caller to take up.
+   */
+  | { readonly kind: "saved-over-other"; readonly stamp: Stamp; readonly paper?: PaperRecord }
   /**
    * Nothing is stored where the caller had loaded a copy: the list was removed
    * since (deleted in another tab, or the browser's stored data was cleared).
@@ -81,6 +93,12 @@ export interface GuestListStore {
    * the caller asked to give way to it. The answer carries the stamp written:
    * the caller's next `loaded`. When nothing is stored and the caller had
    * loaded a copy, nothing is written.
+   *
+   * The paper's version never goes down on the device. When another tab's
+   * copy had been printed under a larger number than the list being saved,
+   * that number and its print day are written with the list, marked changed
+   * since that print, so the number of a sheet that went out is never given
+   * to a different sheet.
    */
   save(list: GuestList, loaded: Stamp | null, opts?: SaveOptions): Promise<Saved>;
   erase(planId: string): Promise<void>;
@@ -114,6 +132,8 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
       // A stored value that is not a list is another's too; it is replaced.
       let anothers = false;
       let storedRevision = 0;
+      /** Another tab's print record, when its sheet went out under a larger number than this list's. */
+      let carried: PaperRecord | null = null;
       if (stored !== null) {
         const parsed = GuestListSchema.safeParse(stored.value);
         if (parsed.success) storedRevision = parsed.data.revision;
@@ -122,8 +142,16 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
         if (anothers && parsed.success && opts?.yieldToOther === true) {
           return { kind: "other-kept", list: repairGuestList(parsed.data).list };
         }
+        if (anothers && parsed.success && parsed.data.paperVersion > checked.data.paperVersion) {
+          // Their sheet is out under that number, and it was not this list: changed since that print.
+          carried = { paperVersion: parsed.data.paperVersion, printedAt: parsed.data.printedAt, changedSincePrint: true };
+        }
       }
-      const toStore: GuestList = { ...checked.data, revision: Math.max(storedRevision, loaded?.revision ?? 0) + 1 };
+      const toStore: GuestList = {
+        ...checked.data,
+        ...(carried ?? {}),
+        revision: Math.max(storedRevision, loaded?.revision ?? 0) + 1,
+      };
       const stamp = stampOf(toStore);
       await handle.put(toStore.planId, toStore);
       // Read back: put resolves before the browser commits, so a quota failure would otherwise pass as "saved".
@@ -131,7 +159,8 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
       if (back === null) return { kind: "not-kept" };
       const kept = GuestListSchema.safeParse(back.value);
       if (!kept.success || !sameStamp(stampOf(kept.data), stamp)) return { kind: "not-kept" };
-      return { kind: anothers ? "saved-over-other" : "saved", stamp };
+      const kind = anothers ? "saved-over-other" : "saved";
+      return carried === null ? { kind, stamp } : { kind, stamp, paper: carried };
     } catch {
       return { kind: "not-kept" };
     }
@@ -151,9 +180,12 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
       const rows = await handle.list();
       for (const row of rows) {
         const parsed = GuestListSchema.safeParse(row.stored.value);
-        if (!parsed.success) continue;
         try {
-          const removeFrom = Date.parse(`${deleteAfter(parsed.data).dateIso}T00:00:00.000Z`);
+          // A value that cannot be read as a list still goes, so no name in it outlives the rule:
+          // by the longer of the two periods, counted from when it was last stored.
+          const removeFrom = parsed.success
+            ? Date.parse(`${deleteAfter(parsed.data).dateIso}T00:00:00.000Z`)
+            : removedFromWhenUnreadable(row.stored.storedAt);
           // Fails safe: a removal moment that cannot be read never removes a list.
           if (!(nowMs >= removeFrom)) continue;
           await handle.delete(row.key);
