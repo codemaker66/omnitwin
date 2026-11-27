@@ -63,13 +63,19 @@ async function gitEntryAbove(folder: string): Promise<boolean> {
  * session starts.
  */
 export const ATTENDED = `Run it by hand and attended until the night-shift conveyor's ledger v2 lands. A run
-books its session once, after stopping it and reading its cost. Ctrl-C, a kill or Ctrl-Break does
-the same: it interrupts the session, waits for it or archives it, and books it; a second one, or
-closing the window, books the session at once at its whole budget as unknown and exits. A
-launcher that dies without a signal (a crash, a forced kill) leaves its session unbooked: \`run\`
-then refuses, and \`status\` warns, until \`sandbox collect <session-id> --book\` books it. Nothing
-locks the check-then-spend step, so two launchers started at once can both pass the spend check.
-Do not schedule or loop \`sandbox run\`.`;
+books its session once, after stopping it and reading its cost. Ctrl-C or Ctrl-Break (or a SIGTERM
+on Linux and macOS) stops the run the same way: it interrupts the session and waits for it, and
+books the platform's figure once it has stopped; a session it has to archive is booked at its
+whole budget as unknown. A repeat of the same key within 2 s is the same press. A second press, or
+closing the window, books the session at once at its whole budget as unknown and exits. pnpm may
+give the prompt back before the launcher has finished: keep the window open until it says the run
+has stopped. Windows has no kill the launcher can catch: taskkill without /F refuses the
+launcher's process (aimed at the program that owns the window, it closes the window, as above),
+and /F ends it outright. A launcher ended outright (a crash, taskkill /F, SIGKILL)
+books nothing: its session runs on until it stops or reaches its budget, \`run\` refuses, and
+\`status\` warns, until \`sandbox collect <session-id> --book\` books it. Nothing locks the
+check-then-spend step, so two launchers started at once can both pass the spend check. Do not
+schedule or loop \`sandbox run\`.`;
 
 export const USAGE = `credit-runner sandbox: runs one spec per Claude Managed Agents session in
 Anthropic's cloud sandbox, and brings back a patch for review. No agent code runs
@@ -261,7 +267,7 @@ export async function main(argv: readonly string[], seams: { readonly api?: Sand
     projectRules,
     verifyScript,
     log: out,
-    // Ctrl-C, a kill, a closed window or Ctrl-Break stop the run and book it (see runSandboxJob); the handlers last only as long as the run.
+    // Ctrl-C, Ctrl-Break, a closed window or (on Linux and macOS) a SIGTERM stop the run and book it (see runSandboxJob); the handlers last only as long as the run.
     stopOnSignals: {},
   });
   if (record.kind === "skipped") {

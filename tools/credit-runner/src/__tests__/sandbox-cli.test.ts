@@ -30,13 +30,27 @@ describe("the example config", () => {
 
 describe("the CLI's own words", () => {
   it("says in its usage that the launcher is run by hand and attended, with a neutral job label", () => {
-    expect(ATTENDED).toContain("Run it by hand and attended until the night-shift conveyor's ledger v2 lands");
-    expect(ATTENDED).toContain("Do not schedule or loop `sandbox run`");
-    // What a signal does, and how a session a dead launcher left is found and booked.
-    expect(ATTENDED).toContain("Ctrl-C, a kill or Ctrl-Break does\nthe same: it interrupts the session, waits for it or archives it, and books it");
-    expect(ATTENDED).toContain("books the session at once at its whole budget as unknown and exits");
-    expect(ATTENDED).toContain("`run`\nthen refuses, and `status` warns, until `sandbox collect <session-id> --book` books it");
-    expect(ATTENDED).not.toMatch(/a launcher that dies or is started twice at once can\sleave a running session unrecorded/u);
+    // The words as printed, whatever the line breaks.
+    const said = ATTENDED.replace(/\s+/gu, " ");
+    expect(said).toContain("Run it by hand and attended until the night-shift conveyor's ledger v2 lands");
+    expect(said).toContain("Do not schedule or loop `sandbox run`");
+    // What a stop does: the platform's figure once the session has stopped, the whole budget when it had to be archived.
+    expect(said).toContain(
+      "Ctrl-C or Ctrl-Break (or a SIGTERM on Linux and macOS) stops the run the same way: it interrupts the session and waits for it, and books the platform's figure once it has stopped; a session it has to archive is booked at its whole budget as unknown.",
+    );
+    expect(said).toContain("A repeat of the same key within 2 s is the same press.");
+    expect(said).toContain("A second press, or closing the window, books the session at once at its whole budget as unknown and exits.");
+    // pnpm gives the prompt back at once on Ctrl-C, while the launcher is still stopping the session.
+    expect(said).toContain("pnpm may give the prompt back before the launcher has finished: keep the window open until it says the run has stopped.");
+    // Windows has no kill a console process can catch.
+    expect(said).toContain(
+      "Windows has no kill the launcher can catch: taskkill without /F refuses the launcher's process (aimed at the program that owns the window, it closes the window, as above), and /F ends it outright.",
+    );
+    // How a session a dead launcher left is found and booked, and what bounds it meanwhile.
+    expect(said).toContain(
+      "A launcher ended outright (a crash, taskkill /F, SIGKILL) books nothing: its session runs on until it stops or reaches its budget, `run` refuses, and `status` warns, until `sandbox collect <session-id> --book` books it.",
+    );
+    expect(said).not.toMatch(/a kill or Ctrl-Break does the same|waits for it or archives it, and books it/u);
     expect(USAGE).toContain("sandbox collect <session-id> --book [--budget <usd>]");
     expect(USAGE).toContain(ATTENDED);
     // No example that reads like a scheduled night.

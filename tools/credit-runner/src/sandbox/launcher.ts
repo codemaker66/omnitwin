@@ -227,7 +227,12 @@ function fenced(text: string): string[] {
   return [fence, body, fence];
 }
 
-/** The signals that stop a run (stopOnSignals): Ctrl-C (SIGINT), a kill (SIGTERM), a closed console window (SIGHUP, which Windows follows with a forced end a few seconds later) and Ctrl-Break (SIGBREAK). */
+/**
+ * The signals that stop a run (stopOnSignals): Ctrl-C (SIGINT), a kill on
+ * Linux and macOS (SIGTERM; Windows has no kill a console process can catch),
+ * a closed console window (SIGHUP, which Windows follows with a forced end
+ * about five seconds later) and Ctrl-Break (SIGBREAK).
+ */
 export const STOP_SIGNALS: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"];
 
 /**
