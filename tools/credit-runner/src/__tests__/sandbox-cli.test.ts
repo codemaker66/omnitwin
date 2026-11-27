@@ -46,10 +46,19 @@ describe("the CLI's own words", () => {
     expect(said).toContain(
       "Ctrl-C or Ctrl-Break (or a SIGTERM on Linux and macOS) stops the run the same way: it interrupts the session and waits for it, and books the platform's figure once it has stopped; a session it has to archive is booked at its whole budget as unknown.",
     );
-    expect(said).toContain("A repeat of the same key within 2 s is the same press.");
-    expect(said).toContain("A second press, or closing the window, books the session at once at its whole budget as unknown and exits.");
-    // pnpm gives the prompt back at once on Ctrl-C, while the launcher is still stopping the session.
-    expect(said).toContain("pnpm may give the prompt back before the launcher has finished: keep the window open until it says the run has stopped.");
+    // The same-press rule covers one press delivered twice, and nothing else.
+    expect(said).toContain("One press that reaches the launcher twice (from the terminal and from pnpm, on Linux and macOS) counts once.");
+    expect(said).not.toContain("A repeat of the same key within 2 s is the same press.");
+    // The at-once path books first, then interrupts the session once, then exits.
+    expect(said).toContain(
+      "A second press, or closing the window, books the session at once at its whole budget as unknown, sends it one interrupt and exits within 2 s; a session the interrupt does not reach runs on until it stops or reaches its budget.",
+    );
+    // pnpm 9's second Ctrl-C sends the launcher SIGTERM on Linux and macOS (its procKill), another stop signal.
+    expect(said).toContain("On Linux and macOS a second Ctrl-C makes pnpm send the launcher a SIGTERM, so a quick double press books at once there.");
+    // On Windows pnpm gives the prompt back at once on Ctrl-C, while the launcher is still stopping the session.
+    expect(said).toContain(
+      "On Windows pnpm may give the prompt back before the launcher has finished: keep the window open until it says the run has stopped, and do not press Ctrl-C at that prompt, which still reaches the launcher.",
+    );
     // Windows has no kill a console process can catch.
     expect(said).toContain(
       "Windows has no kill the launcher can catch: taskkill without /F refuses the launcher's process (aimed at the program that owns the window, it closes the window, as above), and /F ends it outright.",

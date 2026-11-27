@@ -66,12 +66,16 @@ export const ATTENDED = `Run it by hand and attended until the night-shift conve
 books its session once, after stopping it and reading its cost. Ctrl-C or Ctrl-Break (or a SIGTERM
 on Linux and macOS) stops the run the same way: it interrupts the session and waits for it, and
 books the platform's figure once it has stopped; a session it has to archive is booked at its
-whole budget as unknown. A repeat of the same key within 2 s is the same press. A second press, or
-closing the window, books the session at once at its whole budget as unknown and exits. pnpm may
-give the prompt back before the launcher has finished: keep the window open until it says the run
-has stopped. Windows has no kill the launcher can catch: taskkill without /F refuses the
-launcher's process (aimed at the program that owns the window, it closes the window, as above),
-and /F ends it outright. A launcher ended outright (a crash, taskkill /F, SIGKILL)
+whole budget as unknown. One press that reaches the launcher twice (from the terminal and from
+pnpm, on Linux and macOS) counts once. A second press, or closing the window, books the session at
+once at its whole budget as unknown, sends it one interrupt and exits within 2 s; a session the
+interrupt does not reach runs on until it stops or reaches its budget. On Linux and macOS a second
+Ctrl-C makes pnpm send the launcher a SIGTERM, so a quick double press books at once there. On
+Windows pnpm may give the prompt back before the launcher has finished: keep the window open until
+it says the run has stopped, and do not press Ctrl-C at that prompt, which still reaches the
+launcher. Windows has no kill the launcher can catch: taskkill without /F refuses the launcher's
+process (aimed at the program that owns the window, it closes the window, as above), and /F ends
+it outright. A launcher ended outright (a crash, taskkill /F, SIGKILL)
 books nothing: its session runs on until it stops or reaches its budget, \`run\` refuses, and
 \`status\` warns, until \`sandbox collect <session-id> --book\` books it. Nothing locks the
 check-then-spend step, so two launchers started at once can both pass the spend check. Do not
