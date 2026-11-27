@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { memoryBackend, withBackend, type CacheBackend } from "../../idb-cache.js";
 import { emptyGuestList, LIST_VERSION, type Guest, type GuestList } from "../model.js";
 import { markPrinted } from "../paper.js";
-import { createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE, LOCK_WAIT_MS, stampOf, type Exclusive, type GuestListStore, type Stamp } from "../store.js";
+import { anotherSheet, createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE, LOCK_WAIT_MS, stampOf, type Exclusive, type GuestListStore, type Stamp } from "../store.js";
 
 const PLAN_A = "5b0a6f0e-7f0b-4d7e-9c3a-2f6f6f0a1b11";
 const PLAN_B = "6c1b7a1f-8a1c-4e8f-8d4b-3a7a7a1b2c22";
@@ -564,6 +564,20 @@ describe("guest list store: a save over another tab's copy never lowers the pape
       .toEqual(["Printed in B", 4, PRINTED_AT, true]);
     // So the next print of the list is version 5, a number neither sheet has.
     expect(markPrinted(kept.list, "2026-11-13T10:02:00.000Z").paperVersion).toBe(5);
+  });
+
+  it("tells another tab's sheet from this list's own: a larger number, or the same number printed at another moment", () => {
+    const at = (paperVersion: number, printedAt: string | null) => ({ paperVersion, printedAt });
+    const LATER = "2026-11-13T10:01:00.000Z";
+    expect(anotherSheet(at(5, PRINTED_AT), at(4, LATER))).toBe(true);
+    expect(anotherSheet(at(4, PRINTED_AT), at(4, LATER))).toBe(true);
+    // The same number at the same moment is the same sheet, and a smaller number is an earlier one.
+    expect(anotherSheet(at(4, PRINTED_AT), at(4, PRINTED_AT))).toBe(false);
+    expect(anotherSheet(at(3, PRINTED_AT), at(4, LATER))).toBe(false);
+    // A copy never printed has no sheet.
+    expect(anotherSheet(at(0, null), at(0, null))).toBe(false);
+    expect(anotherSheet(at(0, PRINTED_AT), at(0, null))).toBe(false);
+    expect(anotherSheet(at(1, PRINTED_AT), at(0, null))).toBe(true);
   });
 
   it("leaves this tab's print record as it is when its version is the larger, or it is the same sheet (the same number, printed at the same moment)", async () => {
