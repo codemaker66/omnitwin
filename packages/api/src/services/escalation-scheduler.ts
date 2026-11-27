@@ -45,7 +45,7 @@ export const MIN_SLEEP_MS = 250;
 export const EMAIL_RETRY_MS = 15 * 60_000;
 
 /** When an email still waiting outside quiet hours is next tried: a while
- *  after the email pass last ran (`emailPassAtMs`), and never before now. The
+ *  after the email pass last finished (`emailPassAtMs`), and never before now. The
  *  deadline is anchored to that run, not to the plan: every raise and every
  *  handover plans again, and a wait counted from each plan was pushed out by
  *  each of them, so on a busy day a failed email waited for a lull (#495,
@@ -128,16 +128,36 @@ function sqlStateIn(error: unknown): string | null {
  *  - The sweep's when it is any other database error: a connection,
  *    transaction-state, rollback, resource, lock, cancel or internal one
  *    (classes 08, 25, 40, 53, 55, 57, XX, and the rest), which would fail
- *    the next request as well. A claim error with no SQLSTATE (the pool or
- *    the driver giving up) is the sweep's too. It takes the wake's own
- *    back-off and its one alarm (T-766) and advances no request's floor, so
- *    every request is tried again within PASS_RETRY_MAX_MS of recovery.
- *  - An email step's error with no SQLSTATE (its template, say) holds
- *    nothing and stays the request's. */
+ *    the next request as well. It takes the wake's own back-off and its one
+ *    alarm (T-766) and advances no request's floor, so every request is
+ *    tried again within PASS_RETRY_MAX_MS of recovery.
+ *  - A trigger that refuses a single row should raise a class-23 code, so it
+ *    is read as that row's own fault.
+ *  - Any claim error with no SQLSTATE is the sweep's, by ruling: the pool or
+ *    the driver giving up, and also a JavaScript error raised by one row's
+ *    data, which would cost that request T-766's pace, not a floor of its own.
+ *  - An email step's error with no SQLSTATE holds nothing and stays the
+ *    request's (its template, say), unless it is a connection fault: a Node
+ *    system error on it or a cause, which is the sweep's (#495's review, LS2). */
 export function faultOf(failure: EscalationPassFailure): "request" | "sweep" {
   const code = sqlStateIn(failure.error);
   if (code !== null) return code.startsWith("22") || code.startsWith("23") ? "request" : "sweep";
-  return failure.step === "email" ? "request" : "sweep";
+  if (failure.step === "claim") return "sweep";
+  return connectionFaultIn(failure.error) ? "sweep" : "request";
+}
+
+/** Whether a Node system error is on an error or its causes: a code such as
+ *  ECONNRESET or getaddrinfo's EAI_AGAIN, together with the syscall that
+ *  failed ("read", "connect", "getaddrinfo"). Node's own ERR_ codes match the
+ *  pattern but carry no syscall: they are bugs, and stay with the request. */
+function connectionFaultIn(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && typeof current === "object" && current !== null; depth += 1) {
+    if ("code" in current && typeof current.code === "string" && /^E[A-Z_]+$/u.test(current.code)
+      && "syscall" in current && typeof current.syscall === "string") return true;
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return false;
 }
 
 /** The two steps of a wake that can fail as a whole, each on a streak of its own. */
@@ -166,7 +186,7 @@ export function sleepFor(wakeMs: number | null, nowMs: number): number | null {
  *  deadline, no email waiting out quiet hours. A held request (`held`, LN1)
  *  counts at its own deadline, not at its window, while it is still due at
  *  the instant its claim failed (LQ2). An email waiting outside quiet hours
- *  counts from the email pass's last run (`emailPassAtMs`, F-B). */
+ *  counts from the end of the email pass's last run (`emailPassAtMs`, F-B, LS1). */
 export async function planNextWake(
   db: Database,
   nowMs: number,
@@ -217,7 +237,7 @@ export interface EscalationSchedulerDeps {
   /** Injected in tests; default: the two passes, then the plan. `held` and
    *  `skip` are the requests held back until their own deadlines (LN1), each
    *  with the due instant it failed at (LQ2); `emailPassAtMs` is when the
-   *  email pass last ran (F-B). */
+   *  email pass last finished (F-B, LS1). */
   readonly plan?: (db: Database, nowMs: number, held: ReadonlyMap<string, HeldRequest>, emailPassAtMs: number | null) => Promise<number | null>;
   readonly run?: (db: Database, skip: ReadonlyMap<string, number>) => Promise<SweepOutcome>;
   /** Where a failure goes beyond the log, at the start of its streak and
@@ -384,7 +404,7 @@ export class EscalationScheduler {
     retryAt: number | null;
     lastFailedAt: number;
   }>();
-  /** When the email pass last ran (or the scheduler started): an email still
+  /** When the email pass last finished (or the scheduler started): an email still
    *  waiting is tried a while after it, whatever plans come between (F-B). */
   #emailPassAt: number | null = null;
 
@@ -545,9 +565,11 @@ export class EscalationScheduler {
       const skip: ReadonlyMap<string, number> = new Map([...this.#held(startedMs)].map(([requestId, hold]) => [requestId, hold.dueAt]));
       const outcome = await (this.#deps.run ?? ((db: Database, held: ReadonlyMap<string, number>) => runSweepPasses(db, this.#deps.logger, held)))(this.#deps.db, skip);
       // The passes ran, the email pass with them: an email still waiting is
-      // next tried a while after this (F-B). A run that threw ran no email pass.
-      this.#emailPassAt = startedMs;
+      // next tried a while after they ended (F-B). Counted from the end, so a
+      // run that outlasts EMAIL_RETRY_MS (a provider failing slowly) is not
+      // followed by another a beat later (LS1). A run that threw ran no email pass.
       const afterMs = now();
+      this.#emailPassAt = afterMs;
       for (const item of outcome.escalated) this.#requestRecovered(item.request.id, afterMs);
       for (const requestId of outcome.emailed) this.#requestRecovered(requestId, afterMs);
       // A request the pass failed on through a fault of its own, at its claim

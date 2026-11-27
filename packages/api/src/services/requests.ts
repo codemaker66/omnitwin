@@ -1062,8 +1062,9 @@ function dueInstantOf(row: Pick<RequestRow, "state" | "handoverDueAt" | "escalat
 
 /** Leaves out each held request only while it is still due at the instant its
  *  claim failed (#495's review, LQ2): one that has moved since falls due anew
- *  at once. The columns hold microseconds and the driver reads milliseconds,
- *  so the stored instant is compared to the millisecond, as it was read. */
+ *  at once. The columns hold microseconds; drizzle reads them as text and
+ *  makes the Date with new Date(text), to the millisecond. So the stored
+ *  instant is compared to the millisecond, as it was read (LS3). */
 export function notHeldAt(held: ReadonlyMap<string, number>): SQL | undefined {
   if (held.size === 0) return undefined;
   return and(...[...held].map(([id, dueMs]) =>

@@ -464,6 +464,16 @@ describe("a wake's two passes (T-768)", () => {
     expect(email(new EscalationEmailFailed("r", new TypeError("undefined is not a function")))).toBe("request");
   });
 
+  it("an email step's connection fault (a Node system error with its syscall) is the sweep's; Node's own ERR_ codes stay the request's (LS2)", () => {
+    const email = (error: unknown) => faultOf({ requestId: "r", step: "email", error });
+    const systemError = (code: string, syscall: string): Error => Object.assign(new Error(`${syscall} ${code}`), { code, syscall });
+    // Under drizzle's wrapping and the email failure's: a DNS failure that may pass (getaddrinfo's EAI_AGAIN) and a reset connection.
+    expect(email(new EscalationEmailFailed("r", new Error("Failed query: select", { cause: systemError("EAI_AGAIN", "getaddrinfo") })))).toBe("sweep");
+    expect(email(new EscalationEmailFailed("r", new Error("Failed query: select", { cause: systemError("ECONNRESET", "read") })))).toBe("sweep");
+    // Node's own ERR_ codes match the pattern but carry no syscall: a bug, perhaps one row's, so the request's own.
+    expect(email(new EscalationEmailFailed("r", Object.assign(new TypeError("The argument must be of type string"), { code: "ERR_INVALID_ARG_TYPE" })))).toBe("request");
+  });
+
   it("a claim refused by a fault of the sweep holds no request back: it is the wake's own failure (LQ1)", async () => {
     const escalate = vi.fn();
     escalate.mockResolvedValue({
@@ -669,6 +679,27 @@ describe("a wake's two passes (T-768)", () => {
     // Its alarm names it, at the start and then at most hourly.
     expect(sim.reports.every(([stage, requestId]) => stage === "email" && requestId === "R")).toBe(true);
     expect(sim.reports.slice(1).every(([, , at], index) => at - (sim.reports[index]?.[2] ?? 0) >= FAILURE_REPORT_EVERY_MS)).toBe(true);
+  });
+
+  it("an email pass that outlasts EMAIL_RETRY_MS (a provider failing slowly) is next tried EMAIL_RETRY_MS after it ended, not a beat later (LS1)", async () => {
+    // Every send waits on the provider: each run takes twenty minutes.
+    const RUN_MS = 20 * 60_000;
+    const runs: { readonly start: number; readonly end: number }[] = [];
+    const sim = onVirtualClock({
+      plan: (_db, nowMs, _held, emailPassAtMs) => Promise.resolve(emailRetryAt(nowMs, emailPassAtMs)),
+      run: () => {
+        const start = sim.clock.now;
+        sim.clock.now += RUN_MS;
+        runs.push({ start, end: sim.clock.now });
+        return Promise.resolve({ escalated: [], failed: [{ requestId: "R", step: "email" as const, error: new Error("the provider timed out") }], emailed: [], passFailures: [] });
+      },
+    });
+    sim.scheduler.start();
+    await settle();
+    await sim.advance(T0 + 3 * 3_600_000);
+    expect(runs.length).toBeGreaterThanOrEqual(4);
+    // Each run starts EMAIL_RETRY_MS after the last one ended: the database sleeps between them.
+    expect(runs.slice(1).map((run, index) => run.start - (runs[index]?.end ?? 0))).toEqual(runs.slice(1).map(() => EMAIL_RETRY_MS));
   });
 
   it("a request's email failing twice in one wake counts once, and is logged as failed, not held; a failed claim is logged as held, with its due instant (LQ6)", async () => {
