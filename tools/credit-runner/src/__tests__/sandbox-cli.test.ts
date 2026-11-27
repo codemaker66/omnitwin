@@ -13,8 +13,16 @@ import { masterFacts } from "../sandbox/master.js";
 import { boundedNumber, budgetOverride, timeoutOverride } from "../sandbox/overrides.js";
 import { gitVersionProblem } from "../sandbox/patches.js";
 import { sandboxConfigSchema } from "../sandbox/sandbox-config.js";
+import { sandboxSystemPrompt } from "../sandbox/brief.js";
+import { ensureSandbox, readState } from "../sandbox/setup.js";
 import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 import { FakeApi, PROJECT_RULES } from "./fake-api.js";
+
+// Every file write goes through this spy (the real writeFile unless a test says otherwise), so a test can cut one off part way.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, writeFile: vi.fn(actual.writeFile) };
+});
 
 const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -327,6 +335,34 @@ describe("the launcher in a process of its own (launcher-child.ts, started as th
       }
     }, 300_000);
   }
+});
+
+describe("the sandbox state file", () => {
+  it("is replaced whole: a write cut off part way (a second signal ends the process at once) leaves the last state whole and readable", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "credit-runner-state-"));
+    try {
+      const stateFile = path.join(root, "work", "state.json");
+      const api = new FakeApi([]);
+      const system = sandboxSystemPrompt(PROJECT_RULES);
+      const first = await ensureSandbox(api, stateFile, system, () => undefined);
+      const before = await readFile(stateFile, "utf8");
+      // The next write stops after a few bytes, as when the process ends inside it.
+      const real = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+      vi.mocked(writeFile).mockImplementationOnce(async (file, data) => {
+        if (typeof data !== "string") throw new Error("the state is written as text");
+        await real.writeFile(file, data.slice(0, 20), "utf8");
+        throw new Error("the process ended inside the write");
+      });
+      await expect(ensureSandbox(api, stateFile, system, () => undefined)).rejects.toThrow("the process ended inside the write");
+      expect(await readFile(stateFile, "utf8")).toBe(before);
+      expect(await readState(stateFile)).toEqual(first);
+      // A write that completes replaces it, and leaves nothing beside it.
+      expect(await ensureSandbox(api, stateFile, system, () => undefined)).toEqual(first);
+      expect(await readdir(path.dirname(stateFile))).toEqual(["state.json"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 /** Removes a junction or symlink itself, never what it points at. */

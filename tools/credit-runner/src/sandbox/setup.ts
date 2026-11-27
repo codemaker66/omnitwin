@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentCreateParams } from "@anthropic-ai/sdk/resources/beta/agents/agents";
 import type { BetaLimitedNetwork, EnvironmentCreateParams } from "@anthropic-ai/sdk/resources/beta/environments/environments";
@@ -171,9 +171,22 @@ export async function readState(file: string): Promise<SandboxState | null> {
   }
 }
 
+/**
+ * Writes the state to a temporary file beside it, then renames that over it,
+ * so the file holds the last state or the new one, never part of one: a
+ * second stop signal before the create ends the process at once, perhaps
+ * inside this write. A write that fails removes its temporary file.
+ */
 async function writeState(file: string, state: SandboxState): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const temporary = `${file}.${String(process.pid)}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    await rename(temporary, file);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
 }
 
 /** A short hash of a whole params object, to notice any change to it. */
