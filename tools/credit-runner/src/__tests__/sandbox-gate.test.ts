@@ -298,6 +298,13 @@ const INSTALL_CONFIG: readonly { readonly file: string; readonly text: string; r
   { file: "packages/web/.npmrc", text: "script-shell=./tools/shell.mjs\n", label: "npm config" },
   // pnpm takes the nearest pnpm-workspace.yaml above where it runs as the workspace's root.
   { file: "packages/web/pnpm-workspace.yaml", text: "packages:\n  - ../../tools/*\nonlyBuiltDependencies:\n  - esbuild\n", label: "pnpm workspace config" },
+  // pnpm reads a folder's package.json5, or else its package.yaml, when it has no package.json.
+  { file: "package.yaml", text: "name: fixture\nscripts:\n  postinstall: node ./evil.mjs\n", label: "package manifest that pnpm reads in place of package.json" },
+  {
+    file: "packages/web/package.json5",
+    text: "{\n  name: '@fixture/web',\n  scripts: { postinstall: 'node ./evil.mjs' },\n}\n",
+    label: "package manifest that pnpm reads in place of package.json",
+  },
 ];
 
 describe("install-time config files, read by the review from real patches", () => {

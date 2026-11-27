@@ -195,6 +195,12 @@ export const PROTECTED_PATHS: readonly ProtectedPath[] = [
   { pattern: /^patches\//iu, label: "pnpm dependency patch, applied at install", paths: "anything under patches/ at the root" },
   { pattern: /(^|\/)\.pnpmfile\.[cm]?js$/iu, label: "pnpm hook file, run at install", paths: ".pnpmfile.cjs, .pnpmfile.mjs or .pnpmfile.js" },
   { pattern: /(^|\/)pnpm-workspace\.yaml$/iu, label: "pnpm workspace config", paths: "pnpm-workspace.yaml" },
+  // pnpm's manifest reader takes package.json5, then package.yaml, where a folder has no package.json; a package.json is judged by its content (patches.ts).
+  {
+    pattern: /(^|\/)package\.(json5|yaml)$/iu,
+    label: "package manifest that pnpm reads in place of package.json",
+    paths: "package.json5 and package.yaml",
+  },
   // Editors and dev containers can run tasks when a folder is opened.
   { pattern: /(^|\/)\.vscode\//iu, label: "VS Code config", paths: "anything under a .vscode/ folder" },
   { pattern: /(^|\/)(\.devcontainer\/|\.devcontainer\.json$)/iu, label: "dev container config", paths: "anything under a .devcontainer/ folder, and .devcontainer.json" },

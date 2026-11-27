@@ -250,6 +250,19 @@ describe("protected paths", () => {
     ]);
   });
 
+  it("rejects the manifests pnpm reads in place of package.json, in any folder and letter case, and lets their neighbours through", () => {
+    const label = "package manifest that pnpm reads in place of package.json";
+    expect(protectedPathViolations(["package.json5", "packages/web/package.json5", "package.yaml", "tools/x/Package.YAML", "packages/api/package.json5."])).toEqual([
+      `package.json5 (${label})`,
+      `packages/web/package.json5 (${label})`,
+      `package.yaml (${label})`,
+      `tools/x/Package.YAML (${label})`,
+      `packages/api/package.json5. (${label})`,
+    ]);
+    // pnpm reads no other spelling, and a package.json is judged by its content.
+    expect(protectedPathViolations(["package.yml", "docs/package.yaml.md", "src/package.json5.ts", "package.json", "packages/web/package.json"])).toEqual([]);
+  });
+
   it("lets through nearby paths that are not those files", () => {
     expect(
       protectedPathViolations([
