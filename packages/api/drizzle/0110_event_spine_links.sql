@@ -10,8 +10,9 @@
 -- In order, in one transaction (the migrator runs the file as one; a lock
 -- that cannot be had within five seconds fails it and nothing changes):
 --
---   0. proposals, enquiries, opportunities, events and client_accounts are
---      locked at once, before anything else, in the writers' order.
+--   0. venues and users are locked (SHARE ROW EXCLUSIVE), then proposals,
+--      enquiries, opportunities, events and client_accounts (ACCESS
+--      EXCLUSIVE) in the writers' order, before anything else.
 --   1. opportunities gains the key (id, venue_id), as proposals and enquiries
 --      already have, for later keys that pin a row to a deal's venue.
 --   2. An event's client account must be its own venue's. The file stops,
@@ -55,14 +56,46 @@ SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
 
 -- 0. The tables, in the writers' order ----------------------------------------
--- The five existing tables the steps below lock outright (ACCESS EXCLUSIVE),
--- taken in one statement in the writers' order: a proposal, its enquiry, the
--- deal, the event, then the client account. Left to the steps, they would be
--- taken deals first and proposals last, against that order, while a proposal
--- sent during the release holds the proposal and then writes its enquiry: the
--- two could wait for each other. With the lock limit set above, a table that
--- cannot be had within five seconds fails the release cleanly, and nothing
--- changes.
+-- On tables that existed before this migration, every lock stronger than ROW
+-- EXCLUSIVE is taken by these two statements, and no later statement takes a
+-- new one: what a later statement takes on such a table is ROW EXCLUSIVE or
+-- weaker, or, on one of these seven, no stronger than what it holds here, so
+-- it shuts out nothing these two did not already.
+--
+-- venues and users first, in SHARE ROW EXCLUSIVE, the mode the keys of the
+-- two new tables (step 5) take on them. A writer such as an inventory
+-- decision updates its venue's row and then reads events; had the release
+-- held the five tables below and then waited for venues, it and such a writer
+-- could wait for each other. Taken first, venues makes the release wait for
+-- that writer while it holds nothing. Nothing was found that touches any of
+-- the five and then writes a row of venues or users, which would meet this
+-- order the other way round. Then the five the steps lock outright (ACCESS
+-- EXCLUSIVE), in one statement in the writers' order: a proposal, its
+-- enquiry, the deal, the event, then the client account. Left to the steps,
+-- they would be taken deals first and proposals last, against that order,
+-- while a proposal sent during the release holds the proposal and then writes
+-- its enquiry: the two could wait for each other. With the lock limit set
+-- above, a table that cannot be had within five seconds fails the release
+-- cleanly, and nothing changes.
+--
+-- Later statements lock existing tables no more strongly, each to the end of
+-- the transaction:
+--   the five: the modes their steps' keys, indexes and writes take (SHARE,
+--     SHARE ROW EXCLUSIVE, ROW EXCLUSIVE, ROW SHARE, ACCESS SHARE), under the
+--     ACCESS EXCLUSIVE held here;
+--   venues, users: SHARE ROW EXCLUSIVE again, and ACCESS SHARE, by step 5
+--     (the new tables' keys to them);
+--   venues: ROW SHARE by steps 6 and 7 (the key checks of their inserts);
+--   event_binding_reviews: ACCESS SHARE by step 6 (the copy reads it);
+--   bookings, event_configuration_links, proposal_contract_versions, quotes:
+--     ACCESS SHARE by step 7 (the join reads them);
+--   proposal_deposit_requests: up to ROW EXCLUSIVE by step 7 (the join reads
+--     them, and a request takes its proposal's event);
+--   event_phases: ROW EXCLUSIVE by step 7 (the phases of the events it makes).
+-- Outside the seven, these modes conflict only with DDL and explicit table
+-- locks, never with a reader or a writer of rows.
+LOCK TABLE "venues", "users" IN SHARE ROW EXCLUSIVE MODE;
+--> statement-breakpoint
 LOCK TABLE "proposals", "enquiries", "opportunities", "events", "client_accounts" IN ACCESS EXCLUSIVE MODE;
 --> statement-breakpoint
 

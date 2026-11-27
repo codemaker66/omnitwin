@@ -298,11 +298,46 @@ the status and the dates").
   is the undo (`spine_undo_joins()`): it takes an event it removes, and that event's
   phases, `FOR UPDATE SKIP LOCKED`, so it never waits; an event it cannot have at
   once is left to its next run.
-- No table locks in product code. The spine's migration takes its tables first,
-  in the writers' order: one statement right after its 5 s lock limit locks
-  proposals, enquiries, opportunities, events and client_accounts, before any of
-  its other steps; a table it cannot have within the limit fails the release, and
-  nothing changes.
+- No table locks in product code. The spine's migration takes its tables first, in
+  two statements right after its 5 s lock limit, before any of its other steps
+  (section 0 of the file; its comment says the same in the same words):
+  - **On tables that existed before this migration, every lock stronger than ROW
+    EXCLUSIVE is taken by these two statements, and no later statement takes a new
+    one**: what a later statement takes on such a table is ROW EXCLUSIVE or weaker,
+    or, on one of these seven, no stronger than what it holds here, so it shuts out
+    nothing these two did not already.
+  - `venues` and `users` first, in SHARE ROW EXCLUSIVE, the mode the keys of the two
+    new tables (step 5) take on them. A writer such as an inventory decision updates
+    its venue's row and then reads events; had the release held the five tables
+    below and then waited for venues, it and such a writer could wait for each
+    other. Taken first, venues makes the release wait for that writer while it holds
+    nothing. Nothing was found that touches any of the five and then writes a row of
+    venues or users, which would meet this order the other way round.
+  - Then the five the steps lock outright (ACCESS EXCLUSIVE), in one statement in
+    the writers' order: a proposal, its enquiry, the deal, the event, then the client
+    account (`proposals`, `enquiries`, `opportunities`, `events`, `client_accounts`).
+    Left to the steps, they would be taken deals first and proposals last, against
+    that order, while a proposal sent during the release holds the proposal and then
+    writes its enquiry: the two could wait for each other. With the lock limit set
+    above, a table that cannot be had within five seconds fails the release cleanly,
+    and nothing changes.
+  - Later statements lock existing tables no more strongly, each to the end of the
+    transaction: the five, the modes their steps' keys, indexes and writes take
+    (SHARE, SHARE ROW EXCLUSIVE, ROW EXCLUSIVE, ROW SHARE, ACCESS SHARE), under the
+    ACCESS EXCLUSIVE held here; `venues`, `users`: SHARE ROW EXCLUSIVE again, and
+    ACCESS SHARE, by step 5 (the new tables' keys to them); `venues`: ROW SHARE by
+    steps 6 and 7 (the key checks of their inserts); `event_binding_reviews`: ACCESS
+    SHARE by step 6 (the copy reads it); `bookings`, `event_configuration_links`,
+    `proposal_contract_versions`, `quotes`: ACCESS SHARE by step 7 (the join reads
+    them); `proposal_deposit_requests`: up to ROW EXCLUSIVE by step 7 (the join reads
+    them, and a request takes its proposal's event); `event_phases`: ROW EXCLUSIVE by
+    step 7 (the phases of the events it makes). Outside the seven, these modes
+    conflict only with DDL and explicit table locks, never with a reader or a writer
+    of rows.
+  - A case pins it (`event-spine-links-migration-postgres.test.ts`, "the
+    migration's locks on the tables it found"): on a database with rows, the
+    strongest mode held on each existing table, read after the two statements and
+    again before the commit, is these seven and nothing else.
 
 ## What a later migration must keep
 

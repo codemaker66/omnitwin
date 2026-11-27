@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool, PoolClient } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -1458,6 +1460,214 @@ describe.skipIf(target === undefined)("the spine: the migration beside a table s
       await holder.query("ROLLBACK");
       holder.release();
       await migrating?.catch(() => undefined);
+      await before.close();
+    }
+  }, 180_000);
+
+  it("takes venues and users first: a venue row a writer has updated makes it give up within its own lock limit, holding none of the five, and it runs once the writer ends", async () => {
+    const before = await openSpineDatabaseBefore("links_migration_venue_lock");
+    const pool = before.pool;
+    const holder = await pool.connect();
+    let migrating: Promise<unknown> | undefined;
+    const one = async (text: string, values: readonly unknown[] = []): Promise<Row | undefined> =>
+      (await pool.query<Row>(text, [...values])).rows[0];
+    const spineParts = async (): Promise<Row | undefined> => one(`SELECT
+      EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'enquiries' AND column_name = 'event_id') AS link,
+      to_regclass('public.event_link_joins') IS NOT NULL AS joins,
+      (SELECT count(*)::int FROM drizzle.__drizzle_migrations) AS ledger`);
+    try {
+      const unmigrated = await spineParts();
+      expect(unmigrated).toMatchObject({ link: false, joins: false });
+      const venueId = (await one(`INSERT INTO venues (name, slug, address)
+        VALUES ('TEST ONLY venue writer', 'spine-venue-writer', 'Disposable fixture') RETURNING id`))?.["id"];
+      if (typeof venueId !== "string") throw new Error("The fixture wrote no venue");
+      // A writer that updates its venue's row first (an inventory decision
+      // does) holds ROW EXCLUSIVE on venues until it commits; it may then read
+      // events.
+      await holder.query("BEGIN");
+      await holder.query("UPDATE venues SET updated_at = updated_at WHERE id = $1", [venueId]);
+
+      let finished = false;
+      const isFinished = (): boolean => finished;
+      const started = Date.now();
+      const running = before.migrateToHead().finally(() => { finished = true; });
+      migrating = running;
+      // The failure is read where it is awaited below, not reported twice.
+      running.catch(() => undefined);
+
+      // The migrator is seen waiting for venues: the wait lasts the file's five seconds, far longer than a poll.
+      let waiting: Row | undefined;
+      while (waiting === undefined && !isFinished()) {
+        waiting = await one(`SELECT l.pid, l.mode, a.query FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+          WHERE l.relation = 'venues'::regclass AND NOT l.granted`);
+        if (waiting === undefined) await new Promise((done) => setTimeout(done, 10));
+      }
+      if (waiting === undefined) throw new Error("The migrator was never seen waiting for venues");
+      // It waits in its first lock: the statement of section 0 (its long
+      // comment fills the start of the text pg_stat_activity keeps), in SHARE
+      // ROW EXCLUSIVE, holding none of the five it takes next.
+      expect(String(waiting["query"])).toContain("-- 0. The tables, in the writers' order");
+      expect(waiting["mode"]).toBe("ShareRowExclusiveLock");
+      expect((await pool.query<Row>(`SELECT c.relname FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+        WHERE l.pid = $1 AND l.granted AND c.relname IN ('proposals', 'enquiries', 'opportunities', 'events', 'client_accounts')`,
+      [waiting["pid"]])).rows).toEqual([]);
+
+      const failure = await running.then(() => null, (error: unknown) => error);
+      const took = Date.now() - started;
+      // Lock not available, after the file's own five seconds: not the connection's twenty.
+      expect(sqlStateOf(failure)).toBe("55P03");
+      expect(took).toBeGreaterThanOrEqual(4_500);
+      expect(took).toBeLessThan(15_000);
+      expect(await spineParts()).toEqual(unmigrated);
+
+      await holder.query("ROLLBACK");
+      await before.migrateToHead();
+      const migrated = await spineParts();
+      expect(migrated).toMatchObject({ link: true, joins: true });
+      expect(Number(migrated?.["ledger"])).toBeGreaterThan(Number(unmigrated?.["ledger"]));
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+      await migrating?.catch(() => undefined);
+      await before.close();
+    }
+  }, 180_000);
+});
+
+/** The spine's migration, split as the migrator splits it; found by the end of its tag, never by its number. */
+async function spineChunks(): Promise<string[]> {
+  const folder = resolve(import.meta.dirname, "../../drizzle");
+  const [file, ...others] = (await readdir(folder)).filter((name) => name.endsWith("_event_spine_links.sql"));
+  if (file === undefined || others.length > 0) throw new Error("Exactly one *_event_spine_links migration is expected");
+  return (await readFile(join(folder, file), "utf8")).split("--> statement-breakpoint");
+}
+
+// Rows of every kind the join reads, on a database written before the spine,
+// so that each of its steps runs and takes its own locks: held dates in
+// events, worked and unworked enquiries, deals with sent proposals whose floor
+// plans reach events, deposit requests with no event, agreements, quotes,
+// viewings, and October's questions for the copy.
+const ROWS_FOR_THE_JOIN = `
+  INSERT INTO venues (id, name, slug, address)
+    VALUES ('00000000-0000-4000-8000-0000000000f1', 'TEST ONLY lock footprint', 'spine-lock-footprint', 'Disposable fixture');
+  INSERT INTO spaces (id, venue_id, name, slug, width_m, length_m, height_m, floor_plan_outline, sort_order)
+    VALUES ('00000000-0000-4000-8000-0000000000f2', '00000000-0000-4000-8000-0000000000f1', 'Hall', 'spine-lock-footprint-hall',
+      20, 10, 6, '[]'::jsonb, 0);
+  INSERT INTO events (venue_id, name, status, deleted_at)
+    SELECT '00000000-0000-4000-8000-0000000000f1', 'TEST ONLY event ' || g, 'draft', CASE WHEN g % 20 = 0 THEN now() END
+    FROM generate_series(1, 25) g;
+  INSERT INTO configurations (space_id, venue_id, name, layout_style)
+    SELECT '00000000-0000-4000-8000-0000000000f2', '00000000-0000-4000-8000-0000000000f1', 'TEST ONLY plan ' || g, 'dinner-rounds'
+    FROM generate_series(1, 20) g;
+  INSERT INTO event_configuration_links (event_id, configuration_id, link_type)
+    SELECT e.id, c.id, 'source_configuration'
+    FROM (SELECT id, row_number() OVER (ORDER BY id) r FROM configurations) c
+    JOIN (SELECT id, row_number() OVER (ORDER BY id) r FROM events WHERE deleted_at IS NULL) e ON e.r = c.r;
+  INSERT INTO enquiries (venue_id, space_id, state, name, email, event_type, created_at,
+      first_response_at, first_response_channel, first_response_recorded_at)
+    SELECT '00000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000f2',
+      CASE g % 5 WHEN 2 THEN 'submitted' WHEN 4 THEN 'withdrawn' ELSE 'under_review' END,
+      'TEST ONLY enquiry ' || g, 'footprint' || g || '@spine.invalid', 'wedding', now() - make_interval(mins => 100 - g),
+      CASE WHEN g % 5 = 1 THEN now() END, CASE WHEN g % 5 = 1 THEN 'email' END, CASE WHEN g % 5 = 1 THEN now() END
+    FROM generate_series(1, 100) g;
+  WITH q AS (SELECT id, row_number() OVER (ORDER BY created_at) r FROM enquiries),
+       e AS (SELECT id, row_number() OVER (ORDER BY id) r FROM events WHERE deleted_at IS NULL)
+  INSERT INTO bookings (venue_id, space_id, event_id, enquiry_id, kind, status, title, starts_at, ends_at)
+    SELECT '00000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000f2', e.id, q.id, 'hold', 'active', 'Held',
+      timestamptz '2031-01-01' + make_interval(days => q.r::int), timestamptz '2031-01-01' + make_interval(days => q.r::int, hours => 4)
+    FROM q JOIN e ON e.r = 1 + (q.r % (SELECT count(*) FROM e)) WHERE q.r % 5 = 0;
+  INSERT INTO opportunities (venue_id, title, stage, source_enquiry_id)
+    SELECT venue_id, 'TEST ONLY deal', 'qualified', id
+    FROM (SELECT *, row_number() OVER (ORDER BY created_at) r FROM enquiries) q WHERE q.r % 5 = 3;
+  WITH o AS (SELECT o.id, o.source_enquiry_id, row_number() OVER (ORDER BY o.id) r FROM opportunities o),
+       c AS (SELECT id, row_number() OVER (ORDER BY id) r FROM configurations)
+  INSERT INTO proposals (venue_id, title, status, sent_at, opportunity_id, enquiry_id, configuration_id)
+    SELECT '00000000-0000-4000-8000-0000000000f1', 'TEST ONLY proposal', 'sent', now(), o.id, o.source_enquiry_id, c.id
+    FROM o LEFT JOIN c ON c.r = o.r;
+  INSERT INTO proposals (venue_id, title, status, sent_at, enquiry_id)
+    SELECT venue_id, 'TEST ONLY proposal', 'sent', now(), id
+    FROM (SELECT *, row_number() OVER (ORDER BY created_at) r FROM enquiries) q WHERE q.r % 5 = 4;
+  INSERT INTO proposal_deposit_requests (venue_id, proposal_id, event_id, proposal_version, proposal_version_hash, basis,
+      quote_total_minor, amount_minor, currency)
+    SELECT venue_id, id, NULL, 1, repeat('a', 64), 'amount', 100000, 25000, 'GBP'
+    FROM (SELECT *, row_number() OVER (ORDER BY id) r FROM proposals WHERE opportunity_id IS NOT NULL) p WHERE p.r % 4 = 0;
+  INSERT INTO proposals (venue_id, title, status)
+    SELECT '00000000-0000-4000-8000-0000000000f1', 'TEST ONLY archived', 'archived' FROM generate_series(1, 5);
+  INSERT INTO proposal_contract_versions (venue_id, proposal_id, version, proposal_version, proposal_version_hash, document, document_hash)
+    SELECT venue_id, id, 1, 1, repeat('a', 64), '{}'::jsonb, repeat('b', 64) FROM proposals WHERE status = 'archived';
+  INSERT INTO quotes (venue_id, enquiry_id, name)
+    SELECT venue_id, id, 'TEST ONLY quote' FROM (SELECT *, row_number() OVER (ORDER BY created_at) r FROM enquiries) q WHERE q.r % 10 = 2;
+  WITH q AS (SELECT id, row_number() OVER (ORDER BY created_at) r FROM enquiries)
+  INSERT INTO bookings (venue_id, space_id, enquiry_id, kind, status, title, starts_at, ends_at)
+    SELECT '00000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000f2', q.id, 'viewing', 'active', 'Viewing',
+      timestamptz '2035-01-01' + make_interval(days => q.r::int), timestamptz '2035-01-01' + make_interval(days => q.r::int, hours => 1)
+    FROM q WHERE q.r % 10 = 7;
+  INSERT INTO event_binding_reviews (venue_id, event_id, reason, detail, previous_status)
+    SELECT venue_id, id, 'possibly_same_event', 'TEST ONLY.', NULL FROM events LIMIT 5;
+`;
+
+describe.skipIf(target === undefined)("the spine: the migration's locks on the tables it found", () => {
+  // Every lock mode stronger than ROW EXCLUSIVE, weakest first, as pg_locks names them.
+  const STRONGER_THAN_ROW_EXCLUSIVE = ["ShareUpdateExclusiveLock", "ShareLock", "ShareRowExclusiveLock", "ExclusiveLock", "AccessExclusiveLock"];
+  // What its two LOCK statements take.
+  const DECLARED: Readonly<Record<string, string>> = {
+    client_accounts: "AccessExclusiveLock", enquiries: "AccessExclusiveLock", events: "AccessExclusiveLock",
+    opportunities: "AccessExclusiveLock", proposals: "AccessExclusiveLock",
+    users: "ShareRowExclusiveLock", venues: "ShareRowExclusiveLock",
+  };
+  // What the join does over those rows: it joins and makes events (and gives deposit requests theirs).
+  const JOINED_OVER_THE_ROWS = 170;
+  const MADE_OVER_THE_ROWS = 65;
+
+  it("takes every lock stronger than ROW EXCLUSIVE on a table it found in its two LOCK statements, and no later statement takes a new one", async () => {
+    const before = await openSpineDatabaseBefore("links_migration_footprint");
+    const client = await before.pool.connect();
+    let open = false;
+    try {
+      await client.query(ROWS_FOR_THE_JOIN);
+      const found = new Map((await client.query<{ oid: string; name: string }>(`SELECT c.oid::text AS oid, c.relname AS name
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')`))
+        .rows.map((row): [string, string] => [row.oid, row.name]));
+      // The strongest mode this connection holds on each table it found, when stronger than ROW EXCLUSIVE.
+      const strongest = async (): Promise<Record<string, string>> => {
+        const held: Record<string, string> = {};
+        for (const row of (await client.query<{ oid: string; mode: string }>(`SELECT l.relation::text AS oid, l.mode
+          FROM pg_locks l WHERE l.pid = pg_backend_pid() AND l.locktype = 'relation' AND l.granted`)).rows) {
+          const name = found.get(row.oid);
+          const rank = STRONGER_THAN_ROW_EXCLUSIVE.indexOf(row.mode);
+          if (name === undefined || rank < 0) continue;
+          const now = held[name];
+          if (now === undefined || STRONGER_THAN_ROW_EXCLUSIVE.indexOf(now) < rank) held[name] = row.mode;
+        }
+        return held;
+      };
+      const chunks = await spineChunks();
+      await client.query("BEGIN");
+      open = true;
+      // The file's own lock limit bounds it; the pool's statement limit is lifted for the join over these rows.
+      await client.query("SET LOCAL statement_timeout = 0");
+      let afterTheLocks: Record<string, string> | null = null;
+      const joinRuns: Row[] = [];
+      for (const chunk of chunks) {
+        const result = await client.query<Row>(chunk);
+        if (chunk.includes('LOCK TABLE "proposals", "enquiries", "opportunities", "events", "client_accounts"')) {
+          afterTheLocks = await strongest();
+        }
+        if (chunk.includes("SELECT * FROM spine_join_old_records()")) joinRuns.push(...result.rows);
+      }
+      const atTheEnd = await strongest();
+      await client.query("ROLLBACK");
+      open = false;
+      // Read after the two LOCK statements and again before COMMIT: the same
+      // seven, in the modes the two statements take (an empty read fails).
+      expect(afterTheLocks).toEqual(DECLARED);
+      expect(atTheEnd).toEqual(DECLARED);
+      // The join ran over the rows, so its own locks are among those read.
+      expect(joinRuns).toEqual([{ joined: JOINED_OVER_THE_ROWS, events_made: MADE_OVER_THE_ROWS, listed: 0 }]);
+    } finally {
+      if (open) await client.query("ROLLBACK");
+      client.release();
       await before.close();
     }
   }, 180_000);
