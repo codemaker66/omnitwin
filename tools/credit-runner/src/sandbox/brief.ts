@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { PROTECTED_PATHS } from "../git.js";
+import { INSTALL_FIELDS, INSTALL_SCRIPTS, PROTECTED_PATHS } from "../git.js";
 import type { Task } from "../task.js";
 
 /** The public repository. The sandbox clones it read-only; it holds no credential to push. */
@@ -30,11 +30,22 @@ function protectedPathList(): string {
 }
 
 /**
+ * The package.json rule the review applies (patches.ts), built from the same
+ * lists: the install scripts in brackets, and the fields as "a, b or c field".
+ */
+function manifestRuleParts(): { readonly scripts: string; readonly fields: string } {
+  const names = INSTALL_FIELDS.map(({ name }) => name);
+  const last = names.pop() ?? "";
+  return { scripts: `(${INSTALL_SCRIPTS.join(", ")})`, fields: `${names.length === 0 ? last : `${names.join(", ")} or ${last}`} field` };
+}
+
+/**
  * The agent's system prompt: fixed sandbox rules first, then the repository's
  * rules (AGENTS.md without its interactive-only parts). It names no task, so
  * one agent version serves every night until AGENTS.md or these rules change.
  */
 export function sandboxSystemPrompt(projectRules: string): string {
+  const manifest = manifestRuleParts();
   const rules = [
     `Work only in ${REPO_DIR}. Create it exactly as the task's kickoff says: \`git init ${REPO_DIR}\`, \`git remote add origin ${REPO_URL}\`, \`git fetch --depth 1 origin <base sha>\`, then \`git checkout -b <branch> FETCH_HEAD\`. Set git's user.name to "Venviewer night run" and user.email to "night-run@venviewer.invalid".`,
     `When the kickoff names a precondition, run it at ${REPO_DIR} right after the checkout, before installing, and write \`${OUTPUTS_DIR}/precondition.json\` as \`{"ok":true}\` if it exits 0 or \`{"ok":false}\` if it does not. If it is false, the code the task cites has moved: stop there and finish.`,
@@ -42,7 +53,7 @@ export function sandboxSystemPrompt(projectRules: string): string {
     "Send long command output (install, builds, test suites) to files under /tmp and read only the tail. Never paste a whole log into the conversation: every token you read is paid for.",
     "Commit your work on the branch with clear messages (`git add <explicit paths>`, then `git commit`), each ending with the trailer line `Credit-Runner-Task: <task id>`. Leave nothing uncommitted.",
     "Never push, open a pull request, or try to log in anywhere. There are no credentials in this container; the launcher takes your patch from the outputs folder and a person reviews it.",
-    `Never create or edit deploy, environment or install-time config, agent instructions, editor tasks or shared records. A branch that changes any of these is rejected, in any letter case (a bare file name means that file in any folder), and so is any path with a segment that is an 8.3 short name, such as CLAUDE~1: ${protectedPathList()}. Never add or change a symlink, a submodule or a binary file. Do not change pnpm-lock.yaml or add dependencies unless the task says so. The launcher reads your patches itself, and a branch that does any of this is rejected.`,
+    `Never create or edit deploy, environment or install-time config, agent instructions, editor tasks or shared records. A branch that changes any of these is rejected, in any letter case (a bare file name means that file in any folder), and so is any path with a segment that is an 8.3 short name, such as CLAUDE~1: ${protectedPathList()}. In any package.json, never add, change or remove a script that pnpm runs on install ${manifest.scripts} or change its ${manifest.fields}, and leave it a valid JSON object. Never add or change a symlink, a submodule or a binary file. Do not change pnpm-lock.yaml or add dependencies unless the task says so. The launcher reads your patches itself, and a branch that does any of this is rejected.`,
     "Never weaken, skip, delete or rename tests to make anything pass (a deleted or renamed test file is rejected). Run the task's acceptance command yourself and fix what fails.",
     `When the work is committed, run \`${VERIFY_COMMAND}\` as a bash call of its own: exactly that command, with nothing before or after it (no cd, no redirection, no second command). It prints one VERIFY_RESULT line, and the launcher reads that line only from such a call. It checks that the acceptance command passes on your branch and FAILS when your source change is reverted, or, for a task that only adds tests, when the task's mutation breaks the code under test. If it reports problems, fix them, commit, and run it again. Never edit, copy or imitate it.`,
     `Export the finished work: \`git format-patch <base sha>..HEAD -o ${OUTPUTS_DIR}/patches/\` and \`git diff <base sha> HEAD > ${OUTPUTS_DIR}/diff.patch\`. Leave no other file ending in .patch in ${OUTPUTS_DIR}: any other .patch file there rejects the run.`,
@@ -97,6 +108,7 @@ export interface Outcome {
  */
 export function outcomeFor(facts: RunFacts): Outcome {
   const { task, baseSha, branch } = facts;
+  const manifest = manifestRuleParts();
   const lines = [
     `Task ${task.id}: ${task.title}`,
     "",
@@ -122,7 +134,7 @@ export function outcomeFor(facts: RunFacts): Outcome {
     `3. ${OUTPUTS_DIR}/diff.patch and ${OUTPUTS_DIR}/patches/ hold the branch's full change against ${baseSha}.`,
     "4. The change does what the task asks, and nothing the task did not ask for: no unrelated refactors, renames, formatting sweeps or dependency changes.",
     "5. No test was weakened, skipped or deleted, and the new or changed tests check the behaviour the task names, not an implementation detail.",
-    `6. No protected path changed (in any letter case, or through an 8.3 short name): ${protectedPathList()}; and no symlink, submodule or binary file added or changed.`,
+    `6. No protected path changed (in any letter case, or through an 8.3 short name): ${protectedPathList()}; no symlink, submodule or binary file added or changed; and no package.json gained, lost or changed a script that pnpm runs on install ${manifest.scripts} or changed its ${manifest.fields}, and each is still a valid JSON object.`,
     `7. The final message explains the change and states the verifier's result and anything unverified${task.precondition === undefined ? "" : `, and ${OUTPUTS_DIR}/precondition.json records the precondition's result`}.`,
   ].join("\n");
   return { description: `${lines.join("\n")}\n`, rubric: `${rubric}\n` };

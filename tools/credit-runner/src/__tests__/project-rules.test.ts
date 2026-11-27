@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PROTECTED_PATHS } from "../git.js";
+import { INSTALL_FIELDS, INSTALL_SCRIPTS, PROTECTED_PATHS } from "../git.js";
 import { nightRulesFromAgentsMd } from "../project-rules.js";
 import { outcomeFor, sandboxSystemPrompt } from "../sandbox/brief.js";
 import { parseTask } from "../task.js";
@@ -119,7 +119,7 @@ describe("the brief's rule on protected paths", () => {
       expect(rule, entry.label).toContain(`(${entry.label})`);
       expect(rule, entry.label).toContain(entry.paths);
     }
-    for (const name of ["AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "GOAL.md", "goals/", ".claude/", ".claudeignore", "skills-lock.json", ".railway/", ".railwayignore", "infra/", "patches/", ".pnpmfile.cjs", "pnpm-workspace.yaml", ".vscode/", ".devcontainer/", ".devcontainer.json"]) {
+    for (const name of ["AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "GOAL.md", "goals/", ".claude/", ".claudeignore", "skills-lock.json", ".railway/", ".railwayignore", "infra/", "patches/", ".pnpmfile.cjs", "pnpm-workspace.yaml", "package.json5", "package.yaml", "binding.gyp", "node_modules/", ".corepack.env", ".vscode/", ".devcontainer/", ".devcontainer.json"]) {
       expect(rule, name).toContain(name);
     }
     expect(rule).toContain("any letter case");
@@ -133,5 +133,23 @@ describe("the brief's rule on protected paths", () => {
     );
     const { rubric } = outcomeFor({ task, baseSha: "b".repeat(40), branch: "credit/rubric-check" });
     for (const entry of PROTECTED_PATHS) expect(rubric, entry.label).toContain(`(${entry.label})`);
+  });
+
+  it("tells the agent and the grader the package.json rule, naming every install script and field the review checks", () => {
+    const task = parseTask(
+      ["---", "id: rubric-check", "title: Rubric check", "budget_usd: 1", "timeout_minutes: 30", 'acceptance: "pnpm test"', "---", "Check the rubric."].join("\n"),
+      "rubric-check.md",
+    );
+    const { rubric } = outcomeFor({ task, baseSha: "b".repeat(40), branch: "credit/rubric-check" });
+    const scripts = `(${INSTALL_SCRIPTS.join(", ")})`;
+    const fields = `${INSTALL_FIELDS.slice(0, -1)
+      .map(({ name }) => name)
+      .join(", ")} or ${INSTALL_FIELDS[INSTALL_FIELDS.length - 1]?.name ?? ""} field`;
+    expect(rule).toContain(`In any package.json, never add, change or remove a script that pnpm runs on install ${scripts} or change its ${fields}, and leave it a valid JSON object.`);
+    expect(rubric).toContain(`no package.json gained, lost or changed a script that pnpm runs on install ${scripts} or changed its ${fields}, and each is still a valid JSON object`);
+    for (const name of ["pnpm:devPreinstall", "postinstall", "prepare", "packageManager", "devEngines"]) {
+      expect(rule, name).toContain(name);
+      expect(rubric, name).toContain(name);
+    }
   });
 });
