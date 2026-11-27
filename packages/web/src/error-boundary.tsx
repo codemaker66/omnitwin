@@ -61,9 +61,13 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBo
 }
 
 /** The recovery screen, shared with the route error boundary
- *  (route-error-boundary.tsx) so every failure reads the same. */
-export function RecoveryScreen({ error }: { readonly error: Error | null }): ReactNode {
-  const kind = classifyError(error);
+ *  (route-error-boundary.tsx) so every failure reads the same. `kind` is how
+ *  it reads when the caller knows more than the error's own words do (a page
+ *  whose code would not load for want of a network). */
+export function RecoveryScreen({ error, kind = classifyError(error) }: {
+  readonly error: Error | null;
+  readonly kind?: AppErrorKind;
+}): ReactNode {
   const heading = kind === "network" ? "Couldn't reach the server" : "Something went wrong";
   const body = kind === "network"
     ? "Check your internet connection, then try again."

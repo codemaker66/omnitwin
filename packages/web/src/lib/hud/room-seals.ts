@@ -1,9 +1,11 @@
+import type { SpaceDimensions } from "@omnitwin/types";
 import { getCatalogueItem } from "../catalogue.js";
 import type { CirculationReport } from "../circulation.js";
 import { placedItemsCirculation } from "../circulation-scene.js";
 import { countLabel } from "../count-label.js";
 import type { DoorClearSpace } from "../door-clear-spaces.js";
 import { effectiveTableLinenStyle, isDiningTableItem } from "../furniture-semantics.js";
+import { layoutGangwayReview } from "../gangway-review-record.js";
 import { doorBlockedLine, doorBlockers, type DoorBlocker } from "../keep-doors-clear.js";
 import type { PlacedItem } from "../placement.js";
 import { planeFacts, type PlaneFacts } from "../slate-facts.js";
@@ -28,10 +30,132 @@ export interface RoomFacts {
   readonly counts: FloorCounts;
   /** Null for a room with no recorded doors: nothing is said about doors there. */
   readonly doors: { readonly blockers: readonly DoorBlocker[]; readonly line: string } | null;
-  readonly aisles: Pick<CirculationReport, "tightestGapM" | "tightestPair" | "band">;
+  readonly aisles: Pick<CirculationReport, "tightestGapM" | "tightestPair" | "band"> & {
+    /**
+     * A tight narrowest gap that is no more than the planner's own spacing: at
+     * least what Lay out keeps between pieces, in a room whose gangways the
+     * planner's own review finds nothing wrong with (laidAsThePlannerLays).
+     */
+    readonly asLaid: boolean;
+  };
   /** There are dining tables and every one wears a cloth (its own, or one laid on it). */
   readonly dressed: boolean;
   readonly kind: PlannerEventKind | null;
+}
+
+/**
+ * The clear passage the planner's own Lay out keeps behind every chair, to the
+ * next table's chairs or a piece already on the floor, metres (lib/auto-fill,
+ * BANQUET_CHAIR_CLEARANCE_M). A
+ * copy, held to its original by a test (lib/hud/__tests__/hud-logic.test.ts):
+ * the screen is behind a flag, and reading the original from here would put
+ * its export into a file every planner downloads.
+ */
+export const LAID_CLEARANCE_M = 0.6;
+/**
+ * Arithmetic only: two outlines set exactly that far apart can measure a few
+ * parts in ten to the sixteenth under it. Lay out's own rooms measure over its
+ * spacing (0.63 m and more, in every room and chair tried), so nothing wider
+ * than this is owed to it, and a gap set by hand under the spacing is asked
+ * about like any other.
+ */
+const LAID_CLEARANCE_EPSILON_M = 1e-9;
+
+/**
+ * The last layout the planner's review was asked about, and what it said. The
+ * review measures every piece against every gangway, and its answer is the
+ * layout's and the room's alone. The room's other facts are worked out again
+ * when a guest count is typed or the kind of day is chosen, and the same
+ * layout is not asked about twice. A layout is a new list of pieces each time
+ * it changes, so the list itself is the key; and the screen takes a moved
+ * piece only once it has come to rest (planner-hud/hud-facts.tsx), so no
+ * frame of a drag asks.
+ */
+let lastReview: {
+  readonly items: readonly PlacedItem[];
+  readonly room: SpaceDimensions;
+  readonly roomSlug: string | null;
+  readonly passes: boolean;
+} | null = null;
+
+/** Whether the planner's own review finds no gangway of this layout under its guidance. */
+function gangwaysPass(items: readonly PlacedItem[], room: SpaceDimensions, roomSlug: string | null): boolean {
+  if (lastReview !== null && lastReview.items === items && lastReview.room === room && lastReview.roomSlug === roomSlug) return lastReview.passes;
+  const passes = layoutGangwayReview(items, room, roomSlug, null).items.length === 0;
+  lastReview = { items, room, roomSlug, passes };
+  return passes;
+}
+
+/**
+ * Whether a tight narrowest gap is the planner's own spacing and nothing
+ * worse. Lay out keeps LAID_CLEARANCE_M between a table's chairs and whatever
+ * stands next to them (the next table's chairs, or a piece already on the
+ * floor), and 1.1 m on the room's designated gangways, to its doors and along
+ * its walls (lib/auto-fill, FILL_AISLE_RULE). The circulation scale calls any
+ * gap under 0.9 m tight, so by the scale alone every room the planner had just
+ * laid was sent back to be opened up. (By the scale's own measure the
+ * planner's rounds of ten stand 0.65 m apart: the spacing is a floor, not a
+ * figure to match.)
+ *
+ * Both must hold. The gap is at least that spacing; and the planner's own
+ * review of the layout, the one that goes to the venue with it
+ * (lib/gangway-review-record), finds no gangway under its guidance. With a
+ * pinch on any gangway nothing is excused, and every tight gap is said as it
+ * always was: a way to a door is never made quiet by this. Where the room's
+ * size is not known the review cannot be asked, and nothing is excused.
+ */
+function laidAsThePlannerLays(
+  circulation: Pick<CirculationReport, "tightestGapM" | "band">,
+  items: readonly PlacedItem[],
+  room: SpaceDimensions | null,
+  roomSlug: string | null,
+): boolean {
+  if (circulation.band !== "tight" || circulation.tightestGapM === null || room === null) return false;
+  if (circulation.tightestGapM < LAID_CLEARANCE_M - LAID_CLEARANCE_EPSILON_M) return false;
+  return gangwaysPass(items, room, roomSlug);
+}
+
+/** How long the page may stay busy before the design is worked out anyway. */
+const WARM_WITHIN_MS = 2000;
+/** The wait where the browser has no idle callback to ask (Safari before 17). */
+const WARM_WITHOUT_IDLE_MS = 200;
+const NOTHING_PLACED: readonly PlacedItem[] = [];
+
+/**
+ * Asks for the room's gangway design to be worked out when the page is next
+ * idle, and returns what calls that off. The planner keeps the design by the
+ * room (lib/auto-fill designatedGangways), and Lay out and the review both
+ * read it, so working it out here takes it off the frame in which a planner
+ * first lays the room out. It reviews an empty floor, where the design is
+ * all there is to work out. It answers for no layout: the review of a real
+ * one is still asked when that layout comes.
+ */
+export function warmGangwayDesignWhenIdle(room: SpaceDimensions, roomSlug: string | null): () => void {
+  const warm = (): void => {
+    layoutGangwayReview(NOTHING_PLACED, room, roomSlug, null);
+  };
+  if (typeof requestIdleCallback === "function" && typeof cancelIdleCallback === "function") {
+    const asked = requestIdleCallback(warm, { timeout: WARM_WITHIN_MS });
+    return () => {
+      cancelIdleCallback(asked);
+    };
+  }
+  const timer = setTimeout(warm, WARM_WITHOUT_IDLE_MS);
+  return () => {
+    clearTimeout(timer);
+  };
+}
+
+/**
+ * Whether the narrowest gap is one to open up: every gap the circulation
+ * scale calls blocked, and every one it calls tight unless it is no more than
+ * the planner's own spacing (RoomFacts.aisles.asLaid). The planner does not
+ * send someone back to undo what it has just done for them, nor hold a piece
+ * set by hand to more than it asks of itself.
+ */
+export function gapToOpenUp(aisles: RoomFacts["aisles"]): boolean {
+  if (aisles.band === "blocked") return true;
+  return aisles.band === "tight" && !aisles.asLaid;
 }
 
 function everyTableDressed(items: readonly PlacedItem[]): boolean {
@@ -53,6 +177,8 @@ export function roomFacts(input: {
   readonly roomSlug: string | null;
   readonly doorSpaces: readonly DoorClearSpace[] | null;
   readonly kind: PlannerEventKind | null;
+  /** The room's size as the planner's room store holds it (render space); null where it is not known. */
+  readonly room: SpaceDimensions | null;
 }): RoomFacts {
   const blockers = input.doorSpaces === null || input.doorSpaces.length === 0 ? null : doorBlockers(input.items, input.doorSpaces);
   const circulation = placedItemsCirculation(input.items);
@@ -60,7 +186,12 @@ export function roomFacts(input: {
     plane: planeFacts({ items: input.items, guests: input.guests, roomSlug: input.roomSlug }),
     counts: floorCounts(input.items),
     doors: blockers === null || input.doorSpaces === null ? null : { blockers, line: doorBlockedLine(blockers, input.doorSpaces) },
-    aisles: { tightestGapM: circulation.tightestGapM, tightestPair: circulation.tightestPair, band: circulation.band },
+    aisles: {
+      tightestGapM: circulation.tightestGapM,
+      tightestPair: circulation.tightestPair,
+      band: circulation.band,
+      asLaid: laidAsThePlannerLays(circulation, input.items, input.room, input.roomSlug),
+    },
     dressed: everyTableDressed(input.items),
     kind: input.kind,
   };
@@ -119,7 +250,7 @@ function doorsStatus(doors: NonNullable<RoomFacts["doors"]>): RoomStatus {
 function aislesStatus(aisles: RoomFacts["aisles"]): RoomStatus | null {
   if (aisles.tightestGapM === null) return null;
   const gap = metres(aisles.tightestGapM);
-  if (aisles.band === "tight" || aisles.band === "blocked") {
+  if (gapToOpenUp(aisles)) {
     const pair = aisles.tightestPair;
     const where = pair === null ? "" : `, between ${pair.aLabel} and ${pair.bLabel}`;
     return { id: "aisles", text: `Narrowest aisle ${gap}`, attention: true, detail: `The narrowest gap is ${gap}${where}.` };

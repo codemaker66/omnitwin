@@ -17,8 +17,37 @@ import { grandHallDinner180 } from "../src/floor/assembly/fixture.js";
 // states, never a frame of the show.
 // ---------------------------------------------------------------------------
 
+/** One change in an opening: ms from the page's navigation start, what changed, and what it became. */
+type OpeningEvent = readonly [number, string, string | number | boolean | null];
+
+/** The opening's change log (window.__assemblyOpening): each watched value, as it changed. */
+interface OpeningLog {
+  readonly events: OpeningEvent[];
+  /** Notes a value; only a change from its last noted value is kept. */
+  readonly note: (what: string, value: string | number | boolean | null) => void;
+}
+
+/** The slices of the app's stores the opening's log reads, imported by the URLs Vite serves them at. */
+interface Watched<State> {
+  readonly getState: () => State;
+  readonly subscribe: (listener: () => void) => () => void;
+}
+interface RecallModule {
+  readonly useAssemblyRecallStore: Watched<{ readonly request: { readonly nonce: number } | null; readonly active: boolean; readonly onStage: boolean }>;
+}
+interface EditorModule {
+  readonly useEditorStore: Watched<{ readonly isLoading: boolean; readonly objects: readonly unknown[]; readonly space: { readonly name: string } | null }>;
+}
+interface CockpitModule {
+  readonly useCockpitStore: Watched<{ readonly walkMode: boolean; readonly layerMode: string }>;
+}
+interface PlacementModule {
+  readonly usePlacementStore: Watched<{ readonly placedItems: readonly unknown[] }>;
+}
+
 declare global {
   interface Window {
+    __assemblyOpening?: OpeningLog;
     __venPerf?: { gl: WebGLRenderer | WebGPURenderer; scene: Scene; camera: Camera };
     /** Every state the Assembly's control has shown since the test began watching it. */
     __assemblyControl?: string[];
@@ -51,9 +80,93 @@ const OBJECTS = grandHallDinner180()
 /** The Assembly's last framing on a landscape screen (floor/assembly/accio.ts). */
 const FINAL_CAMERA = [-9.9, 3.3, 4.0] as const;
 
+/**
+ * Logs an opening from the page's first moment (window.__assemblyOpening): the canvas, its scene mounting (the
+ * development PerfMonitor's handle), the Assembly's code fetched and run, and the Skip with what it says.
+ */
+async function watchOpenings(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const events: OpeningEvent[] = [];
+    const last = new Map<string, string | number | boolean | null>();
+    const note = (what: string, value: string | number | boolean | null): void => {
+      if (last.has(what) && last.get(what) === value) return;
+      last.set(what, value);
+      if (events.length < 1000) events.push([Math.round(performance.now()), what, value]);
+    };
+    window.__assemblyOpening = { events, note };
+    /** Long tasks have their own budget, so a slow renderer's cannot crowd the opening's steps out of the log. */
+    let longTasks = 0;
+    let perf: Window["__venPerf"];
+    Object.defineProperty(window, "__venPerf", {
+      configurable: true,
+      get: () => perf,
+      set: (value: Window["__venPerf"]) => { perf = value; note("scene", true); },
+    });
+    new MutationObserver(() => {
+      note("canvas", document.querySelector("canvas") !== null);
+      note("skip", document.querySelector(".assembly-replay")?.getAttribute("data-playing") ?? null);
+    }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-playing"] });
+    // The Assembly's code has run once its module, imported again by the same URL, resolves with the app's import.
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (!entry.name.includes("/floor/assembly/GrandAssembly.tsx")) continue;
+        note("code", "fetched");
+        void import(/* @vite-ignore */ entry.name).then(() => { note("code", "run"); }, () => { note("code", "failed"); });
+      }
+    }).observe({ type: "resource", buffered: true });
+    // The page's main thread held by one task for a quarter of a second or more (a shader compile, a long commit).
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.duration < 250 || longTasks >= 200) continue;
+        longTasks += 1;
+        events.push([Math.round(entry.startTime), "longtask", Math.round(entry.duration)]);
+      }
+    }).observe({ type: "longtask", buffered: true });
+  });
+}
+
+/** Logs the Assembly's own steps from the app's stores, shared with these imports (one module per URL). */
+async function watchAssemblyRecall(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const log = window.__assemblyOpening;
+    if (log === undefined) return;
+    const [recall, editor, cockpit, placement] = await Promise.all([
+      import("/src/floor/assembly/recall.ts") as Promise<RecallModule>,
+      import("/src/stores/editor-store.ts") as Promise<EditorModule>,
+      import("/src/stores/cockpit-store.ts") as Promise<CockpitModule>,
+      import("/src/stores/placement-store.ts") as Promise<PlacementModule>,
+    ]);
+    const read = (): void => {
+      const assembly = recall.useAssemblyRecallStore.getState();
+      log.note("request", assembly.request === null ? null : assembly.request.nonce);
+      log.note("active", assembly.active);
+      log.note("onStage", assembly.onStage);
+      const layout = editor.useEditorStore.getState();
+      log.note("layout", layout.isLoading ? "loading" : layout.objects.length);
+      log.note("space", layout.space?.name ?? null);
+      const view = cockpit.useCockpitStore.getState();
+      log.note("walkMode", view.walkMode);
+      log.note("layerMode", view.layerMode);
+      log.note("placed", placement.usePlacementStore.getState().placedItems.length);
+    };
+    log.note("watched", true);
+    read();
+    for (const store of [recall.useAssemblyRecallStore, editor.useEditorStore, cockpit.useCockpitStore, placement.usePlacementStore]) {
+      store.subscribe(read);
+    }
+  });
+}
+
+/** The opening's change log so far, one `ms what=value` per change. */
+async function openingLog(page: Page): Promise<string> {
+  const events = await page.evaluate(() => window.__assemblyOpening?.events ?? []);
+  return events.map(([ms, what, value]) => `${ms.toString()} ${what}=${String(value)}`).join("\n");
+}
+
 /** Stubs the planner with a saved Grand Hall layout; returns the layout writes it saw. */
 async function openSavedGrandHallLayout(page: Page, query: string): Promise<string[]> {
   const writes: string[] = [];
+  await watchOpenings(page);
   await stubPlannerBootstrap(page);
   await page.route(`${API}/public/configurations/${CONFIG_ID}**`, (route) => {
     if (route.request().method() !== "GET") {
@@ -70,6 +183,7 @@ async function openSavedGrandHallLayout(page: Page, query: string): Promise<stri
     void route.fulfill({ json: { data: { ...VENUE, spaces: [GRAND_HALL_SPACE] } } });
   });
   await page.goto(`/plan/${CONFIG_ID}${query}`);
+  await watchAssemblyRecall(page);
   await page.waitForSelector("canvas", { timeout: 30_000 });
   return writes;
 }
@@ -94,6 +208,13 @@ test.describe.configure({ mode: "default" });
 test.describe("Grand Assembly behind ?assembly=accio", () => {
   // A cold first load also fetches the Assembly's code; the hold waits for it.
   test.setTimeout(210_000);
+
+  // Every case says how its last opening went, step by step, passed or failed (T-742): a failure's report prints it.
+  test.afterEach(async ({ page }, testInfo) => {
+    const log = await openingLog(page).catch((error: unknown) => `unreadable: ${String(error)}`);
+    testInfo.annotations.push({ type: "assembly-opening", description: log });
+    await testInfo.attach("assembly-opening", { body: log, contentType: "text/plain" });
+  });
 
   test("a saved layout that opens assembles itself, rests as placed and hands the camera back where it ended", async ({ page }) => {
     const writes = await openSavedGrandHallLayout(page, "?assembly=accio");
@@ -167,6 +288,8 @@ test.describe("Grand Assembly behind ?assembly=accio", () => {
       }).observe(document, { childList: true, subtree: true });
     });
     await page.reload({ waitUntil: "domcontentloaded" });
+    // The reloaded page keeps a log of its own opening.
+    await watchAssemblyRecall(page);
     await page.waitForSelector("canvas", { timeout: 30_000 });
     // Present names the replay once the Assembly is on its stage over the layout: the planner is there to watch.
     const present = page.getByRole("button", { name: "Present: watch the room set itself" });

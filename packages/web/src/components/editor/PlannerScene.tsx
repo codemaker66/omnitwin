@@ -549,18 +549,14 @@ export function PlannerScene({ inCanvas }: {
   // The Assembly's code is fetched as soon as it may play here (the Grand Hall,
   // or a room not yet known), so it is there by the time the hall is drawn.
   const assemblyMayPlay = assemblyAsked && !assemblyElsewhere;
-  const [assemblyCodeReady, setAssemblyCodeReady] = useState(false);
   useEffect(() => {
-    if (!assemblyMayPlay) return undefined;
-    let current = true;
-    void loadGrandAssembly().then(() => { if (current) setAssemblyCodeReady(true); }, () => undefined);
-    return () => { current = false; };
+    if (assemblyMayPlay) void loadGrandAssembly().catch(() => undefined);
   }, [assemblyMayPlay]);
-  // While the room is still unknown, or the hall is drawn but the Assembly's code
-  // is still arriving (a phone's cold first load), a held layout waits for it.
-  const assemblyComing = assemblyMayPlay && !walkMode
-    && (space === null || (hallDrawn && !assemblyCodeReady));
-  useAssemblyRecall(assemblyAsked, assemblyStage, assemblyElsewhere, assemblyComing, assemblyPlayMode === "always");
+  // While the room is still unknown a held layout waits for it. Once the hall is drawn, the hold waits for the
+  // Assembly to be on its stage (recall.ts): its code arriving, and the 3D view building the hall, which can hold a
+  // slow device's page for seconds (T-742). A 3D view that could not start is no stage.
+  const assemblyComing = assemblyMayPlay && !walkMode && space === null;
+  useAssemblyRecall(assemblyAsked, assemblyStage && !canvasUnavailable, assemblyElsewhere, assemblyComing, assemblyPlayMode === "always");
   const hallSetting = useMemo(() => (typeof window === "undefined" ? "none" : hallSettingRequested(window.location.search)), []);
   // A capture that fails behind the drawn hall changes nothing on screen: the
   // camera and a walk of the drawn hall carry on.
