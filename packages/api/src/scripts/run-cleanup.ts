@@ -7,7 +7,9 @@
 //
 // Runs daily from .github/workflows/cleanup.yml:
 //   1. Stale preview configurations (unclaimed, >72h old, no enquiry)
-//   2. Orphaned file rows (loadout context, >24h old, no reference_photos link)
+//   2. Orphaned uploads (loadout context, >24h old, no reference_photos link):
+//      each object is deleted from its bucket, then its row. With no bucket
+//      settings in the job's environment the orphans are kept and counted.
 //   3. Guests' allergy notes past their retention (removeLapsedDietaryNotes):
 //      from a layout and its event sheets DIETARY_NOTE_RETENTION.daysAfterEvent
 //      days after the event, as the privacy policy and the planner say.
@@ -26,9 +28,11 @@
 // The note passes and the people pass run on the schedule, not only when
 // someone calls POST /admin/cleanup, because the product promises them. Their
 // errors carry a SQLSTATE only, never the note or the person: this job's log
-// is public with the repository. None touches object storage (PR #130 stopped
-// storing sheet PDFs), so the job needs only DATABASE_URL, and
-// PEOPLE_RETENTION_STARTS_ON (optional, YYYY-MM-DD) to start the 24-month pass.
+// is public with the repository. Only the orphaned upload pass touches object
+// storage (PR #130 stopped storing sheet PDFs). The job needs DATABASE_URL, the
+// PRIVATE_UPLOADS_R2_* settings to delete orphaned uploads' objects (pass 2),
+// and PEOPLE_RETENTION_STARTS_ON (optional, YYYY-MM-DD) to start the 24-month
+// pass.
 //
 // Each pass runs even when an earlier one fails, and the job then exits 1.
 //
@@ -38,7 +42,8 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createDb, type Database } from "../db/client.js";
-import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/cleanup.js";
+import { cleanupPreviewConfigurations, cleanupOrphanedFiles, type UploadObjectStore } from "../services/cleanup.js";
+import { uploadObjectStore, type UploadStorageEnv } from "../routes/uploads.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
@@ -49,6 +54,8 @@ import { sqlStateOf } from "../utils/sql-state.js";
 export interface ScheduledCleanupResult {
   readonly deletedConfigs: number;
   readonly deletedFiles: number;
+  /** Orphaned uploads whose object could not be deleted, kept for the next run. */
+  readonly keptOrphanedFiles: number;
   /** Layouts and event sheets whose allergy note passed its retention. */
   readonly lapsedNoteLayouts: number;
   readonly lapsedNoteSheets: number;
@@ -99,6 +106,7 @@ export function describeFailure(failure: unknown): string {
  */
 export async function runScheduledCleanup(
   db: Database,
+  uploadObjects: UploadObjectStore,
   log: (line: string) => void = (line) => { console.log(line); },
 ): Promise<ScheduledCleanupResult> {
   const failures: unknown[] = [];
@@ -119,10 +127,10 @@ export async function runScheduledCleanup(
     return count;
   });
 
-  const deletedFiles = await pass("orphaned file", async () => {
-    const count = await cleanupOrphanedFiles(db);
-    log(`[cleanup] Deleted ${String(count)} orphaned file(s)`);
-    return count;
+  const orphanedFiles = await pass("orphaned file", async () => {
+    const result = await cleanupOrphanedFiles(db, uploadObjects);
+    log(`[cleanup] Deleted ${String(result.deleted)} orphaned file(s) and their stored objects; kept ${String(result.kept)} whose object could not be deleted`);
+    return result;
   });
 
   const lapsed = await pass("allergy note retention", async () => {
@@ -172,7 +180,8 @@ export async function runScheduledCleanup(
   // Every pass ran, so every count is here.
   return {
     deletedConfigs: deletedConfigs ?? 0,
-    deletedFiles: deletedFiles ?? 0,
+    deletedFiles: orphanedFiles?.deleted ?? 0,
+    keptOrphanedFiles: orphanedFiles?.kept ?? 0,
     lapsedNoteLayouts: lapsed?.layouts ?? 0,
     lapsedNoteSheets: lapsed?.sheets ?? 0,
     loggedNotesRemoved: lapsed?.actionLog ?? 0,
@@ -198,9 +207,28 @@ async function main(): Promise<void> {
   const db = createDb(databaseUrl);
 
   console.log("[cleanup] Starting scheduled cleanup...");
-  await runScheduledCleanup(db);
+  await runScheduledCleanup(db, uploadObjectStore(storageEnvFrom(process.env)));
   console.log("[cleanup] Done");
   process.exit(0);
+}
+
+/** The buckets' settings from the job's environment. Without the private
+ *  bucket's, orphaned uploads are kept (and counted) rather than forgotten. */
+export function storageEnvFrom(source: Readonly<Record<string, string | undefined>>): UploadStorageEnv {
+  const read = (name: string): string | undefined => {
+    const value = source[name]?.trim();
+    return value === undefined || value === "" ? undefined : value;
+  };
+  return {
+    R2_ACCOUNT_ID: read("R2_ACCOUNT_ID"),
+    R2_ACCESS_KEY_ID: read("R2_ACCESS_KEY_ID"),
+    R2_SECRET_ACCESS_KEY: read("R2_SECRET_ACCESS_KEY"),
+    R2_BUCKET_NAME: read("R2_BUCKET_NAME"),
+    PRIVATE_UPLOADS_R2_ACCOUNT_ID: read("PRIVATE_UPLOADS_R2_ACCOUNT_ID"),
+    PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: read("PRIVATE_UPLOADS_R2_ACCESS_KEY_ID"),
+    PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY: read("PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY"),
+    PRIVATE_UPLOADS_R2_BUCKET: read("PRIVATE_UPLOADS_R2_BUCKET"),
+  };
 }
 
 // Runs only as the script itself, so tests can import runScheduledCleanup.

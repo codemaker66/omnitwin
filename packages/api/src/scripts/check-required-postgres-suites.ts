@@ -25,6 +25,7 @@ import { z } from "zod";
 
 export const REQUIRED_POSTGRES_TEST_FILES = [
   // VENVIEWER_ROUTE_TEST_DATABASE_URL (venviewer_route_atomicity_test)
+  "src/__tests__/cleanup-orphaned-files-postgres.test.ts",
   "src/__tests__/client-home-postgres.test.ts",
   "src/__tests__/competitor-watch-postgres.test.ts",
   "src/__tests__/crm-postgres.test.ts",

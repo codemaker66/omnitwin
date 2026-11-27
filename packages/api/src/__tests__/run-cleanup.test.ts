@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
+import type { UploadObjectStore } from "../services/cleanup.js";
 
 // The daily scheduled cleanup (.github/workflows/cleanup.yml runs
 // `pnpm --filter @omnitwin/api cleanup`). The privacy policy and the planner
@@ -45,7 +46,7 @@ vi.mock("../services/web-vitals.js", () => ({
   removeExpiredWebVitalSamples: vitalsMock,
 }));
 
-const { describeFailure, runScheduledCleanup } = await import("../scripts/run-cleanup.js");
+const { describeFailure, runScheduledCleanup, storageEnvFrom } = await import("../scripts/run-cleanup.js");
 const { DietaryMemoryWriteError } = await import("../services/dietary-memory.js");
 const { DietaryRetentionError } = await import("../services/dietary-retention.js");
 const { PeopleRetentionError, peopleRetentionStartsOn } = await import("../services/people-retention.js");
@@ -59,6 +60,9 @@ function peopleResult(overrides: Record<string, unknown> = {}): Record<string, u
 }
 
 const db = {} as Database;
+// The buckets, as the job reaches them; the orphan pass itself is mocked here
+// (cleanup-orphaned-files-postgres.test.ts runs it on PostgreSQL).
+const objects: UploadObjectStore = { remove: () => Promise.resolve(true) };
 
 // The 24-month switch unset here, whatever the developer's own environment says.
 afterEach(() => { vi.unstubAllEnvs(); });
@@ -66,7 +70,7 @@ beforeEach(() => {
   vi.stubEnv("PEOPLE_RETENTION_STARTS_ON", "");
   vi.clearAllMocks();
   previewMock.mockResolvedValue(2);
-  orphanMock.mockResolvedValue(1);
+  orphanMock.mockResolvedValue({ deleted: 1, kept: 2 });
   lapsedMock.mockResolvedValue({ dryRun: false, layouts: 4, sheets: 5, actionLog: 6,
     pieceNotes: { layouts: 2, pieces: 7, revisions: 3, sheets: 1, actionLog: 4, opsTasks: 2 } });
   rememberedMock.mockResolvedValue({ dryRun: false, removed: 3 });
@@ -84,11 +88,12 @@ describe("runScheduledCleanup", () => {
 
   it("runs both allergy-note passes for real, after the existing passes, and logs counts only", async () => {
     const lines: string[] = [];
-    const result = await runScheduledCleanup(db, (line) => { lines.push(line); });
+    const result = await runScheduledCleanup(db, objects, (line) => { lines.push(line); });
 
     expect(result).toEqual({
       deletedConfigs: 2,
       deletedFiles: 1,
+      keptOrphanedFiles: 2,
       lapsedNoteLayouts: 4,
       lapsedNoteSheets: 5,
       loggedNotesRemoved: 6,
@@ -102,6 +107,8 @@ describe("runScheduledCleanup", () => {
       engagementEventsRemoved: 4,
       webVitalSamplesRemoved: 6,
     });
+    // The orphan pass gets the buckets, so objects go with their rows.
+    expect(orphanMock).toHaveBeenCalledWith(db, objects);
     // Called with the database alone: no dry run, so the notes really go.
     expect(lapsedMock).toHaveBeenCalledTimes(1);
     expect(lapsedMock).toHaveBeenCalledWith(db);
@@ -116,7 +123,7 @@ describe("runScheduledCleanup", () => {
     expect(order(peopleMock)).toBeLessThan(order(engagementMock));
     expect(lines).toEqual([
       "[cleanup] Deleted 2 stale preview configuration(s)",
-      "[cleanup] Deleted 1 orphaned file(s)",
+      "[cleanup] Deleted 1 orphaned file(s) and their stored objects; kept 2 whose object could not be deleted",
       "[cleanup] Removed the allergy note from 4 layout(s) and 5 event sheet(s) past their retention, and from 6 logged change(s)",
       "[cleanup] Removed the notes on single pieces from 2 layout(s) past their retention",
       "[cleanup] Removed 3 remembered allergy note(s) unused for the agreed period",
@@ -127,25 +134,25 @@ describe("runScheduledCleanup", () => {
   });
 
   it("runs the engagement retention pass once, after the notes, and fails the job when it cannot run", async () => {
-    await runScheduledCleanup(db, () => undefined);
+    await runScheduledCleanup(db, objects, () => undefined);
     expect(engagementMock).toHaveBeenCalledTimes(1);
     expect(engagementMock).toHaveBeenCalledWith(db);
     expect(rememberedMock.mock.invocationCallOrder[0]).toBeLessThan(engagementMock.mock.invocationCallOrder[0] ?? 0);
 
     const failure = new Error("connection terminated");
     engagementMock.mockRejectedValue(failure);
-    await expect(runScheduledCleanup(db, () => undefined)).rejects.toBe(failure);
+    await expect(runScheduledCleanup(db, objects, () => undefined)).rejects.toBe(failure);
   });
 
   it("runs the web vitals retention pass once, last, and fails the job when it cannot run", async () => {
-    await runScheduledCleanup(db, () => undefined);
+    await runScheduledCleanup(db, objects, () => undefined);
     expect(vitalsMock).toHaveBeenCalledTimes(1);
     expect(vitalsMock).toHaveBeenCalledWith(db);
     expect(engagementMock.mock.invocationCallOrder[0]).toBeLessThan(vitalsMock.mock.invocationCallOrder[0] ?? 0);
 
     const failure = new Error("connection terminated");
     vitalsMock.mockRejectedValue(failure);
-    await expect(runScheduledCleanup(db, () => undefined)).rejects.toBe(failure);
+    await expect(runScheduledCleanup(db, objects, () => undefined)).rejects.toBe(failure);
   });
 
   it("fails the job when the retention pass fails, with nothing from the note in the error", async () => {
@@ -155,7 +162,7 @@ describe("runScheduledCleanup", () => {
     lapsedMock.mockRejectedValue(failure);
     const lines: string[] = [];
 
-    await expect(runScheduledCleanup(db, (line) => { lines.push(line); })).rejects.toBe(failure);
+    await expect(runScheduledCleanup(db, objects, (line) => { lines.push(line); })).rejects.toBe(failure);
     expect(failure.message).toBe("Allergy note retention pass failed (SQLSTATE 23514)");
     expect(lines.join("\n")).not.toContain("sesame");
   });
@@ -165,7 +172,7 @@ describe("runScheduledCleanup", () => {
     lapsedMock.mockRejectedValue(failure);
     const lines: string[] = [];
 
-    await expect(runScheduledCleanup(db, (line) => { lines.push(line); })).rejects.toBe(failure);
+    await expect(runScheduledCleanup(db, objects, (line) => { lines.push(line); })).rejects.toBe(failure);
     expect(rememberedMock).toHaveBeenCalledTimes(1);
     expect(peopleMock).toHaveBeenCalledTimes(1);
     expect(engagementMock).toHaveBeenCalledTimes(1);
@@ -183,7 +190,7 @@ describe("runScheduledCleanup", () => {
     peopleMock.mockRejectedValue(failure);
     const lines: string[] = [];
 
-    await expect(runScheduledCleanup(db, (line) => { lines.push(line); })).rejects.toBe(failure);
+    await expect(runScheduledCleanup(db, objects, (line) => { lines.push(line); })).rejects.toBe(failure);
     expect(failure.message).toBe("The 24-month people pass failed (SQLSTATE 40P01)");
     expect(lines.join("\n")).not.toContain("jane");
     expect(engagementMock).toHaveBeenCalledTimes(1);
@@ -198,7 +205,7 @@ describe("runScheduledCleanup", () => {
     peopleMock.mockResolvedValue(peopleResult({ failed: 2, failedStates: ["40P01", "40P01"], deferred: { people: 3, enquiries: 1 } }));
     const lines: string[] = [];
 
-    await expect(runScheduledCleanup(db, (line) => { lines.push(line); })).rejects.toThrow("2 people step(s) failed");
+    await expect(runScheduledCleanup(db, objects, (line) => { lines.push(line); })).rejects.toThrow("2 people step(s) failed");
     expect(engagementMock).toHaveBeenCalledTimes(1);
     expect(lines).toContain(
       "[cleanup] Erased 1 person(s) and 3 enquiry(ies) 24 months after the last contact; kept 2 person(s) for a booking; left 4 for the next night",
@@ -213,7 +220,7 @@ describe("runScheduledCleanup", () => {
     rememberedMock.mockRejectedValue(failure);
     const lines: string[] = [];
 
-    await expect(runScheduledCleanup(db, (line) => { lines.push(line); })).rejects.toBe(failure);
+    await expect(runScheduledCleanup(db, objects, (line) => { lines.push(line); })).rejects.toBe(failure);
     expect(failure.message).toBe("Remembered dietary note write failed (SQLSTATE 23514)");
     expect(lines.join("\n")).not.toContain("sesame");
   });
@@ -225,7 +232,7 @@ describe("runScheduledCleanup", () => {
     lapsedMock.mockRejectedValue(failure);
     const lines: string[] = [];
 
-    await expect(runScheduledCleanup(db, (line) => { lines.push(line); })).rejects.toBe(failure);
+    await expect(runScheduledCleanup(db, objects, (line) => { lines.push(line); })).rejects.toBe(failure);
     // One broken pass holds back no other's retention promise: the 90-day
     // web vitals deletion, and every pass between, still ran.
     for (const later of [rememberedMock, engagementMock, vitalsMock]) expect(later).toHaveBeenCalledTimes(1);
@@ -240,7 +247,7 @@ describe("runScheduledCleanup", () => {
     previewMock.mockRejectedValue(first);
     engagementMock.mockRejectedValue(second);
 
-    const outcome = await runScheduledCleanup(db, () => undefined).then(() => undefined, (error: unknown) => error);
+    const outcome = await runScheduledCleanup(db, objects, () => undefined).then(() => undefined, (error: unknown) => error);
     expect(outcome).toBeInstanceOf(AggregateError);
     expect((outcome as AggregateError).errors).toEqual([first, second]);
     expect(vitalsMock).toHaveBeenCalledTimes(1);
@@ -277,10 +284,28 @@ describe("the 24-month pass's switch (Blake, 18 Nov 2026: off until a first day 
   it("says the pass is off and counts nothing as erased or failed while it is", async () => {
     peopleMock.mockResolvedValue(peopleResult({ off: true, people: 0, keptForBooking: 0, enquiries: 0 }));
     const lines: string[] = [];
-    const result = await runScheduledCleanup(db, (line) => { lines.push(line); });
+    const result = await runScheduledCleanup(db, objects, (line) => { lines.push(line); });
     expect(lines).toContain(
       "[cleanup] The 24-month people pass is off (PEOPLE_RETENTION_STARTS_ON is unset); nothing was looked at or erased");
     expect(lines.some((line) => line.includes("24 months after the last contact"))).toBe(false);
     expect(result).toMatchObject({ peopleErased: 0, peopleKeptForBooking: 0, enquiriesErased: 0, peopleDeferred: 0, peopleStepsFailed: 0 });
+  });
+});
+
+describe("the job's bucket settings", () => {
+  it("reads the private uploads bucket from the environment, and treats a blank value as unset", () => {
+    const env = storageEnvFrom({
+      PRIVATE_UPLOADS_R2_ACCOUNT_ID: " account ",
+      PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: "key",
+      PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY: "secret",
+      PRIVATE_UPLOADS_R2_BUCKET: "omnitwin-private-uploads",
+      R2_BUCKET_NAME: "",
+    });
+    expect(env).toMatchObject({
+      PRIVATE_UPLOADS_R2_ACCOUNT_ID: "account",
+      PRIVATE_UPLOADS_R2_BUCKET: "omnitwin-private-uploads",
+      R2_BUCKET_NAME: undefined,
+      R2_ACCOUNT_ID: undefined,
+    });
   });
 });
