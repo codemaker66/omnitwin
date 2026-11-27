@@ -278,6 +278,16 @@ describe("protected paths", () => {
     expect(protectedPathViolations(["docs/binding.gyp.md", "src/binding.gypi", "docs/node_modules.md", "src/node_modules_list.ts", "packages/web/src/my_node_modules/x.ts"])).toEqual([]);
   });
 
+  it("rejects corepack's .corepack.env in any folder and letter case, and lets its neighbours through", () => {
+    const label = "corepack config, read before pnpm runs";
+    expect(protectedPathViolations([".corepack.env", "packages/web/.Corepack.ENV", "tools/x/.corepack.env."])).toEqual([
+      `.corepack.env (${label})`,
+      `packages/web/.Corepack.ENV (${label})`,
+      `tools/x/.corepack.env. (${label})`,
+    ]);
+    expect(protectedPathViolations([".corepack.env.example", "docs/corepack.env.md", "src/corepack-env.ts"])).toEqual([]);
+  });
+
   it("lets through nearby paths that are not those files", () => {
     expect(
       protectedPathViolations([

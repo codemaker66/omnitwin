@@ -205,6 +205,8 @@ export const PROTECTED_PATHS: readonly ProtectedPath[] = [
   { pattern: /(^|\/)binding\.gyp$/iu, label: "native addon build file, which pnpm builds with node-gyp on install", paths: "binding.gyp" },
   // A tracked file there stands in for installed code (the root's postinstall runs a compiler from one), or is a lifecycle hook (node_modules/.hooks/).
   { pattern: /(^|\/)node_modules\//iu, label: "installed packages folder", paths: "anything under a node_modules/ folder" },
+  // corepack (the pnpm on PATH where Node's corepack is enabled) takes COREPACK_ settings from it, such as the registry it downloads pnpm from.
+  { pattern: /(^|\/)\.corepack\.env$/iu, label: "corepack config, read before pnpm runs", paths: ".corepack.env" },
   // Editors and dev containers can run tasks when a folder is opened.
   { pattern: /(^|\/)\.vscode\//iu, label: "VS Code config", paths: "anything under a .vscode/ folder" },
   { pattern: /(^|\/)(\.devcontainer\/|\.devcontainer\.json$)/iu, label: "dev container config", paths: "anything under a .devcontainer/ folder, and .devcontainer.json" },
@@ -227,9 +229,16 @@ export function isPackageManifest(file: string): boolean {
  */
 export const INSTALL_SCRIPTS: readonly string[] = ["pnpm:devPreinstall", "preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly"];
 
-/** The package.json fields whose change the review rejects in any package.json, with what each decides at install, as a rejection names it. */
+/**
+ * The package.json fields whose change the review rejects in any package.json,
+ * with what each decides at install, as a rejection names it. corepack reads
+ * packageManager and devEngines from the nearest package.json above where pnpm
+ * is run, and downloads and runs the package manager they name.
+ */
 export const INSTALL_FIELDS: readonly { readonly name: string; readonly why: string }[] = [
   { name: "pnpm", why: "pnpm's own settings, such as patched dependencies, overrides and which dependencies may run build scripts, applied on install" },
+  { name: "packageManager", why: "the package manager, and its version, that corepack downloads and runs" },
+  { name: "devEngines", why: "its packageManager entry tells corepack which package manager to download and run" },
 ];
 
 /**

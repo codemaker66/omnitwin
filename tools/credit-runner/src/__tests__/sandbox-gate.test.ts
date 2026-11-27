@@ -318,6 +318,9 @@ const INSTALL_CONFIG: readonly { readonly file: string; readonly text: string; r
   // A lifecycle hook pnpm runs beside the root's postinstall, and a stand-in for the compiler that postinstall runs.
   { file: "node_modules/.hooks/postinstall", text: "#!/bin/sh\nnode ./tools/x.mjs\n", label: "installed packages folder" },
   { file: "packages/types/node_modules/typescript/bin/tsc", text: "require('../../../../../tools/x.cjs');\n", label: "installed packages folder" },
+  // corepack reads COREPACK_ settings from it beside the package.json it takes the package manager from.
+  { file: ".corepack.env", text: "COREPACK_NPM_REGISTRY=https://registry.example.invalid\nCOREPACK_INTEGRITY_KEYS=0\n", label: "corepack config, read before pnpm runs" },
+  { file: "packages/web/.corepack.env", text: "COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1\n", label: "corepack config, read before pnpm runs" },
 ];
 
 /** What the fixture writes in place of node_modules, which a global ignore file could keep out of a commit; the patches name node_modules. */
@@ -419,6 +422,26 @@ describe("install-time code in a package.json, read by the review from real patc
     expect(result.verdict).toBe("rejected");
     expect(result.reasons).toEqual([
       "package.json: changes the pnpm field (pnpm's own settings, such as patched dependencies, overrides and which dependencies may run build scripts, applied on install)",
+    ]);
+  }, SLOW);
+
+  it("rejects a change to the packageManager or devEngines field, which pick the package manager corepack downloads and runs", async () => {
+    const result = await review(
+      [
+        {
+          subject: "Change the package manager",
+          write: {
+            "package.json": edited(ROOT_MANIFEST, '"packageManager": "pnpm@9.15.4"', '"packageManager": "pnpm@9.0.0"'),
+            "packages/web/package.json": edited(WEB_MANIFEST, '"version": "0.0.0",', '"version": "0.0.0",\n  "devEngines": { "packageManager": { "name": "pnpm", "version": "^9" } },'),
+          },
+        },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual([
+      "package.json: changes the packageManager field (the package manager, and its version, that corepack downloads and runs)",
+      "packages/web/package.json: adds the devEngines field (its packageManager entry tells corepack which package manager to download and run)",
     ]);
   }, SLOW);
 
