@@ -21,9 +21,9 @@ import { unreadableText } from "./support/readability.js";
 // it, hand over to a named colleague. The client's side: the ask in one
 // gesture on the live slot, the honest state the house moves it to, read on
 // the poll, and the door closed in one sentence when the link is revoked.
-// The API is intercepted before transport; the live path (the ring within a
-// second over the socket) is proved against the real stack by
-// living-timetable-three-identities.spec.ts.
+// The API is intercepted before transport; the live path (the request on the
+// hallkeeper's board within a second over the socket) is proved against the
+// real stack by living-timetable-three-identities.spec.ts.
 // ---------------------------------------------------------------------------
 
 const API = "http://localhost:3001";
@@ -157,9 +157,13 @@ test.describe("Requests and conversations on the slot", () => {
     });
 
     await page.goto("/hallkeeper/today");
-    // The ring is on the slab before the slot is opened.
+    // Before the slot is opened the board knows the request waits on it, and
+    // the next action offers to take it.
     const slab = page.locator(`.dayboard-slab[data-booking="${BOOKING}"]`);
-    await expect(slab.locator(".dayboard-ring")).toHaveAttribute("data-level", "attention");
+    await expect(slab).toHaveAttribute("data-attention", "attention");
+    const next = page.locator(".dayboard-next");
+    await expect(next.locator(".dayboard-next-line")).toContainText("Chairs × 10");
+    await expect(next.getByRole("button", { name: "Take it" })).toBeVisible();
     await page.getByRole("button", { name: /^Chamber dinner,/u }).click();
     const slot = page.getByRole("region", { name: "Grand Hall: Chamber dinner" });
     const region = slot.getByRole("region", { name: "Requests for Grand Hall" });

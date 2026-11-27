@@ -885,8 +885,8 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. The case replaces the retired identity 1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
-      },
-      {
+    },
+    {
       "date": "2026-11-06",
       "reason": "The new chrome cleared away (T-680 in T-671’s chrome, behind ?chrome=v2), route-mocked: \\ and the slate’s crest hide every zone but the crest, which stays exactly where it stood, with the first-use note’s words beside it; once nothing else is under way one Esc brings the tools back; the room takes the pointer where the slate’s words and the door notice’s card were while the crest keeps it; L and / open Lay out and the catalogue’s search with the tools back, and what is typed goes into the search; the painted chrome is measured both ways.",
       "sourceCommit": "206225f9579bf3bcee86c47b4018e724890f535b",
@@ -917,6 +917,26 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These five cases were absent from sourceRunId, sourceReports and the earlier admissions; they stub the API before transport and run in hosted Chromium, so they prove the question, its number key, Lay out's starting shape, a guest's answer kept on the device, the panel in hand after the Grand Hall's welcome, an Escape meant for that welcome leaving the question asking, and the PATCH a signed-in layout's answer sends, not the API's own write, a real phone, the captured hall or the look; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-11-22",
+      "reason": "The Day Board, the sentence first (Blake chose direction A on 22 November 2026, T-753): the day's sentence heads the board, the next action offers Take it, one line of counts filters the rooms, and each room is a card with its photograph, what it is doing now, the function, why it is at risk, what comes then and All of today; the bar of each room's day and the hours above the rooms are gone. The phone's case is restated one for one: it no longer proves the present on the hours above the rooms and on every room's bar, so it now proves the rooms one to a row no wider than the phone, each with a small square photograph, the next action held at the top, every label at 12 px and 4.5:1, and the slot opened under its own room to its sheet, ready-by line and progress. The other three Day Board cases keep their identities with their bodies brought to the cards.",
+      "sourceBaseCommit": "a36daea85c1619d36ff2dc74d258f9e2fadec453",
+      "sourceState": "Reviewed working-tree source based on sourceBaseCommit; sourceFileSha256 binds the E2E bytes as Git stores them (LF). This admission does not claim the restated case already existed in that base commit.",
+      "sourceFile": "packages/web/e2e/day-board.spec.ts",
+      "sourceFileSha256": "c507617e5f55fcfef45f2930e1f105146ed8df83d65dfb9e9ba5584fa367820f",
+      "retiredSourceFile": "packages/web/e2e/day-board.spec.ts",
+      "retiredSourceFileGitBlobSha256": "36815842bc093f85b398546f12dd907b2a1ef2ce669e0b792df1a39d2031203e",
+      "inventoryCommand": "E2E_START_SERVER=false pnpm --filter @omnitwin/web exec playwright test e2e/day-board.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "9de92c2f847ce0da8e9193d767a6d98d3b9a115295b9506b88c14c1e162c3c65",
+      "caseIds": [
+        "1b07f1b6eeb3a7bdbe8c-a0299c7f9aaa3a456d2e"
+      ],
+      "retiredCaseIds": [
+        "1b07f1b6eeb3a7bdbe8c-63ca41fae157497f7f90"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. The case replaces the retired identity 1b07f1b6eeb3a7bdbe8c-63ca41fae157497f7f90 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -4192,9 +4212,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "1b07f1b6eeb3a7bdbe8c-63ca41fae157497f7f90",
+      "id": "1b07f1b6eeb3a7bdbe8c-a0299c7f9aaa3a456d2e",
       "file": "day-board.spec.ts",
-      "title": "reads the rooms down a phone in one column, the present on their hours, and opens a slot under its own room",
+      "title": "reads the rooms down a phone one to a row with their photographs, the next action held at the top, and opens a slot under its own room",
       "suitePath": [
         "day-board.spec.ts",
         "Day Board"

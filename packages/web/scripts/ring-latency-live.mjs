@@ -215,12 +215,13 @@ try {
   for (let index = 1; index <= N; index += 1) {
     // A quantity this board does not show yet, so the first paint is this request's.
     let quantity = index;
-    const railText = async () => (await keeper.page.locator(".dayboard-rail-item").allInnerTexts()).join("\n");
+    // The first request nobody has is the next action; the rest are on the panel.
+    const railText = async () => (await keeper.page.locator(".dayboard-next, .dayboard-rail-item").allInnerTexts()).join("\n");
     while ((await railText()).includes(`Chairs × ${String(quantity)} ·`)) quantity += N;
     await keeper.page.evaluate((needle) => {
       const stamp = { needle, seenAt: null };
       window.__ringLatency = stamp;
-      const seen = () => [...document.querySelectorAll(".dayboard-rail-item")].some((item) => (item.textContent ?? "").includes(needle));
+      const seen = () => [...document.querySelectorAll(".dayboard-next, .dayboard-rail-item")].some((item) => (item.textContent ?? "").includes(needle));
       const observer = new MutationObserver(() => {
         if (stamp.seenAt === null && seen()) { stamp.seenAt = Date.now(); observer.disconnect(); }
       });
@@ -270,7 +271,7 @@ try {
   // Put the test requests away from the hallkeeper's own window.
   if (process.env.KEEP !== "1") {
     try {
-      const slab = keeper.page.locator(".dayboard-slab").filter({ has: keeper.page.locator(".dayboard-ring") }).first();
+      const slab = keeper.page.locator(".dayboard-slab:not([data-attention=\"none\"])").first();
       let left = 0;
       for (let guard = 0; guard < N + 5; guard += 1) {
         const card = keeper.page.locator(".vv-request", { hasText: TAG }).first();

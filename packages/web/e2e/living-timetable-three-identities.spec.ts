@@ -17,8 +17,8 @@ import {
 // E2E: the living timetable with three identities (goal 19 S4, T-651).
 //
 // The sentence the goal is done when: the office inks a slot, the client asks
-// for ten more chairs from their event, the copper ring is on the hallkeeper's
-// slab within a second, two hands reach for the request and exactly one owns
+// for ten more chairs from their event, the request is on the hallkeeper's
+// board within a second, two hands reach for the request and exactly one owns
 // it, the client sees who has it, a staff-private note never reaches the
 // client, and a revoked plan closes the client's door at once.
 //
@@ -30,7 +30,9 @@ import {
 // Latency is measured by timestamps, never felt: the runner stamps the instant
 // the client presses "Send it" in their composer and the instant the API
 // answers the request; a MutationObserver on the hallkeeper's board stamps the
-// first paint of the ring on that slab. Every clock here is the machine's.
+// first render of the request on that slot (its slab's data-attention, set in
+// the same render as the next action or the panel that names it). Every
+// clock here is the machine's.
 // ---------------------------------------------------------------------------
 
 test.describe.configure({ mode: "serial" });
@@ -186,13 +188,13 @@ test.afterAll(async () => {
 
 test("the client's request rings the hallkeeper's slab within a second", async () => {
   await openBoard(hallkeeper);
-  await expect(slabOf(hallkeeper).locator(".dayboard-ring")).toHaveCount(0);
+  await expect(slabOf(hallkeeper)).toHaveAttribute("data-attention", "none");
 
-  // Stamp the first paint of the ring on this slab, before anything is asked.
+  // Stamp the first render of the request on this slot, before anything is asked.
   await hallkeeper.evaluate((bookingId) => {
     const stamps: { ringSeenAt: number | null } = { ringSeenAt: null };
     (window as { __livingTimetable?: typeof stamps }).__livingTimetable = stamps;
-    const seen = (): boolean => document.querySelector(`.dayboard-slab[data-booking="${bookingId}"] .dayboard-ring`) !== null;
+    const seen = (): boolean => document.querySelector(`.dayboard-slab[data-booking="${bookingId}"]:not([data-attention="none"])`) !== null;
     new MutationObserver(() => {
       if (stamps.ringSeenAt === null && seen()) stamps.ringSeenAt = Date.now();
     }).observe(document.body, { subtree: true, childList: true, attributes: true });
@@ -232,8 +234,8 @@ test("the client's request rings the hallkeeper's slab within a second", async (
   await test.info().attach("ring-latency.txt", { body: measure, contentType: "text/plain" });
   expect(fromSend, measure).toBeLessThanOrEqual(RING_BUDGET_MS);
 
-  // The rail names it as the request nobody has.
-  await expect(hallkeeper.locator(".dayboard-rail-item", { hasText: "Chairs × 10" })).toBeVisible();
+  // The next action or the panel names it as a request nobody has.
+  await expect(hallkeeper.locator(".dayboard-next, .dayboard-rail-item").filter({ hasText: "Chairs × 10" }).first()).toBeVisible();
 });
 
 test("two hands reach for the request and exactly one owns it; the client sees who", async () => {
