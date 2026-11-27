@@ -233,10 +233,14 @@ export const INSTALL_SCRIPTS: readonly string[] = ["pnpm:devPreinstall", "preins
  * The package.json fields whose change the review rejects in any package.json,
  * with what each decides at install, as a rejection names it. corepack reads
  * packageManager and devEngines from the nearest package.json above where pnpm
- * is run, and downloads and runs the package manager they name.
+ * is run, and downloads and runs the package manager they name. pnpm 9.15
+ * merges the root manifest's resolutions into its overrides with
+ * pnpm.overrides (getOptionsFromRootManifest); it is held in every
+ * package.json, as the root's own is not told apart here.
  */
 export const INSTALL_FIELDS: readonly { readonly name: string; readonly why: string }[] = [
   { name: "pnpm", why: "pnpm's own settings, such as patched dependencies, overrides and which dependencies may run build scripts, applied on install" },
+  { name: "resolutions", why: "dependency overrides: pnpm reads it from the root manifest as it reads pnpm.overrides, applied on install" },
   { name: "packageManager", why: "the package manager, and its version, that corepack downloads and runs" },
   { name: "devEngines", why: "its packageManager entry tells corepack which package manager to download and run" },
 ];

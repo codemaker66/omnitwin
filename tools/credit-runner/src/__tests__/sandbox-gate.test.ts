@@ -425,6 +425,22 @@ describe("install-time code in a package.json, read by the review from real patc
     ]);
   }, SLOW);
 
+  it("rejects a resolutions field, which pnpm reads from the root manifest as overrides, as it reads pnpm.overrides", async () => {
+    const result = await review(
+      [
+        {
+          subject: "Pin a dependency",
+          write: { "package.json": edited(ROOT_MANIFEST, '"packageManager": "pnpm@9.15.4"', '"packageManager": "pnpm@9.15.4",\n  "resolutions": { "fastify": "5.2.0" }') },
+        },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect(result.reasons).toEqual([
+      "package.json: adds the resolutions field (dependency overrides: pnpm reads it from the root manifest as it reads pnpm.overrides, applied on install)",
+    ]);
+  }, SLOW);
+
   it("rejects a change to the packageManager or devEngines field, which pick the package manager corepack downloads and runs", async () => {
     const result = await review(
       [
