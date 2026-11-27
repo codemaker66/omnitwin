@@ -1313,7 +1313,8 @@ export const emailSends = pgTable("email_sends", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   // T-702, migration 0110: what a queued send needs. Unused until the next
   // piece. A send names the venue it belongs to, and an event or enquiry only
-  // under that same venue.
+  // under that same venue. Each link column has a partial index, so removing
+  // an event or enquiry checks its sends (the keys are RESTRICT) by index.
   venueId: uuid("venue_id").references(() => venues.id),
   eventId: uuid("event_id"),
   enquiryId: uuid("enquiry_id"),
@@ -1327,7 +1328,9 @@ export const emailSends = pgTable("email_sends", {
 }, (table) => [
   index("email_sends_status_idx").on(table.status),
   index("email_sends_created_at_idx").on(table.createdAt),
-  index("email_sends_venue_created_idx").on(table.venueId, table.createdAt),
+  index("email_sends_venue_created_idx").on(table.venueId, table.createdAt).where(sql`${table.venueId} IS NOT NULL`),
+  index("email_sends_event_idx").on(table.eventId).where(sql`${table.eventId} IS NOT NULL`),
+  index("email_sends_enquiry_idx").on(table.enquiryId).where(sql`${table.enquiryId} IS NOT NULL`),
   foreignKey({ columns: [table.eventId, table.venueId], foreignColumns: [events.id, events.venueId], name: "email_sends_event_venue_fk" }).onDelete("restrict"),
   foreignKey({ columns: [table.enquiryId, table.venueId], foreignColumns: [enquiries.id, enquiries.venueId], name: "email_sends_enquiry_venue_fk" }).onDelete("restrict"),
   check("email_sends_link_needs_venue", sql`(${table.eventId} IS NULL AND ${table.enquiryId} IS NULL) OR ${table.venueId} IS NOT NULL`),

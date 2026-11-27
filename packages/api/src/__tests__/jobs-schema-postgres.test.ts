@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { emailSends, jobs } from "../db/schema.js";
@@ -9,7 +11,9 @@ import { jobsTestUrl, openJobsDatabase, resetJobs } from "./helpers/jobs-db.js";
 // on real rows. A job's scope and venue agree, its kind and key are unique, a
 // running row always has a claim and nothing else does, a payload stays small,
 // the state is one of five. A send's status is one of nine, and a send that
-// names an event or enquiry names it under the same venue.
+// names an event or enquiry names it under the same venue. Each of a send's
+// links is indexed where it is set, and the migration takes every other lock
+// its keys need before it touches email_sends.
 //
 // Never loads .env and never falls back to DATABASE_URL: the target is the
 // explicit throwaway database (helpers/jobs-db.ts). The database is not wiped
@@ -140,6 +144,51 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the rules in the database", ()
     await expect(insertSend({ venue_id: null, enquiry_id: enquiryOfVenueA })).rejects.toThrow(/email_sends_link_needs_venue/);
     // The control: the enquiry under its own venue is accepted, so the refusals above are the rule's and not the fixture's.
     await expect(insertSend({ venue_id: venueId, enquiry_id: enquiryOfVenueA })).resolves.toBeDefined();
+  });
+
+  it("indexes a send's venue, event and enquiry only where each is set", async () => {
+    const { rows } = await pool.query<{ indexname: string; indexdef: string }>(
+      `SELECT indexname, indexdef FROM pg_indexes
+       WHERE schemaname = 'public' AND tablename = 'email_sends' AND indexname = ANY($1::text[]) ORDER BY indexname`,
+      [["email_sends_enquiry_idx", "email_sends_event_idx", "email_sends_venue_created_idx"]],
+    );
+    expect(rows).toEqual([
+      {
+        indexname: "email_sends_enquiry_idx",
+        indexdef: "CREATE INDEX email_sends_enquiry_idx ON public.email_sends USING btree (enquiry_id) WHERE (enquiry_id IS NOT NULL)",
+      },
+      {
+        indexname: "email_sends_event_idx",
+        indexdef: "CREATE INDEX email_sends_event_idx ON public.email_sends USING btree (event_id) WHERE (event_id IS NOT NULL)",
+      },
+      {
+        indexname: "email_sends_venue_created_idx",
+        indexdef: "CREATE INDEX email_sends_venue_created_idx ON public.email_sends USING btree (venue_id, created_at) WHERE (venue_id IS NOT NULL)",
+      },
+    ]);
+  });
+
+  it("the migration locks every table a key on email_sends names before it touches email_sends", () => {
+    // Read from the file as it is applied, found by its tag, so a renumbering at the merge keeps the test.
+    const folder = resolve(import.meta.dirname, "../../drizzle");
+    const file = readdirSync(folder).find((name) => name.endsWith("_job_list.sql"));
+    if (file === undefined) throw new Error("The job list's migration is missing");
+    const statements = readFileSync(resolve(folder, file), "utf8")
+      .split("--> statement-breakpoint")
+      .map((chunk) => chunk.split("\n").filter((line) => !line.trimStart().startsWith("--")).join("\n").trim());
+    const firstOnSends = statements.findIndex((statement) => statement.includes('"email_sends"'));
+    expect(firstOnSends).toBeGreaterThan(0);
+    // Every table a statement on email_sends refers to.
+    const referenced = new Set(statements
+      .filter((statement) => statement.includes('"email_sends"'))
+      .flatMap((statement) => [...statement.matchAll(/REFERENCES "([a-z_]+)"/gu)].map((match) => match[1])));
+    expect([...referenced].sort()).toEqual(["enquiries", "events", "venues"]);
+    // Every table locked by a statement before the first one on email_sends.
+    const lockedFirst = new Set(statements.slice(0, firstOnSends).flatMap((statement) => {
+      const lock = /^LOCK TABLE (.+) IN SHARE ROW EXCLUSIVE MODE;$/u.exec(statement);
+      return lock?.[1] === undefined ? [] : lock[1].split(",").map((name) => name.trim().replaceAll('"', ""));
+    }));
+    expect([...lockedFirst].sort()).toEqual(expect.arrayContaining([...referenced].sort()));
   });
 
   it("the Drizzle tables agree with the migration: every column is written and read back", async () => {

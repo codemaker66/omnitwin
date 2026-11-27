@@ -24,18 +24,34 @@
 -- row once; a stray old status would fail the migration, so production's
 -- distinct statuses are read before this lands.
 --
+-- Each link column has a partial index (rows where it is set), so removing an
+-- event or enquiry checks its sends by index, not by reading the table. The
+-- venue index is partial too. Every existing row has all three links null,
+-- so the three indexes are built empty.
+--
 -- Written as 0110 (journal idx 107) on the plumbing branch; the number is
 -- fixed again at merge. Running code reads none of this until the next
--- release. The new table's keys briefly hold writes to venues and users, and
--- the keys on email_sends briefly hold writes to venues, events and
--- enquiries. email_sends itself is held against reads and writes from its
--- first ALTER until the migration commits, while its rows are read to check
--- the keys and the status rule and its index is built. Each wait for a lock
--- gives up after ten seconds and fails the deploy; with several locks to
--- take, a stalled deploy can take longer than ten seconds to fail.
+-- release.
+--
+-- Locks, in the order they are taken. First, before email_sends is touched,
+-- the locks the keys need on venues, events and enquiries (SHARE ROW
+-- EXCLUSIVE: reads pass, writes wait), then users' for the new table's key.
+-- Only then email_sends itself, which is held against reads and writes from
+-- its first ALTER until the migration commits, while its rows are read to
+-- check the keys and the status rule and to build its three indexes. So no
+-- wait for another table's lock happens while email traffic is held. Every
+-- lock taken is kept until the commit. Each wait for a lock gives up after
+-- ten seconds and fails the deploy. While it waits, later statements that
+-- need a conflicting lock on that table queue behind it (writes to venues,
+-- events, enquiries and users; anything on email_sends); with several locks
+-- to take, a stalled deploy can take longer than ten seconds to fail. Nothing
+-- bounds a statement once its locks are held: the time email_sends is held
+-- grows with its rows.
 -- ---------------------------------------------------------------------------
 
 SET LOCAL lock_timeout = '10s';
+--> statement-breakpoint
+LOCK TABLE "venues", "events", "enquiries" IN SHARE ROW EXCLUSIVE MODE;
 --> statement-breakpoint
 CREATE TABLE "jobs" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -107,4 +123,8 @@ ALTER TABLE "email_sends" ADD CONSTRAINT "email_sends_status" CHECK ("status" IN
 --> statement-breakpoint
 ALTER TABLE "email_sends" VALIDATE CONSTRAINT "email_sends_status";
 --> statement-breakpoint
-CREATE INDEX "email_sends_venue_created_idx" ON "email_sends" ("venue_id", "created_at");
+CREATE INDEX "email_sends_venue_created_idx" ON "email_sends" ("venue_id", "created_at") WHERE "venue_id" IS NOT NULL;
+--> statement-breakpoint
+CREATE INDEX "email_sends_event_idx" ON "email_sends" ("event_id") WHERE "event_id" IS NOT NULL;
+--> statement-breakpoint
+CREATE INDEX "email_sends_enquiry_idx" ON "email_sends" ("enquiry_id") WHERE "enquiry_id" IS NOT NULL;
