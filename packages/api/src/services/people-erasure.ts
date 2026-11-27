@@ -690,8 +690,9 @@ async function findAnswersElsewhere(
  *     (configuration-reviews.ts); the handoff compile the event and the
  *     layout, then the sheet (ops-compiler.ts); a hallkeeper's sheet tick the
  *     event, then the layout (hallkeeper-sheet.ts);
- *   - a hallkeeper's task tick, issue update and acknowledgement the event
- *     first (event-day-ops.ts, routes/event-plan-lifecycle.ts);
+ *   - a hallkeeper's task tick, logged issue, issue update and
+ *     acknowledgement the event first (event-day-ops.ts,
+ *     routes/event-plan-lifecycle.ts);
  *   - the piece-note retention the layout first, reading after it; then, as
  *     the planner does, a layout's pieces and saved revisions before its
  *     sheets (placed-objects, piece-note-retention.ts).

@@ -132,6 +132,27 @@ describe("Layout Recall: a saved layout that opens assembles itself", () => {
     expect(request()).toMatchObject({ configId: "config-a", reason: "open" });
   });
 
+  it("keeps the hold while the 3D view builds the hall the Assembly plays in, however long after its code is in", () => {
+    // T-742: the room known and its code in, the Assembly mounts only once the 3D view has built the hall. That first
+    // build held a page's main thread for 5.5 s on a desktop and longer on CI's software renderer; the limit then ran
+    // out under it and the show was dropped, the Skip never shown.
+    vi.useFakeTimers();
+    const { rerender } = renderHook(({ stage, coming }) => { useAssemblyRecall(true, stage, false, coming); }, {
+      initialProps: { stage: false, coming: true },
+    });
+    openLayout("config-a");
+    rerender({ stage: true, coming: false });
+    act(() => { vi.advanceTimersByTime(HOLD_LIMIT_MS * 3); });
+    expect(request()).toMatchObject({ configId: "config-a", reason: "open" });
+    expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
+    // On its stage at last: the Assembly takes the hold over.
+    act(() => { useAssemblyRecallStore.setState({ onStage: true }); });
+    takeHold();
+    act(() => { vi.advanceTimersByTime(HOLD_CAP_MS); });
+    expect(request()).toMatchObject({ configId: "config-a", reason: "open" });
+    expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
+  });
+
   it("gives the Assembly the whole limit to take the hold once its stage is there", () => {
     vi.useFakeTimers();
     const { rerender } = renderHook(({ stage, coming }) => { useAssemblyRecall(true, stage, false, coming); }, {
@@ -140,6 +161,7 @@ describe("Layout Recall: a saved layout that opens assembles itself", () => {
     openLayout("config-a");
     act(() => { vi.advanceTimersByTime(HOLD_LIMIT_MS - 100); });
     rerender({ stage: true, coming: false });
+    act(() => { useAssemblyRecallStore.setState({ onStage: true }); });
     act(() => { vi.advanceTimersByTime(HOLD_LIMIT_MS - 1); });
     expect(request()).toMatchObject({ configId: "config-a" });
     expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
@@ -151,6 +173,17 @@ describe("Layout Recall: a saved layout that opens assembles itself", () => {
   it("still never hides a layout for good: a stage that never arrives lets it go at the cap", () => {
     vi.useFakeTimers();
     renderHook(() => { useAssemblyRecall(true, false, false, true); });
+    openLayout("config-a");
+    act(() => { vi.advanceTimersByTime(HOLD_CAP_MS - 1); });
+    expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
+    act(() => { vi.advanceTimersByTime(2); });
+    expect(currentFurniturePresentation()).toBeNull();
+    expect(request()).toBeNull();
+  });
+
+  it("still never hides a layout for good: an Assembly that never gets onto its stage lets it go at the cap", () => {
+    vi.useFakeTimers();
+    renderHook(() => { useAssemblyRecall(true, true, false); });
     openLayout("config-a");
     act(() => { vi.advanceTimersByTime(HOLD_CAP_MS - 1); });
     expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
