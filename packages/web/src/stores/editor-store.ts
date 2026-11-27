@@ -2322,7 +2322,14 @@ async function saveDocument(
   set({ isSaving: true, ...standingRefusal(get()) });
   try {
     const save = viaSignedIn ? configApi.authBatchSave : configApi.publicBatchSave;
-    const sending: configApi.BatchSaveOptions | undefined = !viaSignedIn && get().notesIncluded
+    // The word that this document holds every note. Off the signed-in route,
+    // for a guest plan read with them. On it, for every guest plan, since one
+    // goes that way only once read with them (viaSignedIn), and never for a
+    // layout that is not one. There it is a protocol-version marker against
+    // stale builds, not an authorization control (api/configurations.ts
+    // authBatchSave): nobody may lean on it as a guard.
+    const declaresNotes = viaSignedIn ? isPublicPreview : get().notesIncluded;
+    const sending: configApi.BatchSaveOptions | undefined = declaresNotes
       ? { ...transport, notesIncluded: true }
       : transport;
     let revision = configRevision;

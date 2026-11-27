@@ -263,18 +263,31 @@ export async function claimConfig(configId: string, claimSecret: string): Promis
   return api.post(`/configurations/${configId}/claim`, { claimSecret }, undefined, ConfigurationResponseSchema);
 }
 
+/**
+ * The signed-in save. For a guest plan the store sends it only for a document
+ * read with the plan's notes (lib/guest-plan-notes signedInRoutesSuit), and
+ * says so (`notesIncluded`): the API then takes the notes as sent, and settles
+ * each note of a guest plan's signed-in save that does not say it (T-759).
+ *
+ * That word is a protocol-version marker, not an authorization control. It
+ * tells the API this save comes from a planner that reads a guest plan again
+ * through the signed-in route before saving there, so a stale build, which
+ * saved a copy read without the notes, cannot erase them. Everyone this route
+ * admits may read and change every note anyway, so nothing may lean on it as
+ * a guard. An API from before T-759 strips the key it does not know.
+ */
 export async function authBatchSave(
   configId: string,
   objects: readonly BatchObjectInput[],
   expectedRevision: number,
-  transport?: BatchSaveTransport,
+  options?: BatchSaveOptions,
 ): Promise<BatchSaveResponse> {
   return api.post(
     `/configurations/${configId}/objects/batch`,
-    { expectedRevision, objects },
+    { expectedRevision, objects, ...(options?.notesIncluded === true ? { notesIncluded: true } : {}) },
     undefined,
     BatchSaveResponseSchema,
-    transport?.keepalive === true ? { keepalive: true } : undefined,
+    options?.keepalive === true ? { keepalive: true } : undefined,
   );
 }
 

@@ -250,6 +250,24 @@ describe("a guest plan read without its notes, in a browser that is signed in", 
     expect(await store().saveToServer(true)).toBe(true);
     expect(configApi.publicBatchSave).not.toHaveBeenCalled();
     expect(vi.mocked(configApi.authBatchSave).mock.calls[0]?.[1].find((piece) => piece.id === A)?.metadata?.notes).toBe(ALLERGY);
+    // It says so: a build from before the signed-in read again cannot (T-759).
+    expect(vi.mocked(configApi.authBatchSave).mock.calls[0]?.[3]).toEqual({ notesIncluded: true });
+  });
+
+  it("says its notes are complete on the signed-in save once the plan opened from its link is read again signed in", async () => {
+    // The planner opens the link before the sign-in resolves, through the
+    // public read, which keeps the note; then reads it again signed in.
+    await open(plan([placed(A, { noteHeld: true }), placed(B)], false));
+    vi.mocked(configApi.getConfig).mockResolvedValue(plan([placed(A, { notes: ALLERGY }), placed(B)], true));
+    expect(await store().readAgainForSignedInRoutes()).toBe(true);
+    store().updateObject(B, { positionX: 3 });
+
+    vi.mocked(configApi.authBatchSave).mockResolvedValue({ objects: [placed(A, { notes: ALLERGY }), placed(B, {}, 3)], revision: 5 });
+    expect(await store().saveToServer(true)).toBe(true);
+    expect(configApi.publicBatchSave).not.toHaveBeenCalled();
+    const [, batch, revision, declared] = vi.mocked(configApi.authBatchSave).mock.calls[0] ?? [];
+    expect({ note: batch?.find((piece) => piece.id === A)?.metadata?.notes, revision, declared })
+      .toEqual({ note: ALLERGY, revision: 4, declared: { notesIncluded: true } });
   });
 
   it("takes the notes it never read when its kept work is restored over a signed-in read", async () => {

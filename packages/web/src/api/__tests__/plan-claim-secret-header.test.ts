@@ -158,6 +158,22 @@ describe("what a read and a save say about a guest plan's notes", () => {
     expect("notesIncluded" in lastBody()).toBe(false);
   });
 
+  it("says the same on a signed-in save only when told the document was read with the notes, and never presents the secret there", async () => {
+    fetchMock.mockResolvedValue(answer({ objects: [], revision: 3 }));
+    await configurations.authBatchSave(MADE_HERE, [chair()], 2, { notesIncluded: true });
+    expect(lastBody()["notesIncluded"]).toBe(true);
+    expect(HEADER in lastHeaders()).toBe(false);
+    await configurations.authBatchSave(MADE_HERE, [chair()], 3, { keepalive: true, notesIncluded: true });
+    expect(lastBody()["notesIncluded"]).toBe(true);
+
+    await configurations.authBatchSave(MADE_HERE, [chair()], 4);
+    expect("notesIncluded" in lastBody()).toBe(false);
+    await configurations.authBatchSave(MADE_HERE, [chair()], 5, { keepalive: true });
+    expect("notesIncluded" in lastBody()).toBe(false);
+    await configurations.authBatchSave(MADE_HERE, [chair()], 6, { notesIncluded: false });
+    expect("notesIncluded" in lastBody()).toBe(false);
+  });
+
   it("sends the note a piece's note replaces, beside the piece and outside what is stored of it", async () => {
     fetchMock.mockResolvedValue(answer({ objects: [], revision: 3 }));
     await configurations.publicBatchSave(FROM_A_LINK, [{ ...chair(), id: "0a0a0a0a-0000-4000-8000-000000000001", replacesNote: "Top tab" }], 2);
