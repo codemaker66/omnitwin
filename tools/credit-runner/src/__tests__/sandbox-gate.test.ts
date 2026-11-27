@@ -288,6 +288,26 @@ describe("the protected paths, read by the review from real patches", () => {
   }, SLOW);
 });
 
+/**
+ * Install-time config at the root and in a workspace package, each as a run
+ * might write it, with the label a rejection names. The root and workspace
+ * .pnpmfile.cjs and the root pnpm-workspace.yaml are planted by the test above.
+ */
+const INSTALL_CONFIG: readonly { readonly file: string; readonly text: string; readonly label: string }[] = [
+  { file: ".npmrc", text: "ignore-scripts=false\n", label: "npm config" },
+  { file: "packages/web/.npmrc", text: "script-shell=./tools/shell.mjs\n", label: "npm config" },
+  // pnpm takes the nearest pnpm-workspace.yaml above where it runs as the workspace's root.
+  { file: "packages/web/pnpm-workspace.yaml", text: "packages:\n  - ../../tools/*\nonlyBuiltDependencies:\n  - esbuild\n", label: "pnpm workspace config" },
+];
+
+describe("install-time config files, read by the review from real patches", () => {
+  it("rejects each at the root and in a workspace package under its label", async () => {
+    const result = await review([{ subject: "Change the install config", write: Object.fromEntries(INSTALL_CONFIG.map(({ file, text }) => [file, text])) }], BASE_FILES);
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual(INSTALL_CONFIG.map(({ file, label }) => `protected path changed: ${file} (${label})`).sort());
+  }, SLOW);
+});
+
 /** A package.json as the repository writes them: two-space indents and a final newline. */
 function manifest(value: Readonly<Record<string, unknown>>): string {
   return `${JSON.stringify(value, null, 2)}\n`;
