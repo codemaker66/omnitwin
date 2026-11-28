@@ -19,6 +19,7 @@ import {
   peopleRetentionSwitch,
 } from "../services/people-retention.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
+import { clearLapsedSupplierContacts } from "../services/supplier-arrival-retention.js";
 import { runPageChecks } from "../services/competitor-watch-data.js";
 import { createHttpsPageFetcher, type PageFetcher } from "../services/page-check.js";
 
@@ -91,8 +92,9 @@ export async function adminRoutes(
   const pageFetcher = opts.pageFetcher ?? createHttpsPageFetcher();
 
   // POST /admin/cleanup — trigger manual cleanup of stale preview configs,
-  // orphaned uploads, guests' allergy notes past their retention, and
-  // remembered allergy notes unused for the period the client agreed to.
+  // orphaned uploads, guests' allergy notes past their retention, remembered
+  // allergy notes unused for the period the client agreed to, and suppliers'
+  // contacts and notes a year after their booking ends.
   server.post("/cleanup", {
     preHandler: [authenticate, authorizePlatformAdmin()],
   }, async () => {
@@ -101,6 +103,7 @@ export async function adminRoutes(
     const dietaryNotes = await removeLapsedDietaryNotes(db);
     const rememberedNotes = await removeUnusedRememberedNotes(db);
     const people = await eraseLapsedPeople(db);
+    const supplierContacts = await clearLapsedSupplierContacts(db);
     return {
       data: {
         deletedConfigs,
@@ -108,6 +111,7 @@ export async function adminRoutes(
         dietaryNotes,
         rememberedNotes,
         people,
+        supplierContacts,
         message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `
           + `removed the allergy note from ${String(dietaryNotes.layouts)} layout(s) and ${String(dietaryNotes.sheets)} event sheet(s)`
           + ` past their retention, and from ${String(dietaryNotes.actionLog)} logged change(s)`
@@ -116,10 +120,17 @@ export async function adminRoutes(
           + (people.off
             ? `; the 24-month people pass is off (${describePeopleRetentionStart(process.env[PEOPLE_RETENTION_START_VARIABLE])})`
             : `; erased ${String(people.people)} person(s) and ${String(people.enquiries)} enquiry(ies) 24 months after the last contact`
-              + `, leaving ${String(people.deferred.people + people.deferred.enquiries)} for another run`),
+              + `, leaving ${String(people.deferred.people + people.deferred.enquiries)} for another run`)
+          + `; cleared the contact and note from ${String(supplierContacts.arrivals)} supplier arrival(s) past their retention`,
       },
     };
   });
+
+  // POST /admin/retention/supplier-contacts — what the supplier contact pass
+  // would clear now, changing nothing. The rehearsal before a real pass.
+  server.post("/retention/supplier-contacts", {
+    preHandler: [authenticate, authorizePlatformAdmin()],
+  }, async () => ({ data: await clearLapsedSupplierContacts(db, { dryRun: true }) }));
 
   // POST /admin/retention/dietary-notes — what the retention pass would
   // remove now, changing nothing. The rehearsal before a real pass.

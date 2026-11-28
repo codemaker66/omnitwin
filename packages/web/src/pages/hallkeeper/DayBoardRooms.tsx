@@ -8,6 +8,7 @@ import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-pho
 import { formatMinutes, runsForDays, type DayBoardIcon, type DayBoardSlot, type SlotAttention } from "./lib/day-board-state.js";
 import { gapGeometry, slabGeometry, type BoardWindow, type RulerTick, type Span } from "./lib/day-board-layout.js";
 import type { RoomDay } from "./lib/day-board-rooms.js";
+import { crewWords, type TurnRoundCrew } from "./lib/turn-round-crew.js";
 import { useBreathPhase } from "./lib/use-board-clock.js";
 
 // ---------------------------------------------------------------------------
@@ -108,20 +109,21 @@ function slotFacts(slot: DayBoardSlot): string {
 }
 
 /** The turn-round before a slot whose setup is still ahead: the time the
- *  room has between functions, and what the rule needs when that is short.
- *  Once setup is due it has been spent; a changeover at risk says why in
- *  its own words. */
-export function turnRound(slot: DayBoardSlot, nowMs: number): string | null {
+ *  room has between functions, what the rule needs when that is short, and
+ *  who is on setup for it when the rota plans setup. Once setup is due it
+ *  has been spent; a changeover at risk says why in its own words. */
+export function turnRound(slot: DayBoardSlot, nowMs: number, crew: TurnRoundCrew | null = null): string | null {
   const gap = slot.gapBefore;
   if (gap === null || nowMs >= slot.setupStartsAtMs || slot.exception !== null) return null;
-  return gap.short && gap.neededMinutes !== null
+  const time = gap.short && gap.neededMinutes !== null
     ? `Turn-round ${formatMinutes(gap.minutes)} · needs ${formatMinutes(gap.neededMinutes)}`
     : `Turn-round ${formatMinutes(gap.minutes)}`;
+  return crew === null ? time : `${time} · ${crewWords(crew)}`;
 }
 
 /** One slot on its room: the state's dot, icon and verb, the title, and for
  *  the lead its facts, what was seen, why it is at risk and the ring. */
-export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen }: {
+export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen, changed = 0, crew = null, above = null }: {
   readonly slot: DayBoardSlot;
   readonly variant: SlabVariant;
   readonly nowMs: number;
@@ -129,6 +131,13 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen }: {
   readonly onOpen: (bookingId: string) => void;
   readonly wall: boolean;
   readonly frozen: boolean;
+  /** Changes on the slot's event nobody on the floor has acknowledged yet. */
+  readonly changed?: number;
+  /** Who is on setup for the turn-round before it, when the rota plans setup. */
+  readonly crew?: TurnRoundCrew | null;
+  /** Why the slot before this one in its room is at risk, which a line
+   *  does not print again. */
+  readonly above?: string | null;
 }): ReactElement {
   // The breath samples its phase the moment it begins: a new motion, or a
   // freeze lifting, starts a new animation and a new sample (D3 law 1).
@@ -136,6 +145,9 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen }: {
   const ring = slot.attention;
   const words = ringWords(slot, nowMs);
   const seen = seenLine(slot);
+  // Spoken with the mark's own word in it ("Changed", "2 changes"), so the
+  // name a voice user reads off the slab opens it (WCAG 2.5.3).
+  const changedWords = changed === 0 ? null : changed === 1 ? "changed, a change to read" : `${String(changed)} changes to read`;
   const linked = slot.linkedRooms.length > 0 ? `also ${slot.linkedRooms.join(", ")}` : null;
   const why = slot.exceptionDetail ?? slot.turnaroundWarning;
   // The wall reads room, title, state and time (D11): no turn-round, no
@@ -145,16 +157,21 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen }: {
   // when that is short, so a short changeover is never only the red rule
   // on the bar, which nothing reads aloud.
   const shortGap = slot.gapBefore?.short === true;
-  const gap = wall || (variant === "line" && !shortGap) ? null : turnRound(slot, nowMs);
+  const gap = wall || (variant === "line" && !shortGap) ? null : turnRound(slot, nowMs, crew);
   // On a line it says why only when it is at risk. A turnaround warning is
   // the Diary's advice on a pair, copied to both of its bookings and kept
   // after they end, so on a line it would speak of the wrong changeover, or
   // one already over; the opened slot gives it in full.
   const shownWhy = variant === "line" ? slot.exceptionDetail : why;
+  // Both slots of a pair held at risk carry its one reason, so a line under
+  // a slot that says it does not print it again.
+  const repeated = variant === "line" && shownWhy !== null && shownWhy === above;
   // A screen reader hears the slot by its label, which stands in for
-  // everything inside it, so the label says every word the slot shows.
+  // everything inside it, so the label says every word the slot shows, and
+  // why it is at risk even where the slot above has said it on screen: it
+  // is heard one slot at a time.
   const spokenLinked = linked !== null && !wall ? `, ${linked}` : "";
-  const label = `${slot.title}, ${slotFacts(slot)}${spokenLinked}, ${slot.countdown}${words === null ? "" : `, ${words}`}${gap === null ? "" : `, ${gap}`}${shownWhy === null ? "" : `, ${shownWhy}`}${seen === null ? "" : `, ${seen}`}`;
+  const label = `${slot.title}, ${slotFacts(slot)}${spokenLinked}, ${slot.countdown}${words === null ? "" : `, ${words}`}${changedWords === null ? "" : `, ${changedWords}`}${gap === null ? "" : `, ${gap}`}${shownWhy === null ? "" : `, ${shownWhy}`}${seen === null ? "" : `, ${seen}`}`;
   const shownSeen = wall ? null : seen;
   const shownWords = wall ? wallRingWords(slot, nowMs) : words;
   const ringed = ring !== null && shownWords !== null
@@ -184,17 +201,25 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen }: {
       </span>
     )
     : null;
+  // A change nobody on the floor has acknowledged: a word in copper beside
+  // the title, never a tint on it. Its words are in the label.
+  const mark = changed === 0 ? null : (
+    <span className="dayboard-slab-changed" aria-hidden="true">
+      <span className="dayboard-slab-changed-dot" />{changed === 1 ? "Changed" : `${String(changed)} changes`}
+    </span>
+  );
   // The ring comes after the words it belongs to, so a narrow row wraps the
   // ring and never the state.
   const face = variant === "line"
     ? (
       <>
         <span className="dayboard-slab-title">{slot.title}</span>
+        {mark}
         {verb}
         {seen !== null && <span className="dayboard-slab-seen">{seen}</span>}
         {gap !== null && <span className="dayboard-gap-words is-short">{gap}</span>}
         {ringed}
-        {shownWhy !== null && <span className="dayboard-slab-why">{shownWhy}</span>}
+        {shownWhy !== null && !repeated && <span className="dayboard-slab-why">{shownWhy}</span>}
       </>
     )
     : variant === "next"
@@ -203,6 +228,7 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen }: {
           <span className="dayboard-slab-head">
             {verb}
             <span className="dayboard-slab-title">{slot.title}</span>
+            {mark}
             {notes}
             {ringed}
           </span>
@@ -214,6 +240,7 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen }: {
           <span className="dayboard-slab-head">
             {verb}
             <span className="dayboard-slab-title">{slot.title}</span>
+            {mark}
           </span>
           <span className="dayboard-slab-time">
             <span>{slotFacts(slot)}</span>
@@ -244,10 +271,14 @@ function DayBar({ day, view, plaque, selectedId }: {
 }): ReactElement {
   return (
     <span className="dayboard-bar" aria-hidden="true">
-      {day.slots.map((slot, index) => {
+      {day.slots.map((slot) => {
         const geometry = slabGeometry(slot, view);
         const width = geometry.slab.width > 0 ? geometry.slab.width : 1;
-        const short = slot.gapBefore?.short === true ? gapGeometry(day.slots[index - 1], slot, view) : null;
+        // From the booking the turn-round runs from, which its words measure,
+        // not the slot listed before (a talk inside an exhibition, an option
+        // beside another).
+        const from = day.slots.find((candidate) => candidate.bookingId === slot.previousBookingId);
+        const short = slot.gapBefore?.short === true ? gapGeometry(from, slot, view) : null;
         return (
           <span key={slot.bookingId} className="dayboard-bar-slot">
             {short !== null && short.width > 0 && <span className="dayboard-bar-gap" style={across(short)} />}
@@ -308,8 +339,12 @@ function bookingCount(count: number): string {
 
 /** One room: its photograph, its name and its day. `children` is the open
  *  slot, when it unfolds under its own room (the narrow desk and the phone). */
-export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpen, wall, frozen, children }: {
+export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpen, wall, frozen, changed, crew, children }: {
   readonly day: RoomDay;
+  /** Changes to read, by booking. */
+  readonly changed?: ReadonlyMap<string, number>;
+  /** Who is on setup for each turn-round, by the booking it leads to. */
+  readonly crew?: ReadonlyMap<string, TurnRoundCrew>;
   readonly view: BoardWindow;
   readonly plaque: number | null;
   readonly nowMs: number;
@@ -321,7 +356,7 @@ export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpe
   readonly children?: ReactNode;
 }): ReactElement {
   const photo = venueSlug === null ? null : roomPhoto(venueSlug, day.room.slug);
-  const slab = (slot: DayBoardSlot, variant: SlabVariant): ReactElement => (
+  const slab = (slot: DayBoardSlot, variant: SlabVariant, above: string | null = null): ReactElement => (
     <Slab
       key={slot.bookingId}
       slot={slot}
@@ -331,6 +366,9 @@ export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpe
       onOpen={onOpen}
       wall={wall}
       frozen={frozen}
+      changed={changed?.get(slot.bookingId) ?? 0}
+      crew={crew?.get(slot.bookingId) ?? null}
+      above={above}
     />
   );
   // The wall reads the room, what it is doing and what is next (D11), with
@@ -341,6 +379,14 @@ export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpe
   const later = wall ? [] : day.later;
   const alsoNow = wall ? day.alsoNow.slice(0, 1) : day.alsoNow;
   const next = wall && day.alsoNow.length > 0 ? null : day.next;
+  // Why the slot before each later one is at risk: what Next says (its
+  // reason, or the Diary's advice), or a line's own reason, so a run of
+  // lines carrying one reason says it once.
+  const aboveLater = (index: number): string | null => {
+    const before = index === 0 ? next : later[index - 1] ?? null;
+    if (before === null) return null;
+    return index === 0 ? before.exceptionDetail ?? before.turnaroundWarning : before.exceptionDetail;
+  };
   return (
     <li className="dayboard-room-item">
       <section className="dayboard-room" aria-label={day.room.name} data-room={day.room.id} data-tone={day.tone}>
@@ -389,7 +435,7 @@ export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpe
           {later.length > 0 && (
             <div className="dayboard-line is-later">
               <span className="dayboard-line-label">Later</span>
-              <span className="dayboard-line-items">{later.map((slot) => slab(slot, "line"))}</span>
+              <span className="dayboard-line-items">{later.map((slot, index) => slab(slot, "line", aboveLater(index)))}</span>
             </div>
           )}
           {day.slots.length > 0 && <DayBar day={day} view={view} plaque={plaque} selectedId={selectedId} />}

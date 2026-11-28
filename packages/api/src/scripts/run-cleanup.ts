@@ -18,14 +18,18 @@
 //      (eraseLapsedPeople, services/people-retention.ts), as the privacy page
 //      promises, from the first day PEOPLE_RETENTION_STARTS_ON names; off
 //      until then.
-//   6. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
+//   6. Suppliers' contacts and notes on the Day Board, cleared
+//      SUPPLIER_ARRIVAL_RETENTION.daysAfterBooking days after their booking
+//      ends (clearLapsedSupplierContacts), as the privacy policy says. The
+//      supplier's name, times and door marks stay (Blake, 12 November 2026).
+//   7. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
 //      0100): the enquiry funnel keeps them no longer than the privacy page
 //      keeps an enquiry, whether or not their enquiry or proposal remains.
-//   7. Field web vitals older than WEB_VITAL_RETENTION_DAYS (goal 07).
+//   8. Field web vitals older than WEB_VITAL_RETENTION_DAYS (goal 07).
 //
-// The note passes and the people pass run on the schedule, not only when
-// someone calls POST /admin/cleanup, because the product promises them. Their
-// errors carry a SQLSTATE only, never the note or the person: this job's log
+// The note, people and supplier contact passes run on the schedule, not only
+// when someone calls POST /admin/cleanup, because the product promises them.
+// Their errors carry a SQLSTATE only, never the note, the person or the contact: this job's log
 // is public with the repository. None touches object storage (PR #130 stopped
 // storing sheet PDFs), so the job needs only DATABASE_URL, and
 // PEOPLE_RETENTION_STARTS_ON (optional, YYYY-MM-DD) to start the 24-month pass.
@@ -42,6 +46,7 @@ import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
+import { clearLapsedSupplierContacts } from "../services/supplier-arrival-retention.js";
 import { describePeopleRetentionStart, eraseLapsedPeople, PEOPLE_RETENTION_START_VARIABLE } from "../services/people-retention.js";
 import { removeExpiredWebVitalSamples } from "../services/web-vitals.js";
 import { sqlStateOf } from "../utils/sql-state.js";
@@ -65,6 +70,8 @@ export interface ScheduledCleanupResult {
   readonly peopleDeferred: number;
   /** Person or enquiry steps that failed, to be tried again next night. */
   readonly peopleStepsFailed: number;
+  /** Supplier arrivals whose contact and note passed their retention. */
+  readonly supplierContactsCleared: number;
   readonly engagementEventsRemoved: number;
   readonly webVitalSamplesRemoved: number;
 }
@@ -154,6 +161,14 @@ export async function runScheduledCleanup(
     return result;
   });
 
+  // A supplier's contact and note go a year after their booking ends (Blake,
+  // 12 November 2026); the supplier's name and door times stay as the record.
+  const supplierContacts = await pass("supplier contact retention", async () => {
+    const result = await clearLapsedSupplierContacts(db);
+    log(`[cleanup] Cleared the contact and note from ${String(result.arrivals)} supplier arrival(s) past their retention`);
+    return result;
+  });
+
   const engagementEventsRemoved = await pass("engagement event retention", async () => {
     const count = await removeExpiredEngagementEvents(db);
     log(`[cleanup] Removed ${String(count)} engagement event(s) past their retention period`);
@@ -183,6 +198,7 @@ export async function runScheduledCleanup(
     enquiriesErased: lapsedPeople?.enquiries ?? 0,
     peopleDeferred: (lapsedPeople?.deferred.people ?? 0) + (lapsedPeople?.deferred.enquiries ?? 0),
     peopleStepsFailed: lapsedPeople?.failed ?? 0,
+    supplierContactsCleared: supplierContacts?.arrivals ?? 0,
     engagementEventsRemoved: engagementEventsRemoved ?? 0,
     webVitalSamplesRemoved: webVitalSamplesRemoved ?? 0,
   };

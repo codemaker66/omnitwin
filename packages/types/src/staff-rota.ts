@@ -356,5 +356,12 @@ export const CreateStaffUnavailabilitySchema = z.object({
 });
 export type CreateStaffUnavailability = z.infer<typeof CreateStaffUnavailabilitySchema>;
 
-export const RotaWeekQuerySchema = z.object({ start: CalendarDateSchema.optional() }).strict();
+export const RotaWeekQuerySchema = z.object({
+  start: CalendarDateSchema.optional(),
+  /** The floor's view whatever the reader's role (the Day Board): published
+   *  and cancelled shifts with their notes, and each person's name,
+   *  employment type and skills; never records, leave, warnings, drafts,
+   *  rooms or accounts. It never widens what a reader may see. */
+  view: z.literal("floor").optional(),
+}).strict();
 export type RotaWeekQuery = z.infer<typeof RotaWeekQuerySchema>;

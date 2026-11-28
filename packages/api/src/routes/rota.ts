@@ -39,7 +39,8 @@ import {
 // ---------------------------------------------------------------------------
 // The staff rota, version 1 (T-637 slice B)
 //
-//   /venues/:venueId/rota/week          the week: people, shifts, warnings
+//   /venues/:venueId/rota/week          the week: people, shifts, warnings;
+//                                       view=floor reads it as the floor does
 //   /venues/:venueId/rota/shifts        add, change, remove a draft, cancel,
 //                                       keep a warning with a reason
 //   /venues/:venueId/rota/publish       publish the drafts that were shown
@@ -138,8 +139,14 @@ export async function rotaRoutes(server: FastifyInstance, opts: { db: Database }
     return stored === null ? null : resolveRotaTimeZone(stored);
   };
 
-  // GET /venues/:venueId/rota/week?start=YYYY-MM-DD — the week holding that
-  // day, on the venue's calendar; this week when no day is given.
+  // GET /venues/:venueId/rota/week?start=YYYY-MM-DD[&view=floor] — the week
+  // holding that day, on the venue's calendar; this week when no day is
+  // given. With view=floor an administrator reads only what the floor reads
+  // (the Day Board on a shared screen): published and cancelled shifts, with
+  // their notes and who last changed them, and each person's name,
+  // employment type and skills (the active team, and anyone else on a shift
+  // that week); never records, leave, warnings, drafts, rooms or accounts.
+  // It never widens what a reader may see.
   server.get("/week", { preHandler: [authenticate] }, async (request, reply) => {
     reply.header("Cache-Control", "private, no-store");
     const params = VenueParam.safeParse(request.params);
@@ -147,8 +154,9 @@ export async function rotaRoutes(server: FastifyInstance, opts: { db: Database }
     const query = RotaWeekQuerySchema.safeParse(request.query);
     if (!query.success) return invalid(reply, query.error.issues);
     const { venueId } = params.data;
-    const access = rotaAccess(request.user, venueId);
-    if (access === null) return forbidden(reply);
+    const granted = rotaAccess(request.user, venueId);
+    if (granted === null) return forbidden(reply);
+    const access = query.data.view === "floor" && granted === "manage" ? "read" : granted;
     const timeZone = await zoneOf(venueId);
     if (timeZone === null) return venueMissing(reply);
     const weekStart = query.data.start === undefined ? rotaWeekStartOf(Date.now(), timeZone) : rotaMondayOf(query.data.start);
