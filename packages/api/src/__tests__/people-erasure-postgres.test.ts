@@ -14,6 +14,7 @@ import { opsHandoffRoutes } from "../routes/ops-handoff.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import { guestLeadLockKey } from "../services/guest-lead-lock.js";
 import { removeLapsedPieceNotes } from "../services/piece-note-retention.js";
+import { createEventDayIssue, updateOpsTaskStatus } from "../services/event-day-ops.js";
 import { approveSnapshot, createSnapshot } from "../services/sheet-snapshot.js";
 import { eraseLockedPerson } from "../services/people-erasure.js";
 import { lockPerson } from "../services/people-records.js";
@@ -381,7 +382,8 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const { rows: snapshots } = await f.pool.query<{ snapshot: unknown }>(
       "SELECT snapshot FROM record_merges WHERE id = ANY($1::uuid[])", [[mergeId, oldestMerge]]);
     expect(snapshots).toHaveLength(2);
-    expect(JSON.stringify(snapshots)).not.toMatch(/erasable|erase-|morag|7700|M\.|crm/iu);
+    // The phones by their whole number: a bare "7700" also matched timestamps (".877000Z") and ids, at random.
+    expect(JSON.stringify(snapshots)).not.toMatch(/erasable|erase-|morag|(?:\+?44|0) ?7700 ?90011[12]|M\.|crm/iu);
     // The undone merge copied someone live again: it is theirs, untouched.
     expect(JSON.stringify(await value("SELECT snapshot AS value FROM record_merges WHERE id = $1", [partedMerge]))).toMatch(/Ruth Parted/u);
     expect(await count("contacts WHERE id = $1 AND erased_at IS NULL AND name = 'Ruth Parted'", [parted])).toBe(1);
@@ -1409,6 +1411,224 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       .toEqual({ title: "Erased's place cards", status: "in_progress" });
     expect(await value("SELECT message AS value FROM ops_status_updates WHERE event_id = $1 AND message LIKE 'Task %'", [hold.eventId]))
       .toBe("Task \"Erased's place cards\" moved from todo to in_progress.");
+    // The change feed's copy quotes the title as the tick read it after the
+    // event lock, as its status line does.
+    expect(await value("SELECT summary AS value FROM event_plan_changes WHERE event_id = $1 AND source_kind = 'ops_task'", [hold.eventId]))
+      .toBe("Task \"Erased's place cards\" moved from todo to in_progress.");
+  });
+
+  /** Pauses every change-feed row written for this event before the row goes
+   *  in, until `holder` lets go: a test-only trigger that waits on an advisory
+   *  lock `holder` takes. The pause holds nothing on the event, so it sits
+   *  where a writer that recorded its copy after committing would sit between
+   *  the two. Returns the drop for the case's finally. */
+  async function pauseChangeFeed(eventId: string, holder: Client): Promise<() => Promise<void>> {
+    if (!/^[0-9a-f-]{36}$/u.test(eventId)) throw new Error("Not an event id");
+    const key = `test-change-feed-pause:${eventId}`;
+    const name = `test_change_feed_pause_${eventId.replace(/-/gu, "")}`;
+    await holder.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key]);
+    await f.pool.query(`CREATE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $fn$
+      BEGIN
+        IF NEW.event_id = '${eventId}'::uuid THEN
+          PERFORM pg_advisory_xact_lock(hashtextextended('${key}', 0));
+        END IF;
+        RETURN NEW;
+      END
+      $fn$`);
+    const drop = async (): Promise<void> => {
+      await f.pool.query(`DROP TRIGGER IF EXISTS ${name} ON event_plan_changes`);
+      await f.pool.query(`DROP FUNCTION IF EXISTS ${name}()`);
+    };
+    try {
+      await f.pool.query(`CREATE TRIGGER ${name} BEFORE INSERT ON event_plan_changes FOR EACH ROW EXECUTE FUNCTION ${name}()`);
+    } catch (error) {
+      await drop();
+      throw error;
+    }
+    return drop;
+  }
+
+  /** Starts the erasure while a writer's change-feed copy is paused, and says
+   *  whether it then waited on her event (the writer still holds it) or ran to
+   *  its end (the writer had committed before writing its copy). */
+  async function erasureBesidePausedCopy(inFlight: Promise<unknown>[], person: string): Promise<{
+    readonly erasing: Promise<LightMyRequestResponse>;
+    readonly met: "waited on her event" | "ran to its end";
+  }> {
+    const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
+    const met = await Promise.race([
+      erasing.then(() => "ran to its end" as const),
+      waitForLockWait("events").then(() => "waited on her event" as const, () => "ran to its end" as const),
+    ]);
+    return { erasing, met };
+  }
+
+  /** A tick of her pack's task (`payload` picks the write path) whose
+   *  change-feed copy is paused before its row goes in, with her erasure
+   *  started then. Written in the tick's transaction, the copy keeps her event
+   *  held, so the erasure waits and then finds the copy; written after the tick
+   *  committed, the erasure would end first and the copy keep her name. */
+  async function tickWithItsCopyPaused(name: string, payload: Record<string, unknown>): Promise<void> {
+    const email = `${name.toLowerCase().replace(/\s+/gu, ".")}-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name, emails: [email] });
+    peopleIds.push(person);
+    leadEmails.push(email);
+    const asked = await enquiry({ email, contactId: person, name });
+    const hold = await bound({ enquiryId: asked, kind: "hold", title: "TEST ONLY Isla's released hold" });
+    await f.pool.query("UPDATE bookings SET status = 'released' WHERE id = $1", [hold.id]);
+    const plan = await approvedPlan("TEST ONLY her plan", "TEST ONLY nothing to note");
+    await laidOutFrom(hold.eventId, plan);
+    const packed = await post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", { eventId: hold.eventId });
+    expect(packed.statusCode, packed.body).toBe(201);
+    const task = only((await f.pool.query<{ id: string }>(`SELECT t.id FROM ops_tasks t JOIN handoff_packs p ON p.id = t.handoff_pack_id
+      WHERE p.config_id = $1 AND t.status = 'todo' LIMIT 1`, [plan])).rows, "task").id;
+    await f.pool.query("UPDATE ops_tasks SET title = $2 WHERE id = $1", [task, `${name}'s place cards`]);
+    if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
+    const holder = new Client({ connectionString: PLATFORM_TARGET });
+    await holder.connect();
+    const inFlight: Promise<unknown>[] = [];
+    let unpause: (() => Promise<void>) | undefined;
+    try {
+      await holder.query("BEGIN");
+      unpause = await pauseChangeFeed(hold.eventId, holder);
+      const doing = kept(inFlight, f.server.inject({ method: "PATCH", url: `/ops-tasks/${task}/status`,
+        headers: f.bearer("admin"), payload }));
+      await waitForStatement("%insert into \"event_plan_changes\"%", "the tick's copy, paused");
+      const { erasing, met } = await erasureBesidePausedCopy(inFlight, person);
+      expect(met).toBe("waited on her event");
+      await holder.query("COMMIT");
+      const erased = await erasing;
+      expect(erased.statusCode, erased.body).toBe(200);
+      const done = await doing;
+      expect(done.statusCode, done.body).toBe(200);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
+      // The trigger goes before the client, so a failing end() cannot leave it.
+      try { await unpause?.(); } finally { await holder.end(); }
+    }
+    expect(await value("SELECT summary AS value FROM event_plan_changes WHERE event_id = $1 AND source_kind = 'ops_task'", [hold.eventId]))
+      .toBe("Task \"Erased's place cards\" moved from todo to in_progress.");
+    expect(await count("event_plan_notifications WHERE event_id = $1 AND body ILIKE $2", [hold.eventId, `%${name}%`])).toBe(0);
+  }
+
+  it("writes a task tick's change-feed copy with the tick: an erasure after the tick finds the copy too", async () => {
+    await tickWithItsCopyPaused("Isla Recorded", { status: "in_progress" });
+  });
+
+  it("writes a replayed tick's change-feed copy with the tick, as a live press does", async () => {
+    await tickWithItsCopyPaused("Isla Replayed", { status: "in_progress", expectedStatus: "todo" });
+  });
+
+  it("writes a logged issue's change-feed copy with the issue: an erasure after the issue finds the copy too", async () => {
+    const email = `isla.logged-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Isla Logged", emails: [email] });
+    peopleIds.push(person);
+    leadEmails.push(email);
+    const asked = await enquiry({ email, contactId: person, name: "Isla Logged" });
+    const hold = await bound({ enquiryId: asked, kind: "hold", title: "TEST ONLY Isla's released hold" });
+    await f.pool.query("UPDATE bookings SET status = 'released' WHERE id = $1", [hold.id]);
+    if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
+    const holder = new Client({ connectionString: PLATFORM_TARGET });
+    await holder.connect();
+    const inFlight: Promise<unknown>[] = [];
+    let unpause: (() => Promise<void>) | undefined;
+    try {
+      await holder.query("BEGIN");
+      unpause = await pauseChangeFeed(hold.eventId, holder);
+      const logging = kept(inFlight, post(`/events/${hold.eventId}/issues`, "admin", {
+        title: "Isla Logged's cake is late", detail: "TEST ONLY Isla Logged is waiting at the door", severity: "attention" }));
+      await waitForStatement("%insert into \"event_plan_changes\"%", "the issue's copy, paused");
+      const { erasing, met } = await erasureBesidePausedCopy(inFlight, person);
+      expect(met).toBe("waited on her event");
+      await holder.query("COMMIT");
+      const erased = await erasing;
+      expect(erased.statusCode, erased.body).toBe(200);
+      const logged = await logging;
+      expect(logged.statusCode, logged.body).toBe(201);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
+      // The trigger goes before the client, so a failing end() cannot leave it.
+      try { await unpause?.(); } finally { await holder.end(); }
+    }
+    expect(await value("SELECT row_to_json(i) AS value FROM (SELECT title, detail FROM event_day_issues WHERE event_id = $1) i", [hold.eventId]))
+      .toEqual({ title: "Erased's cake is late", detail: "TEST ONLY Erased is waiting at the door" });
+    expect(await value("SELECT summary AS value FROM event_plan_changes WHERE event_id = $1 AND source_kind = 'ops_issue'", [hold.eventId]))
+      .toBe("Erased's cake is late: TEST ONLY Erased is waiting at the door");
+    expect(await count("event_plan_notifications WHERE event_id = $1 AND body ILIKE '%Isla Logged%'", [hold.eventId])).toBe(0);
+  });
+
+  it("replays a queued tick beside her erasure: it waits on her event, and its copy quotes the task as the erasure left it", async () => {
+    const email = `isla.queued-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Isla Queued", emails: [email] });
+    peopleIds.push(person);
+    leadEmails.push(email);
+    const asked = await enquiry({ email, contactId: person, name: "Isla Queued" });
+    const hold = await bound({ enquiryId: asked, kind: "hold", title: "TEST ONLY Isla's released hold" });
+    await f.pool.query("UPDATE bookings SET status = 'released' WHERE id = $1", [hold.id]);
+    const plan = await approvedPlan("TEST ONLY her plan", "TEST ONLY nothing to note");
+    await laidOutFrom(hold.eventId, plan);
+    const packed = await post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", { eventId: hold.eventId });
+    expect(packed.statusCode, packed.body).toBe(201);
+    const task = only((await f.pool.query<{ id: string }>(`SELECT t.id FROM ops_tasks t JOIN handoff_packs p ON p.id = t.handoff_pack_id
+      WHERE p.config_id = $1 AND t.status = 'todo' LIMIT 1`, [plan])).rows, "task").id;
+    await f.pool.query("UPDATE ops_tasks SET title = 'Isla Queued''s place cards' WHERE id = $1", [task]);
+    // Something holds her layout, so the erasure stops there holding her
+    // event; a tick the board queued while the task was still to do is then
+    // replayed (#418's path) and must wait on the event, so it reads the task,
+    // and quotes it, as the erasure left it.
+    if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
+    const stopper = new Client({ connectionString: PLATFORM_TARGET });
+    await stopper.connect();
+    const inFlight: Promise<unknown>[] = [];
+    try {
+      await stopper.query("BEGIN");
+      await stopper.query("SELECT id FROM configurations WHERE id = $1 FOR SHARE", [plan]);
+      const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
+      await waitForLockWait("configurations");
+      const replaying = kept(inFlight, f.server.inject({ method: "PATCH", url: `/ops-tasks/${task}/status`,
+        headers: f.bearer("admin"), payload: { status: "in_progress", expectedStatus: "todo" } }));
+      await waitForLockWait("events", "for key share");
+      await stopper.query("COMMIT");
+      const erased = await erasing;
+      expect(erased.statusCode, erased.body).toBe(200);
+      const replayed = await replaying;
+      expect(replayed.statusCode, replayed.body).toBe(200);
+    } finally {
+      await stopper.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
+      await stopper.end();
+    }
+    expect(await value("SELECT row_to_json(t) AS value FROM (SELECT title, status FROM ops_tasks WHERE id = $1) t", [task]))
+      .toEqual({ title: "Erased's place cards", status: "in_progress" });
+    expect(await value("SELECT summary AS value FROM event_plan_changes WHERE event_id = $1 AND source_kind = 'ops_task'", [hold.eventId]))
+      .toBe("Task \"Erased's place cards\" moved from todo to in_progress.");
+    expect(await count("event_plan_notifications WHERE event_id = $1 AND body ILIKE '%Isla Queued%'", [hold.eventId])).toBe(0);
+  });
+
+  it("keeps a tick and a logged issue when the signed-in label is longer than the change feed holds: the copy's label is clipped", async () => {
+    const hold = await bound({ kind: "hold", title: "TEST ONLY a long-label event" });
+    const plan = await approvedPlan("TEST ONLY a long-label plan", "TEST ONLY nothing to note");
+    await laidOutFrom(hold.eventId, plan);
+    const packed = await post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", { eventId: hold.eventId });
+    expect(packed.statusCode, packed.body).toBe(201);
+    const task = only((await f.pool.query<{ id: string }>(`SELECT t.id FROM ops_tasks t JOIN handoff_packs p ON p.id = t.handoff_pack_id
+      WHERE p.config_id = $1 AND t.status = 'todo' LIMIT 1`, [plan])).rows, "task").id;
+    // A sign-in email can run to 255 characters; the change feed's label holds 160.
+    const changeActor = { actorRole: "staff" as const, actorLabel: `${"a".repeat(170)}@example.test` };
+    const ticked = await updateOpsTaskStatus(f.db, { opsTaskId: task, status: "in_progress", actorUserId: f.users.admin, changeActor });
+    expect(ticked.completionEvent?.toStatus).toBe("in_progress");
+    const issue = await createEventDayIssue(f.db, { eventId: hold.eventId, title: "TEST ONLY a long-label issue",
+      detail: "TEST ONLY it is still logged", severity: "info", actorUserId: f.users.admin, changeActor });
+    expect(issue.title).toBe("TEST ONLY a long-label issue");
+    const labels = (await f.pool.query<{ kind: string; label: string }>(
+      "SELECT source_kind AS kind, actor_label AS label FROM event_plan_changes WHERE event_id = $1 ORDER BY source_kind", [hold.eventId])).rows;
+    expect(labels.map((row) => row.kind)).toEqual(["ops_issue", "ops_task"]);
+    for (const row of labels) {
+      expect(row.label.length).toBeLessThanOrEqual(160);
+      expect(row.label.startsWith("aaaa")).toBe(true);
+    }
   });
 
   it("acknowledges a change her erasure deletes: the acknowledgement waits on her event, then finds the change gone", async () => {

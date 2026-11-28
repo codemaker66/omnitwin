@@ -1,0 +1,9 @@
+{
+  "workRoot": "~/credit-runner-work",
+  "ledgerFile": "~/credit-runner-work/ledger.jsonl",
+  "keyDir": "%USERPROFILE%\\.credit-runner-keys",
+  "keyFile": "pot-1.key",
+  "lane": "sandbox",
+  "laneCapUsd": 20,
+  "orgCapUsd": 40
+}

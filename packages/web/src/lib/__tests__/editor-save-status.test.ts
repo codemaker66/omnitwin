@@ -61,6 +61,21 @@ describe("editor save status", () => {
     })).toBe("unsaved");
   });
 
+  // A refused clear of a note leaves nothing unsaved (isDirty false) while its
+  // notice stands, and a save that lands since sets lastSavedAt: the status is
+  // still not saved (ruling R1(b) on #388; delta review at 33a8e0ad, T3).
+  it("reports unsaved, not saved, while a refused clear's notice stands over a layout with nothing left unsaved", () => {
+    expect(deriveEditorSaveStatus({
+      configId: "TEST ONLY layout",
+      isDirty: false,
+      isSaving: false,
+      saveError: "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.",
+      refusedForHeldNote: true,
+      lastSavedAt: new Date(),
+      isOnline: true,
+    })).toBe("unsaved");
+  });
+
   it("does not imply autosave before a real save has happened", () => {
     const copy = copyForEditorSaveStatus("idle");
     expect(copy.label).toBe("Save Layout");

@@ -304,9 +304,14 @@ export async function venueRequestRoutes(
   });
 
   // The escalation sweep as an endpoint, for an external cron and for a
-  // rehearsal on a disposable stack. The API also sweeps on its own short
-  // timer (see ws/diary-live.ts); both are safe to run together because the
-  // claim is a conditional UPDATE, not a schedule.
+  // rehearsal on a disposable stack. The API also sweeps on its own, waking
+  // when something is due (services/escalation-scheduler.ts, started in
+  // ws/diary-live.ts); both are safe to run together because the claim is a
+  // conditional UPDATE, not a schedule. This endpoint shares neither the
+  // scheduler's per-request floors nor its report cadence (#495's review,
+  // LQ5): every call tries every due request, and any it fails on makes the
+  // call an error, so a cron calling it often retries a request that keeps
+  // failing at every call.
   server.post("/:venueId/requests/escalation-pass", { preHandler: [authenticate] }, async (request, reply) => {
     const params = VenueParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
@@ -323,12 +328,22 @@ export async function venueRequestRoutes(
 
     // The pass is house-wide (the claim is per request); every escalation it
     // made is announced to its own venue's boards, and this venue's are counted.
-    const escalated = await runRequestEscalationPass(db, { logger: request.log });
-    for (const item of escalated) {
+    const pass = await runRequestEscalationPass(db, { logger: request.log });
+    for (const item of pass.escalated) {
       publishRequestChange(request, "request.escalated", item.request, item.notificationIds);
       tell(pushForRequestEscalated(db, item.request, item.recipientUserIds, { logger: request.log }), request.log, "request.escalated");
     }
-    const mine = escalated.filter((item) => item.request.venueId === params.data.venueId);
+    // Every escalation is announced first. A request the pass failed on (at
+    // its claim, or at its email) makes the run an error, so the caller (a
+    // cron) and Sentry hear of it (T-768).
+    if (pass.failed.length > 0) {
+      const claims = pass.failed.filter((failure) => failure.step === "claim").length;
+      throw new AggregateError(
+        pass.failed.map((failure) => failure.error),
+        `the escalation pass failed on ${String(pass.failed.length)} request(s): ${String(claims)} at the claim, ${String(pass.failed.length - claims)} at the email`,
+      );
+    }
+    const mine = pass.escalated.filter((item) => item.request.venueId === params.data.venueId);
     return { data: { escalated: mine.length } };
   });
 }
