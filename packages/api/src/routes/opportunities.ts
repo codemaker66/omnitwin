@@ -32,6 +32,12 @@ import { paginate } from "../utils/pagination.js";
 import { canManageCommercial } from "../utils/query.js";
 import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { nextActionForStage } from "../services/deal-next-action.js";
+import {
+  REOPENED_BESIDE_OPEN_DEAL,
+  isOpenDealConflict,
+  openDealAnswer,
+  openDealBeside,
+} from "../services/event-links.js";
 import type { PeopleConn, PeopleTx } from "../services/people-records.js";
 import { mergedPerson } from "./people.js";
 import { lostToRefusal, recordLoss } from "../services/competitor-watch-data.js";
@@ -551,6 +557,13 @@ export async function opportunityRoutes(
     try {
       outcome = await db.transaction(write);
     } catch (error) {
+      // A deal reopened beside another open deal on its event (a platform
+      // admin may move a deal to any stage): the one-open-deal index refused
+      // it, and the open deal is read afresh to name it.
+      if (isOpenDealConflict(error)) {
+        const openDeal = await openDealBeside(db, opportunity.id);
+        return reply.status(409).send(openDeal === null ? RETRY_ANSWER : openDealAnswer(REOPENED_BESIDE_OPEN_DEAL, openDeal));
+      }
       // A deadlock or serialisation failure rolled the whole write back.
       const pgCode = lockConflictOf(error);
       if (pgCode === null) throw error;

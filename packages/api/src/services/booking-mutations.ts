@@ -25,7 +25,14 @@ import {
   type ResequenceResult,
 } from "./hold-hygiene.js";
 import { jointlyPromoted, writePromotionNotices, type HoldExit, type PromotionNotice } from "./hold-promotion.js";
-import { bindBookingToEvent, movePhasesWithBooking, syncEventStatus, syncEventStatuses, type BindTarget } from "./event-binding.js";
+import {
+  bindBookingToEvent,
+  followBookingToEvent,
+  movePhasesWithBooking,
+  syncEventStatus,
+  syncEventStatuses,
+  type BindTarget,
+} from "./event-binding.js";
 import { lockLiveRoom } from "./room-liveness.js";
 
 // ---------------------------------------------------------------------------
@@ -551,6 +558,13 @@ async function updateBookingLocked(
       code: "BOOKING_UPDATE_FAILED",
       error: "Failed to update booking",
     };
+  }
+  // A booking moved to the event its writer named takes its enquiry's link
+  // with it when it was the enquiry's last booking in the old event. The
+  // booking is locked above; the enquiry is locked here, after it, and before
+  // the events below (lock order: bookings, the enquiry, the event).
+  if (updated.eventId !== null && updated.eventId !== row.eventId) {
+    await followBookingToEvent(conn, { enquiryId: updated.enquiryId, fromEventId: row.eventId, toEventId: updated.eventId });
   }
   // A move reaches its event (release audit events-diary-1/-3): the event's
   // phases on the booking's day follow it, and the event's dates follow its

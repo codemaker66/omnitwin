@@ -25,6 +25,16 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/hold-promotion-postgres.test.ts",
   // The bind (migration 0090): zero holds or inks without an event.
   "src/__tests__/booking-event-bind-postgres.test.ts",
+  // The spine's links migration (`*_event_spine_links`), on a database of its own: venue-pinned keys, a link moved never emptied, one open deal per event.
+  "src/__tests__/event-spine-links-schema-postgres.test.ts",
+  // ...and its join of old records, run by the migrator over rows written before it: never a guess, and repeatable.
+  "src/__tests__/event-spine-links-migration-postgres.test.ts",
+  // ...and the bind: a hold joins its enquiry's own event first and keeps the enquiry's link in step.
+  "src/__tests__/event-spine-bind-postgres.test.ts",
+  // ...and the count: records without their event, nine numbers that must read zero.
+  "src/__tests__/event-spine-invariant-postgres.test.ts",
+  // ...and the operator's read the nightly run and a run by hand make: the join, both counts, one line of JSON.
+  "src/__tests__/event-rules-check-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
   // A booking stored with an empty title keeps its venue's Diary range readable (API-9).
   "src/__tests__/calendar-untitled-booking-postgres.test.ts",
@@ -86,6 +96,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/people-merge-postgres.test.ts",
   // Erasing a person: every copy at the venue, the merged records, the booking a venue keeps.
   "src/__tests__/people-erasure-postgres.test.ts",
+  // ...and the events the spine's links tie to them, on a database of its own (the join runs there): their own, and near another live person's.
+  "src/__tests__/people-erasure-spine-links-postgres.test.ts",
   // Deal writes during a merge or undo: never to the closed record, no deadlock, RETRY on a lock conflict.
   "src/__tests__/opportunity-merge-race-postgres.test.ts",
   // Two stage moves of one deal at once: one stands, the other writes nothing (audit dash-commercial-6).
