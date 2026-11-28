@@ -315,7 +315,8 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
       return start();
     }
     const execute = (query: Parameters<Database["execute"]>[0]): Promise<unknown> =>
-      steered(() => real.execute(query), () => Promise.resolve({ rows: [] }));
+      // `unknown`: the stand-in answer is not the driver's full result type, only what the store functions read.
+      steered<unknown>(() => real.execute(query), () => Promise.resolve({ rows: [] }));
     const transaction = <T>(work: (tx: JobTransaction) => Promise<T>, config?: Parameters<Database["transaction"]>[1]): Promise<T> =>
       steered(() => real.transaction(work, config), () => work(emptyTx));
     return new Proxy(real, {

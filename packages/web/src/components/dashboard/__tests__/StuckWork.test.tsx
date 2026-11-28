@@ -833,6 +833,66 @@ describe("StuckWork", () => {
     expect(newsRegion()).toBe(region);
   });
 
+  it("a second self-test empties the live region while it runs, and it stays empty when that run cannot be started", async () => {
+    let failToStart: (reason: Error) => void = () => undefined;
+    const cannotStart = new Promise<SelfTestResult>((_resolve, reject) => { failToStart = reject; });
+    mocks.getStuckWork.mockResolvedValue(stuck());
+    mocks.runSelfTest.mockResolvedValueOnce(selfTestAnswer("done")).mockReturnValueOnce(cannotStart);
+    render(<StuckWork />);
+    await screen.findByText("Nothing is stuck.");
+    fireEvent.click(screen.getByRole("button", { name: "Run the self-test" }));
+    await waitFor(() => { expect(newsRegion().textContent).toBe("The self-test ran."); });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run the self-test" }));
+    expect(screen.getByText("Running the self-test…")).toBeDefined();
+    expect(newsRegion().textContent).toBe("");
+    await act(async () => {
+      failToStart(new ApiError(500, "The self-test could not be started.", "X"));
+      await cannotStart.catch(() => undefined);
+    });
+    expect(await screen.findByText("The self-test could not be started.")).toBeDefined();
+    expect(newsRegion().textContent).toBe("");
+  });
+
+  it("says the same verdict twice as a change: the live region is empty while the second self-test runs", async () => {
+    const second = deferred<SelfTestResult>();
+    mocks.getStuckWork.mockResolvedValue(stuck());
+    mocks.runSelfTest.mockResolvedValueOnce(selfTestAnswer("done")).mockReturnValueOnce(second.promise);
+    render(<StuckWork />);
+    await screen.findByText("Nothing is stuck.");
+    fireEvent.click(screen.getByRole("button", { name: "Run the self-test" }));
+    await waitFor(() => { expect(newsRegion().textContent).toBe("The self-test ran."); });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run the self-test" }));
+    expect(newsRegion().textContent).toBe("");
+    second.resolve(selfTestAnswer("done"));
+    await waitFor(() => { expect(newsRegion().textContent).toBe("The self-test ran."); });
+  });
+
+  it("empties an earlier outcome from the live region while a new row action runs", async () => {
+    const closing = deferred<undefined>();
+    const sheet = job(J2, { kind: "sheet.send", venueName: null, venueId: null });
+    mocks.getStuckWork
+      .mockResolvedValueOnce(stuck({ jobs: [job(J1), sheet] }))
+      .mockResolvedValueOnce(stuck({ jobs: [sheet] }))
+      .mockResolvedValue(stuck());
+    mocks.retryStuckJob.mockResolvedValue(undefined);
+    mocks.closeStuckJob.mockReturnValueOnce(closing.promise);
+    render(<StuckWork />);
+    fireEvent.click(within(await screen.findByRole("row", { name: /^email\.send/ })).getByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(newsRegion().textContent).toBe("Put back on the list: email.send, Test Hall."); });
+
+    fireEvent.click(within(screen.getByRole("row", { name: /^sheet\.send/ })).getByRole("button", { name: "Close with a note" }));
+    // Opening the note is not an action: the outcome stays until the Close is sent.
+    expect(newsRegion().textContent).toBe("Put back on the list: email.send, Test Hall.");
+    fireEvent.change(noteBox("sheet.send", "The platform"), { target: { value: "Sent by hand" } });
+    fireEvent.click(screen.getByRole("button", { name: "Close the job" }));
+    expect(screen.getByText("Closing it…")).toBeDefined();
+    expect(newsRegion().textContent).toBe("");
+    await act(async () => { closing.resolve(undefined); await closing.promise; });
+    await waitFor(() => { expect(newsRegion().textContent).toBe("Closed: sheet.send, The platform."); });
+  });
+
   it("makes each row's kind its header cell, describes its buttons by that row, and names its note for that job", async () => {
     mocks.getStuckWork.mockResolvedValue(stuck({ jobs: [job(J1, { kind: "alpha.send" }), job(J2, { kind: "beta.send", venueName: "Other Hall" })] }));
     render(<StuckWork />);

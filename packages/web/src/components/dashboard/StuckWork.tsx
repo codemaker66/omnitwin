@@ -194,6 +194,9 @@ export function StuckWork(): ReactElement {
   const runRowAction = useCallback(async (job: StuckJob, work: RowWork, run: () => Promise<void>): Promise<boolean> => {
     if (busyIds.current.has(job.id)) return false;
     busyIds.current.add(job.id);
+    // A new action has really begun (an ignored press keeps the last outcome): its outcome replaces the old one,
+    // and the same words said again are a change a screen reader reads out.
+    setNews("");
     setBusy((current) => new Map(current).set(job.id, work));
     // A refusal for a job that has left the list has no row to stand in; it clears with the next action.
     setFailures((current) => new Map([...current].filter(([id]) => id !== job.id && jobIds.current.has(id))));
@@ -232,6 +235,8 @@ export function StuckWork(): ReactElement {
   const startSelfTest = async (): Promise<void> => {
     if (selfTestRunning.current) return;
     selfTestRunning.current = true;
+    // As for a row action: the old verdict goes as the new run begins.
+    setNews("");
     setSelfTest({ state: "running" });
     let answer: SelfTestResult | null = null;
     let failed: SelfTest | null = null;
