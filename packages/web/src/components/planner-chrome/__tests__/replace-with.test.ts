@@ -1,10 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
+import { carriedNoteIds, heldNoteIds, registerHeldNotes } from "../../../lib/guest-plan-notes.js";
 import type { PlacedItem } from "../../../lib/placement.js";
 import { armOrCancel } from "../card-keys.js";
 import { replacePreview, replaceWith } from "../replace-with.js";
 import { useCardsStore } from "../../../stores/cards-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
+import { useEditorStore } from "../../../stores/editor-store.js";
+import { usePlacementNoticeStore } from "../../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { usePlannerChromeStore } from "../../../stores/planner-chrome-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
@@ -40,6 +43,11 @@ beforeEach(() => {
   usePlannerChromeStore.getState().clearReceipt();
 });
 
+afterEach(() => {
+  // Back to the editor store's own reading of the open plan's held notes, as it registers it.
+  registerHeldNotes(() => heldNoteIds(useEditorStore.getState()), () => carriedNoteIds(useEditorStore.getState()));
+});
+
 describe("replacing", () => {
   it("replaces the selection with the card, posts lane E's receipt, and leaves replace mode", () => {
     useCardsStore.getState().startReplacing("Replace 2 Round 6 ft with…");
@@ -63,6 +71,18 @@ describe("replacing", () => {
     expect(preview?.ok).toBe(true);
     expect(preview?.text).toMatch(/^Replace /u);
     expect(usePlacementStore.getState().placedItems.some((piece) => piece.id === "t1")).toBe(true); // nothing changed
+  });
+
+  // #388: a table holding a note this browser is not shown is never replaced, and the card pointed at says so
+  // first, in the command's own sentence (lib/replace: a preview is given the command's answer).
+  it("says before it is pressed that a table holding a note this browser is not shown is not replaced", () => {
+    registerHeldNotes(() => new Set(["t1"]));
+    const refusal = "Nothing was replaced: Table 1 has a note that cannot be shown here.";
+    expect(replacePreview("long-table")).toEqual({ ok: false, text: refusal });
+    useCardsStore.getState().startReplacing("Replace 2 Round 6 ft with…");
+    expect(replaceWith("long-table")).toBe(false);
+    expect(usePlacementStore.getState().placedItems.some((piece) => piece.id === "t1")).toBe(true);
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe(refusal);
   });
 
   it("refuses, for staff, when the store holds too few, and stays in replace mode", () => {

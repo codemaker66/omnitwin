@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 427 cases. Four hosted CPU shards execute
-422 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 432 cases. Four hosted CPU shards execute
+427 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -212,6 +212,20 @@ PATCH body asserted (`plan-event-kind.spec.ts`). The rest of the suite runs on a
 device told not to ask, through the default `storageState` in
 `playwright.config.ts`, so no other identity or status changes; this changes the
 inventory from 422 to 427 and the CPU partition from 417 to 422.
+
+After it, the admission of 12 November 2026, placed after #253's when master was
+merged into #388 on 22 November 2026, adds five ordinary cases for a table
+holding a note this browser is not shown (PR #388, the web half of the guest plan notes),
+against an in-memory layout server given #389's rules for held notes: in
+today's chrome Delete leaves such a table and the notice names it, a save
+refused for leaving one out says the server's sentence with no Retry, and a
+table holding the person's own note goes in two saves; in the new chrome Keep
+mine keeps a table someone has since written a note on, and Undo will not take
+one away (`planner-held-notes.spec.ts`); this changes the inventory from 427
+to 432 and the CPU partition from 422 to 427. On 22 November 2026 the spec reads
+the new chrome's line in its receipt and its Keep mine case goes on to a reload
+that puts a table back; no identity changed, and the admission's source commit
+and hashes were taken again from that spec.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

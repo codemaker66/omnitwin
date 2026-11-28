@@ -241,15 +241,15 @@ export interface PdfRule {
 
 const STRAIGHT_STROKE = /(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|(-?[\d.]+) (-?[\d.]+) m\s+(-?[\d.]+) (-?[\d.]+) l\s+(?!-?[\d.]+ -?[\d.]+ l)(?:([\d.]+) w)?/gu;
 
-/**
- * Every horizontal line drawn as one segment, page by page: the sheet's
- * rules. A segment that carries on into another (a shape's edge) is not one.
- */
-export function pdfRules(buf: Buffer): PdfRule[][] {
+/** One straight segment drawn alone, in page points, with the stroke width set right after it, if any. */
+interface Segment { readonly x1: number; readonly y1: number; readonly x2: number; readonly y2: number; readonly weight: number | null }
+
+/** Every straight line drawn as one segment, page by page. A segment that carries on into another (a shape's edge) is not one. */
+function pdfSegments(buf: Buffer): Segment[][] {
   const objects = objectsOf(buf);
   return pageIds(objects).map((id) => {
     const content = pdfStream(objects.get(refOf(objects.get(id) ?? "", "Contents") ?? "") ?? "");
-    const rules: PdfRule[] = [];
+    const segments: Segment[] = [];
     let ctm: Matrix = IDENTITY;
     const saved: Matrix[] = [];
     for (const op of content.matchAll(STRAIGHT_STROKE)) {
@@ -261,10 +261,35 @@ export function pdfRules(buf: Buffer): PdfRule[][] {
       }
       const [x1, y1] = apply(ctm, Number(op[8]), Number(op[9]));
       const [x2, y2] = apply(ctm, Number(op[10]), Number(op[11]));
-      if (Math.abs(y1 - y2) < 0.01) rules.push({ x: Math.min(x1, x2), x2: Math.max(x1, x2), y: y1, weight: op[12] === undefined ? null : Number(op[12]) });
+      segments.push({ x1, y1, x2, y2, weight: op[12] === undefined ? null : Number(op[12]) });
     }
-    return rules;
+    return segments;
   });
+}
+
+/**
+ * Every horizontal line drawn as one segment, page by page: the sheet's
+ * rules. A segment that carries on into another (a shape's edge) is not one.
+ */
+export function pdfRules(buf: Buffer): PdfRule[][] {
+  return pdfSegments(buf).map((segments) => segments
+    .filter((segment) => Math.abs(segment.y1 - segment.y2) < 0.01)
+    .map((segment) => ({ x: Math.min(segment.x1, segment.x2), x2: Math.max(segment.x1, segment.x2), y: segment.y1, weight: segment.weight })));
+}
+
+export interface PdfUpright {
+  /** Distance from the page's left, PDF points. */
+  readonly x: number;
+  /** The lower end and the upper end, PDF points from the page's bottom (as a text line's baseline). */
+  readonly y: number;
+  readonly y2: number;
+}
+
+/** Every vertical line drawn as one segment, page by page: the rules standing between the header's facts. */
+export function pdfUprights(buf: Buffer): PdfUpright[][] {
+  return pdfSegments(buf).map((segments) => segments
+    .filter((segment) => Math.abs(segment.x1 - segment.x2) < 0.01 && Math.abs(segment.y1 - segment.y2) >= 0.01)
+    .map((segment) => ({ x: segment.x1, y: Math.min(segment.y1, segment.y2), y2: Math.max(segment.y1, segment.y2) })));
 }
 
 /**

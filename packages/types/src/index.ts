@@ -392,6 +392,8 @@ export {
   EventDayChangesSinceLastHandoffSchema,
   EventDayOpsBoardSchema,
   UpdateOpsTaskStatusInputSchema,
+  UpdateOpsTaskStatusConflictSchema,
+  MAX_EARLIER_PRESS_KEYS,
   CreateEventDayIssueInputSchema,
   UpdateEventDayIssueInputSchema,
   type EventDayIssueId,
@@ -413,6 +415,7 @@ export {
   type EventDayChangesSinceLastHandoff,
   type EventDayOpsBoard,
   type UpdateOpsTaskStatusInput,
+  type UpdateOpsTaskStatusConflict,
   type CreateEventDayIssueInput,
   type UpdateEventDayIssueInput,
 } from "./event-day-ops.js";

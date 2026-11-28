@@ -26,13 +26,19 @@ export function ClerkAuthBridge(): null {
       useAuthStore.getState().setLoading(true);
     } else if (isLoaded && isSignedIn) {
       setTokenGetter(getToken);
-      useAuthStore.getState().beginAccessCheck(email);
+      // Each route group mounts its own bridge. A person already confirmed for
+      // this same identity stays on the page while /auth/me is asked again
+      // behind it; its answer applies a changed role, or a refusal, as a first
+      // check's would. Any other identity is checked from nobody.
+      useAuthStore.getState().beginAccessCheck(email, identityId ?? null);
       // An explicit retry after email verification must not reuse older JWT claims.
       const request = retry > 0
         ? getToken({ skipCache: true }).then(() => cancelled ? null : getCurrentAuthUser())
         : getCurrentAuthUser();
       void request.then((dbUser) => {
-        if (!cancelled && dbUser !== null) useAuthStore.getState().setUser(dbUser);
+        // A confirmation: the same person, field for field, keeps the object
+        // held (auth-store.ts, confirmUser); a sign-in reached it from nobody.
+        if (!cancelled && dbUser !== null) useAuthStore.getState().confirmUser(dbUser);
       }).catch((error: unknown) => {
         if (cancelled) return;
         const pending = error instanceof ApiError && error.code === "INVITATION_REQUIRED";
@@ -43,12 +49,19 @@ export function ClerkAuthBridge(): null {
         );
       });
     } else {
+      // Only a sign-out (or a sign-in that cannot load) lets go of the getter.
       setTokenGetter(null);
       useAuthStore.getState().setUser(null);
     }
+    // Leaving the getter in place as the bridge unmounts is deliberate. What a
+    // page sends as it goes (the planner's last save, the action log behind
+    // it) is built after every cleanup of that route change, and the next page
+    // may have no sign-in provider at all. Clerk's getToken reads the browser's
+    // one live session each time it is called and answers null once nobody is
+    // signed in, so it never speaks for a person who has signed out, nor for
+    // the last person once another has signed in.
     return () => {
       cancelled = true;
-      setTokenGetter(null);
     };
   }, [getToken, isLoaded, isSignedIn, signInUnavailable, identityId, email, retry]);
 

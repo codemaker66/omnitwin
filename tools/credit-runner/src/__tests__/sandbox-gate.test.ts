@@ -1,0 +1,663 @@
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { gitEnv } from "../git.js";
+import { reviewMarkdown } from "../sandbox/launcher.js";
+import { inspectPatches, type PatchInspection } from "../sandbox/patches.js";
+import { reviewRun, type Review } from "../sandbox/review.js";
+import type { SessionRunResult } from "../sandbox/session.js";
+import { parseTask } from "../task.js";
+import { BASE_FILES, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit } from "./patch-fixture.js";
+
+// The review removes its throwaway repository when it is done. A test that sets
+// `look` sees that repository once the inspection has finished with it, before
+// the removal; every other call passes straight through.
+const throwaway = vi.hoisted(() => ({ look: undefined as ((repo: string, baseSha: string) => void) | undefined }));
+vi.mock("../sandbox/base-repo.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../sandbox/base-repo.js")>();
+  function withBaseCommit<T>(repoUrl: string, sha: string, use: (repo: string, scratch: string) => Promise<T>, log?: (line: string) => void): Promise<T> {
+    return actual.withBaseCommit(
+      repoUrl,
+      sha,
+      async (repo, scratch) => {
+        const result = await use(repo, scratch);
+        throwaway.look?.(repo, sha);
+        return result;
+      },
+      log,
+    );
+  }
+  return { ...actual, withBaseCommit };
+});
+
+// The patch gate's binary rule, read against what git itself prints for each
+// commit (`git log -p`, format-patch): "Binary files differ" only where git
+// calls a file binary and the commit changes its content.
+
+let root = "";
+let count = 0;
+beforeAll(async () => {
+  root = await mkdtemp(path.join(tmpdir(), "credit-runner-gate-"));
+});
+afterAll(async () => {
+  await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+});
+
+/** Each test makes and reads real repositories: generous for a slow disk, where one git call can take a second. */
+const SLOW = 180_000;
+
+/** A base file holding a NUL on its second line, within git's first 8,000 bytes. */
+const BINARY = `${["header", "\u0000", ...Array.from({ length: 30 }, (_, index) => `line ${String(index + 1)}`)].join("\n")}\n`;
+const OTHER_BINARY = BINARY.replace("header", "another");
+const TEXT = `${Array.from({ length: 20 }, (_, index) => `text ${String(index + 1)}`).join("\n")}\n`;
+const BASE: Readonly<Record<string, string>> = {
+  ...BASE_FILES,
+  "assets/m.bin": BINARY,
+  "assets/k.bin": OTHER_BINARY,
+  "docs/t.md": TEXT,
+  ".gitattributes": "*.dat -diff\n",
+  "data/table.dat": "1 2\n",
+};
+
+/** Makes the commits on the base above, writes their format-patch files, and inspects them as the review does. */
+async function inspect(commits: readonly Commit[], formatPatchArgs: readonly string[] = []): Promise<PatchInspection & { readonly patchText: string }> {
+  count += 1;
+  const dir = path.join(root, String(count));
+  const made = await patchFixture(dir, commits, { baseFiles: BASE, formatPatchArgs });
+  const saved = path.join(dir, "saved");
+  await mkdir(saved);
+  const files: string[] = [];
+  for (const [name, text] of Object.entries(made.patches)) {
+    const file = path.join(saved, name);
+    await writeFile(file, text);
+    files.push(file);
+  }
+  const inspection = await inspectPatches(files, { baseSha: made.base, repoUrl: made.url });
+  expect(inspection.problems).toEqual([]);
+  return { ...inspection, patchText: Object.values(made.patches).join("") };
+}
+
+describe("the patch gate's binary rule, commit by commit", () => {
+  it("counts a NUL that one commit adds and a later one takes out as a binary change, though the net change is text", async () => {
+    // Written as text, so no binary patch section names the file: only git's diff of each commit can.
+    // The last commit leaves the file alone, so neither the net change nor the last step shows it.
+    const added = await inspect(
+      [
+        { subject: "Add a line", write: { "docs/t.md": TEXT.replace("text 3\n", "text 3\nsec\u0000ret\n") } },
+        { subject: "Take it out", write: { "docs/t.md": TEXT } },
+        { subject: "Edit the readme", write: { "README.md": "# Fixture, edited\n" } },
+      ],
+      ["--text"],
+    );
+    expect(added.patchText).toContain("+sec\u0000ret");
+    expect(added.patchText).not.toContain("GIT binary patch");
+    expect(added.binary).toEqual(["docs/t.md"]);
+  }, SLOW);
+
+  it("counts the base's binary file edited by one commit and put back by the next: each commit is a binary change", async () => {
+    const restored = await inspect(
+      [
+        { subject: "Edit the asset", write: { "assets/m.bin": BINARY.replace("line 25", "line twenty-five") } },
+        { subject: "Put it back", write: { "assets/m.bin": BINARY } },
+      ],
+      ["--text"],
+    );
+    expect(restored.binary).toEqual(["assets/m.bin"]);
+    expect(restored.changed).toContain("M assets/m.bin");
+  }, SLOW);
+
+  it("does not count a pure rename or a mode change of a binary file, which git shows without its content", async () => {
+    // One commit each, so each is judged alone. format-patch writes them with no binary section:
+    // "similarity index 100%", "old mode / new mode", or both.
+    const moved = await inspect([
+      { subject: "Move the asset and make it executable", rename: { "assets/m.bin": "assets/n.bin" }, chmodX: ["assets/n.bin"] },
+      { subject: "Make the other executable", chmodX: ["assets/k.bin"] },
+      { subject: "Move the other", rename: { "assets/k.bin": "assets/j.bin" } },
+      // A file the base's attributes call binary, renamed to a name they do not: the same content, nothing to read.
+      { subject: "Rename the table", rename: { "data/table.dat": "data/table.txt" } },
+    ]);
+    expect(moved.patchText).toContain("similarity index 100%");
+    expect(moved.patchText).toContain("new mode 100755");
+    expect(moved.patchText).not.toMatch(/GIT binary patch|Binary files/u);
+    expect(moved.binary).toEqual([]);
+    expect(moved.changed).toEqual(expect.arrayContaining(["A assets/n.bin", "R assets/m.bin", "A assets/j.bin", "A data/table.txt", "R data/table.dat"]));
+  }, SLOW);
+
+  it("still counts a binary file renamed with its content changed, or copied", async () => {
+    const edited = await inspect([
+      { subject: "Move and edit", write: { "assets/m.bin": BINARY.replace("line 25", "line twenty-five") }, rename: { "assets/m.bin": "assets/n.bin" } },
+      { subject: "Copy the other", write: { "assets/k2.bin": OTHER_BINARY } },
+    ]);
+    expect(edited.patchText).toMatch(/similarity index 9\d%/u);
+    expect([...edited.binary].sort()).toEqual(["assets/k2.bin", "assets/m.bin", "assets/n.bin"]);
+  }, SLOW);
+
+  it("still counts a binary file deleted by one commit and added back under another name by the next, as each commit shows it", async () => {
+    // The net change is an exact rename; each commit on its own deletes or adds binary content.
+    const split = await inspect([
+      { subject: "Delete the asset", remove: ["assets/m.bin"] },
+      { subject: "Add it back elsewhere", write: { "assets/n.bin": BINARY } },
+    ]);
+    expect([...split.binary].sort()).toEqual(["assets/m.bin", "assets/n.bin"]);
+  }, SLOW);
+});
+
+describe("the throwaway repository the patch gate reads in", () => {
+  it("still lacks every blob of the base that no commit touches after a series of two commits", async () => {
+    // The base is fetched without blobs, and git fetches one only when a command
+    // reads it. The tree written between the two steps must not fetch the rest
+    // of the base: in the real repository that is all of master's media.
+    const untouched = ["assets/k.bin", "assets/m.bin", "data/table.dat", PAGE_CHECK, PAGE_CHECK_TEST];
+    const seen: { readonly blobs: ReadonlyMap<string, string>; readonly missing: ReadonlySet<string> }[] = [];
+    throwaway.look = (repo, baseSha) => {
+      const read = (args: readonly string[]): string =>
+        execFileSync("git", ["-C", repo, "-c", "core.quotePath=false", ...args], { encoding: "utf8", env: gitEnv() });
+      const blobs = new Map<string, string>();
+      for (const entry of read(["ls-tree", "-r", "-z", baseSha]).split("\0")) {
+        const match = /^[0-7]{6} blob ([0-9a-f]+)\t([\s\S]+)$/u.exec(entry);
+        if (match !== null) blobs.set(match[2] ?? "", match[1] ?? "");
+      }
+      const missing = new Set(
+        read(["rev-list", "--objects", "--missing=print", baseSha])
+          .split("\n")
+          .filter((line) => line.startsWith("?"))
+          .map((line) => line.slice(1)),
+      );
+      seen.push({ blobs, missing });
+    };
+    try {
+      await inspect([
+        { subject: "Edit the notes", write: { "docs/t.md": TEXT.replace("text 3\n", "text three\n") } },
+        { subject: "Edit the readme", write: { "README.md": "# Fixture, edited\n" } },
+      ]);
+    } finally {
+      throwaway.look = undefined;
+    }
+    expect(seen).toHaveLength(1);
+    const blobs = seen[0]?.blobs ?? new Map<string, string>();
+    const missing = seen[0]?.missing ?? new Set<string>();
+    expect(untouched.filter((file) => !blobs.has(file))).toEqual([]);
+    // Fetched into the throwaway repository though nothing in the series reads it.
+    expect(untouched.filter((file) => !missing.has(blobs.get(file) ?? ""))).toEqual([]);
+  }, SLOW);
+});
+
+/** A finished session whose outputs are `outputs` and whose verifier passed on the given commits. */
+function sessionResult(outputs: readonly string[], head: string, commits: readonly string[]): SessionRunResult {
+  return {
+    sessionId: "sesn_gate",
+    status: "idle",
+    stopped: true,
+    archived: false,
+    runningAfterFinish: false,
+    stopInterrupted: false,
+    stopReason: "end_turn",
+    timedOut: false,
+    listCostUsd: 1,
+    activeSeconds: 60,
+    requests: 1,
+    inputTokens: 1,
+    outputTokens: 1,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    verify: { ok: true, head, problems: [], commits, flags: [], baseTail: null },
+    verifyRuns: 1,
+    outcome: null,
+    errors: [],
+    deniedAsks: 0,
+    outputs,
+    outputNames: Object.fromEntries(outputs.map((file) => [file, path.basename(file)])),
+    refusedOutputs: [],
+    leftOutputs: [],
+  };
+}
+
+/**
+ * Makes the commits on `baseFiles`, saves their format-patch files and
+ * diff.patch under the launcher's names, and reviews them as the launcher does.
+ * `rewrite` edits the saved texts first: a path the fixture cannot make on disk.
+ */
+async function review(commits: readonly Commit[], baseFiles: Readonly<Record<string, string>>, rewrite: (text: string) => string = (text) => text): Promise<Review> {
+  count += 1;
+  const dir = path.join(root, String(count));
+  const made = await patchFixture(dir, commits, { baseFiles });
+  const saved = path.join(dir, "outputs");
+  await mkdir(saved);
+  const outputs: string[] = [];
+  for (const [index, text] of Object.values(made.patches).entries()) {
+    const file = path.join(saved, `patch-${String(index + 1).padStart(4, "0")}.patch`);
+    await writeFile(file, rewrite(text));
+    outputs.push(file);
+  }
+  const diffFile = path.join(saved, "diff.patch");
+  await writeFile(diffFile, rewrite(made.diff));
+  outputs.push(diffFile);
+  return reviewRun(sessionResult(outputs, made.head, made.commits), { baseSha: made.base, repoUrl: made.url });
+}
+
+/** Agent instructions, deploy config, install-time code and editor tasks, each with the label a rejection names; `atBase` files exist before the run and are edited, the rest are created. */
+const NEWLY_PROTECTED: readonly { readonly file: string; readonly label: string; readonly atBase: boolean }[] = [
+  { file: "AGENTS.md", label: "agent instructions", atBase: true },
+  { file: "CLAUDE.md", label: "agent instructions", atBase: true },
+  { file: "packages/web/AGENTS.md", label: "agent instructions", atBase: false },
+  { file: "AGENTS.override.md", label: "agent instructions", atBase: false },
+  { file: "packages/web/CLAUDE.md", label: "agent instructions", atBase: false },
+  { file: "CLAUDE.local.md", label: "agent instructions", atBase: false },
+  { file: "GOAL.md", label: "agent goals", atBase: true },
+  { file: "goals/EXECUTION.md", label: "agent goals", atBase: true },
+  { file: ".claude/agents/reviewer.md", label: "Claude Code config", atBase: true },
+  { file: ".claude/skills/neon/SKILL.md", label: "Claude Code config", atBase: true },
+  { file: ".claude/conventions/shipping.md", label: "Claude Code config", atBase: true },
+  { file: ".claude/gotchas/arg-scope.md", label: "Claude Code config", atBase: true },
+  { file: ".claude/commands/ship.md", label: "Claude Code config", atBase: false },
+  { file: ".claudeignore", label: "Claude Code ignore file", atBase: true },
+  { file: "skills-lock.json", label: "agent skills lock", atBase: true },
+  { file: ".railway/railway.ts", label: "Railway config", atBase: true },
+  { file: ".railwayignore", label: "Railway config", atBase: true },
+  { file: "infra/runpod/bootstrap.sh", label: "infrastructure config", atBase: true },
+  { file: "patches/three@0.186.0.patch", label: "pnpm dependency patch, applied at install", atBase: true },
+  { file: ".pnpmfile.cjs", label: "pnpm hook file, run at install", atBase: false },
+  { file: "packages/api/.pnpmfile.cjs", label: "pnpm hook file, run at install", atBase: false },
+  { file: "pnpm-workspace.yaml", label: "pnpm workspace config", atBase: true },
+  { file: ".vscode/tasks.json", label: "VS Code config", atBase: false },
+  { file: ".devcontainer/devcontainer.json", label: "dev container config", atBase: false },
+  { file: ".devcontainer.json", label: "dev container config", atBase: false },
+];
+
+/** Names close to those files that a run may still change. */
+const NEARBY = ["docs/agents-guide.md", "claude.md.txt", "src/patches/x.ts", "docs/GOAL.md", "docs/goals/README.md", "packages/web/src/infra/client.ts"];
+
+describe("the protected paths, read by the review from real patches", () => {
+  it("rejects a change to each agent-instruction, deploy, install-time and editor file under its label, and lets nearby files through", async () => {
+    const base = { ...BASE_FILES, ...Object.fromEntries(NEWLY_PROTECTED.filter((entry) => entry.atBase).map((entry) => [entry.file, "at the base\n"])), "docs/agents-guide.md": "# Guide\n" };
+    const result = await review(
+      [
+        { subject: "Change the agent, deploy, install and editor files", write: Object.fromEntries(NEWLY_PROTECTED.map((entry) => [entry.file, "changed by the run\n"])) },
+        { subject: "Change nearby files", write: Object.fromEntries(NEARBY.map((file) => [file, "changed by the run\n"])) },
+      ],
+      base,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual(NEWLY_PROTECTED.map((entry) => `protected path changed: ${entry.file} (${entry.label})`).sort());
+    // Edits and new files alike: the review read each from the patches.
+    expect(result.changed).toEqual(expect.arrayContaining(NEWLY_PROTECTED.map((entry) => `${entry.atBase ? "M" : "A"} ${entry.file}`)));
+  }, SLOW);
+
+  it("passes a run that changes only the nearby files", async () => {
+    const result = await review([{ subject: "Change nearby files", write: Object.fromEntries(NEARBY.map((file) => [file, "changed by the run\n"])) }], { ...BASE_FILES, "docs/agents-guide.md": "# Guide\n" });
+    expect(result.reasons).toEqual([]);
+    expect(result.verdict).toBe("ready-for-review");
+  }, SLOW);
+});
+
+/**
+ * Install-time config at the root and in a workspace package, each as a run
+ * might write it, with the label a rejection names. The root and workspace
+ * .pnpmfile.cjs and the root pnpm-workspace.yaml are planted by the test above.
+ */
+const INSTALL_CONFIG: readonly { readonly file: string; readonly text: string; readonly label: string }[] = [
+  { file: ".npmrc", text: "ignore-scripts=false\n", label: "npm config" },
+  { file: "packages/web/.npmrc", text: "script-shell=./tools/shell.mjs\n", label: "npm config" },
+  // pnpm takes the nearest pnpm-workspace.yaml above where it runs as the workspace's root.
+  { file: "packages/web/pnpm-workspace.yaml", text: "packages:\n  - ../../tools/*\nonlyBuiltDependencies:\n  - esbuild\n", label: "pnpm workspace config" },
+  // pnpm reads a folder's package.json5, or else its package.yaml, when it has no package.json.
+  { file: "package.yaml", text: "name: fixture\nscripts:\n  postinstall: node ./evil.mjs\n", label: "package manifest that pnpm reads in place of package.json" },
+  {
+    file: "packages/web/package.json5",
+    text: "{\n  name: '@fixture/web',\n  scripts: { postinstall: 'node ./evil.mjs' },\n}\n",
+    label: "package manifest that pnpm reads in place of package.json",
+  },
+  // gyp runs a `<!(...)` command while it configures the build.
+  {
+    file: "packages/api/binding.gyp",
+    text: '{ "variables": { "x": "<!(node ./tools/x.mjs)" }, "targets": [] }\n',
+    label: "native addon build file, which pnpm builds with node-gyp on install",
+  },
+  // A lifecycle hook pnpm runs beside the root's postinstall, and a stand-in for the compiler that postinstall runs.
+  { file: "node_modules/.hooks/postinstall", text: "#!/bin/sh\nnode ./tools/x.mjs\n", label: "installed packages folder" },
+  { file: "packages/types/node_modules/typescript/bin/tsc", text: "require('../../../../../tools/x.cjs');\n", label: "installed packages folder" },
+  // corepack reads COREPACK_ settings from it beside the package.json it takes the package manager from.
+  { file: ".corepack.env", text: "COREPACK_NPM_REGISTRY=https://registry.example.invalid\nCOREPACK_INTEGRITY_KEYS=0\n", label: "corepack config, read before pnpm runs" },
+  { file: "packages/web/.corepack.env", text: "COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1\n", label: "corepack config, read before pnpm runs" },
+];
+
+/** What the fixture writes in place of node_modules, which a global ignore file could keep out of a commit; the patches name node_modules. */
+const NODE_MODULES_STAND_IN = "nm-stand-in";
+
+describe("install-time config files, read by the review from real patches", () => {
+  it("rejects each at the root and in a workspace package under its label", async () => {
+    const write = Object.fromEntries(INSTALL_CONFIG.map(({ file, text }) => [file.replaceAll("node_modules", NODE_MODULES_STAND_IN), text]));
+    const result = await review([{ subject: "Change the install config", write }], BASE_FILES, (text) => text.replaceAll(NODE_MODULES_STAND_IN, "node_modules"));
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual(INSTALL_CONFIG.map(({ file, label }) => `protected path changed: ${file} (${label})`).sort());
+  }, SLOW);
+});
+
+/** A package.json as the repository writes them: two-space indents and a final newline. */
+function manifest(value: Readonly<Record<string, unknown>>): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+/** Shaped like the repository's root manifest: an install script, the pnpm field with a dependency patch, a pinned package manager. */
+const ROOT_MANIFEST = manifest({
+  name: "fixture",
+  private: true,
+  packageManager: "pnpm@9.15.4",
+  scripts: { test: "pnpm -r run test", postinstall: "node ./packages/types/build.mjs" },
+  pnpm: { patchedDependencies: { "three@0.186.0": "patches/three@0.186.0.patch" } },
+  devDependencies: { typescript: "5.7.3" },
+});
+const WEB_MANIFEST = manifest({ name: "@fixture/web", version: "0.0.0", scripts: { test: "vitest run", build: "vite build" }, dependencies: { three: "0.186.0" } });
+const API_MANIFEST = manifest({ name: "@fixture/api", version: "0.0.0", scripts: { test: "vitest run" }, dependencies: { fastify: "5.2.0" } });
+const HOOKS_MANIFEST = manifest({ name: "@fixture/hooks", version: "0.0.0", scripts: { prepare: "tsc -p ." } });
+const MANIFEST_BASE: Readonly<Record<string, string>> = {
+  ...BASE_FILES,
+  "package.json": ROOT_MANIFEST,
+  "packages/web/package.json": WEB_MANIFEST,
+  "packages/api/package.json": API_MANIFEST,
+  "tools/hooks/package.json": HOOKS_MANIFEST,
+};
+
+/** `text` with `from` replaced once by `to`, failing the test if `from` is not there (constant strings only: no `$` patterns). */
+function edited(text: string, from: string, to: string): string {
+  expect(text).toContain(from);
+  return text.replace(from, to);
+}
+
+const INSTALL_SCRIPT = "which pnpm runs on install";
+
+describe("install-time code in a package.json, read by the review from real patches as pnpm parses them", () => {
+  it("rejects a script pnpm runs on install added, changed or removed in a package.json in any folder, naming the file and the key", async () => {
+    // Each written as JSON allows and pnpm reads it: an escape in a key, a colon on the next line.
+    const web = edited(WEB_MANIFEST, '"build": "vite build"', '"build": "vite build",\n    "post\\u0069nstall": "node ./evil.mjs"');
+    expect(web).not.toContain('"postinstall"');
+    const api = edited(API_MANIFEST, '"test": "vitest run"', '"test": "vitest run",\n    "prepare"\n      : "node ./build.mjs"');
+    const root = edited(
+      ROOT_MANIFEST,
+      '"postinstall": "node ./packages/types/build.mjs"',
+      '"postinstall": "node ./packages/types/build.mjs && node ./tools/x.mjs",\n    "pnpm:devPreinstall": "node ./tools/x.mjs"',
+    );
+    const result = await review(
+      [
+        {
+          subject: "Change the manifests",
+          write: {
+            "package.json": root,
+            "packages/web/package.json": web,
+            "packages/api/package.json": api,
+            // A new package in a new folder below a workspace package.
+            "packages/web/e2e/app/package.json": manifest({ name: "e2e-app", private: true, scripts: { install: "node ./setup.mjs" } }),
+          },
+        },
+        // A pure rename: git apply moves the entry, and the review reads the base side from the base itself.
+        { subject: "Move the hooks manifest", rename: { "tools/hooks/package.json": "tools/hooks/package.json.bak" } },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual(
+      [
+        `package.json: adds scripts.pnpm:devPreinstall, ${INSTALL_SCRIPT}`,
+        `package.json: changes scripts.postinstall, ${INSTALL_SCRIPT}`,
+        `packages/api/package.json: adds scripts.prepare, ${INSTALL_SCRIPT}`,
+        `packages/web/e2e/app/package.json: adds scripts.install, ${INSTALL_SCRIPT}`,
+        `packages/web/package.json: adds scripts.postinstall, ${INSTALL_SCRIPT}`,
+        `tools/hooks/package.json: removes scripts.prepare, ${INSTALL_SCRIPT}`,
+      ].sort(),
+    );
+  }, SLOW);
+
+  it("rejects a pnpm.patchedDependencies entry that points at a patch outside patches/, as a change to the pnpm field", async () => {
+    const root = edited(
+      ROOT_MANIFEST,
+      '"three@0.186.0": "patches/three@0.186.0.patch"',
+      '"three@0.186.0": "patches/three@0.186.0.patch",\n      "fastify@5.2.0": "src/patches/x.patch"',
+    );
+    const result = await review(
+      [{ subject: "Patch a dependency", write: { "package.json": root, "src/patches/x.patch": "diff --git a/package.json b/package.json\n" } }],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect(result.reasons).toEqual([
+      "package.json: changes the pnpm field (pnpm's own settings, such as patched dependencies, overrides and which dependencies may run build scripts, applied on install)",
+    ]);
+  }, SLOW);
+
+  it("rejects a resolutions field, which pnpm reads from the root manifest as overrides, as it reads pnpm.overrides", async () => {
+    const result = await review(
+      [
+        {
+          subject: "Pin a dependency",
+          write: { "package.json": edited(ROOT_MANIFEST, '"packageManager": "pnpm@9.15.4"', '"packageManager": "pnpm@9.15.4",\n  "resolutions": { "fastify": "5.2.0" }') },
+        },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect(result.reasons).toEqual([
+      "package.json: adds the resolutions field (dependency overrides: pnpm reads it from the root manifest as it reads pnpm.overrides, applied on install)",
+    ]);
+  }, SLOW);
+
+  it("rejects a change to the packageManager or devEngines field, which pick the package manager corepack downloads and runs", async () => {
+    const result = await review(
+      [
+        {
+          subject: "Change the package manager",
+          write: {
+            "package.json": edited(ROOT_MANIFEST, '"packageManager": "pnpm@9.15.4"', '"packageManager": "pnpm@9.0.0"'),
+            "packages/web/package.json": edited(WEB_MANIFEST, '"version": "0.0.0",', '"version": "0.0.0",\n  "devEngines": { "packageManager": { "name": "pnpm", "version": "^9" } },'),
+          },
+        },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual([
+      "package.json: changes the packageManager field (the package manager, and its version, that corepack downloads and runs)",
+      "packages/web/package.json: adds the devEngines field (its packageManager entry tells corepack which package manager to download and run)",
+    ]);
+  }, SLOW);
+
+  it("rejects a package.json that is not valid JSON, or not a JSON object, once the patches are applied", async () => {
+    const result = await review(
+      [
+        {
+          subject: "Break the manifests",
+          write: {
+            "packages/web/package.json": edited(WEB_MANIFEST, '"build": "vite build"', '"build": "vite build",'),
+            "packages/api/package.json": '[\n  "postinstall"\n]\n',
+          },
+        },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual([
+      "packages/api/package.json: is not a JSON object after the patches, so pnpm cannot read it as a manifest",
+      "packages/web/package.json: is not valid JSON after the patches, so neither pnpm nor this review can read it",
+    ]);
+  }, SLOW);
+
+  it("passes a dependency version and an ordinary script, reading only the manifests the patches touch", async () => {
+    const seen: { readonly blobs: ReadonlyMap<string, string>; readonly missing: ReadonlySet<string> }[] = [];
+    throwaway.look = (repo, baseSha) => {
+      const read = (args: readonly string[]): string =>
+        execFileSync("git", ["-C", repo, "-c", "core.quotePath=false", ...args], { encoding: "utf8", env: gitEnv() });
+      const blobs = new Map<string, string>();
+      for (const entry of read(["ls-tree", "-r", "-z", baseSha]).split("\0")) {
+        const match = /^[0-7]{6} blob ([0-9a-f]+)\t([\s\S]+)$/u.exec(entry);
+        if (match !== null) blobs.set(match[2] ?? "", match[1] ?? "");
+      }
+      const missing = new Set(
+        read(["rev-list", "--objects", "--missing=print", baseSha])
+          .split("\n")
+          .filter((line) => line.startsWith("?"))
+          .map((line) => line.slice(1)),
+      );
+      seen.push({ blobs, missing });
+    };
+    let result: Review;
+    try {
+      result = await review(
+        [
+          {
+            subject: "Bump the versions and the test script",
+            write: {
+              "package.json": edited(ROOT_MANIFEST, '"typescript": "5.7.3"', '"typescript": "5.7.4"'),
+              // A byte-order mark, which pnpm drops before it parses; a script whose name only contains an install script's.
+              "packages/web/package.json": `${String.fromCharCode(0xfeff)}${edited(
+                edited(WEB_MANIFEST, '"three": "0.186.0"', '"three": "0.186.1"'),
+                '"test": "vitest run"',
+                '"test": "vitest run --reporter=dot",\n    "postinstall-check": "node ./check.mjs"',
+              )}`,
+            },
+          },
+        ],
+        MANIFEST_BASE,
+      );
+    } finally {
+      throwaway.look = undefined;
+    }
+    expect(result.reasons).toEqual([]);
+    expect(result.verdict).toBe("ready-for-review");
+    expect(result.flags).toEqual(expect.arrayContaining(["package.json (package manifest)", "packages/web/package.json (package manifest)"]));
+    // The manifests the patches leave alone are never read, so their blobs stay unfetched in the throwaway repository.
+    expect(seen).toHaveLength(1);
+    const blobs = seen[0]?.blobs ?? new Map<string, string>();
+    const missing = seen[0]?.missing ?? new Set<string>();
+    expect(["packages/api/package.json", "tools/hooks/package.json"].filter((file) => !missing.has(blobs.get(file) ?? ""))).toEqual([]);
+  }, SLOW);
+});
+
+/** What a reason adds when only a commit inside the series shows the change: the patch that does, and why it still matters. */
+function onlyAfter(patch: string): string {
+  return `, after ${patch} though not at the series' end (that commit stays in the branch's history and can be checked out and installed)`;
+}
+
+describe("install-time code in a package.json, judged after every commit of the series", () => {
+  it("rejects an install script one commit adds and a later one takes out, naming the first patch that shows it, and gives a change the series ends with one reason", async () => {
+    const withScript = edited(WEB_MANIFEST, '"build": "vite build"', '"build": "vite build",\n    "postinstall": "node ./evil.mjs"');
+    const result = await review(
+      [
+        {
+          subject: "Add a build step",
+          write: {
+            "packages/web/package.json": withScript,
+            "packages/web/evil.mjs": "export {};\n",
+            // Kept to the end, so the series' own reason names it once and no patch does.
+            "package.json": edited(ROOT_MANIFEST, '"test": "pnpm -r run test",', '"test": "pnpm -r run test",\n    "pnpm:devPreinstall": "node ./tools/x.mjs",'),
+          },
+        },
+        { subject: "Tune the tests", write: { "packages/web/package.json": edited(withScript, '"test": "vitest run"', '"test": "vitest run --reporter=dot"') } },
+        { subject: "Take the build step out", write: { "packages/web/package.json": WEB_MANIFEST } },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual(
+      [`package.json: adds scripts.pnpm:devPreinstall, ${INSTALL_SCRIPT}`, `packages/web/package.json: adds scripts.postinstall, ${INSTALL_SCRIPT}${onlyAfter("patch-0001.patch")}`].sort(),
+    );
+  }, SLOW);
+
+  it("rejects the pnpm field changed by one commit and changed back by the next", async () => {
+    const patched = edited(
+      ROOT_MANIFEST,
+      '"three@0.186.0": "patches/three@0.186.0.patch"',
+      '"three@0.186.0": "patches/three@0.186.0.patch",\n      "fastify@5.2.0": "src/patches/x.patch"',
+    );
+    const result = await review(
+      [
+        { subject: "Patch a dependency", write: { "package.json": patched, "src/patches/x.patch": "diff --git a/package.json b/package.json\n" } },
+        { subject: "Drop the patch entry", write: { "package.json": ROOT_MANIFEST } },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect(result.reasons).toEqual([
+      `package.json: changes the pnpm field (pnpm's own settings, such as patched dependencies, overrides and which dependencies may run build scripts, applied on install)${onlyAfter("patch-0001.patch")}`,
+    ]);
+  }, SLOW);
+
+  it("passes a series whose every commit changes only a dependency version or the test script", async () => {
+    const bumped = edited(WEB_MANIFEST, '"three": "0.186.0"', '"three": "0.186.1"');
+    const result = await review(
+      [
+        { subject: "Bump three", write: { "packages/web/package.json": bumped } },
+        { subject: "Quieter tests", write: { "packages/web/package.json": edited(bumped, '"test": "vitest run"', '"test": "vitest run --reporter=dot"') } },
+        { subject: "Bump TypeScript", write: { "package.json": edited(ROOT_MANIFEST, '"typescript": "5.7.3"', '"typescript": "5.7.4"') } },
+        { subject: "Back to the old reporter", write: { "packages/web/package.json": bumped } },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.reasons).toEqual([]);
+    expect(result.verdict).toBe("ready-for-review");
+  }, SLOW);
+});
+
+/**
+ * Characters that show nothing though they are not format characters: the
+ * Hangul fillers and the blank Braille pattern, which are letters and a symbol,
+ * and the combining grapheme joiner, a variation selector (in both its planes),
+ * a Khmer inherent vowel and a Mongolian free variation selector, which are
+ * marks Unicode lists as default-ignorable.
+ */
+const INVISIBLE_LETTERS = [0x3164, 0x115f, 0x1160, 0xffa0, 0x2800, 0x034f, 0xfe0f, 0xe0100, 0x17b4, 0x180b];
+
+/** A code point as the review's reasons show it. */
+function codeOf(code: number): string {
+  return `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
+}
+
+describe("paths that hold a character which shows nothing, read by the review from real patches", () => {
+  it("rejects each, naming the path with the character written as <U+code> and never the character itself", async () => {
+    // Written on disk under plain names; the patches carry the names as git would write them unquoted.
+    const plain = (index: number): string => `docs/a${String(index)}b.md`;
+    const hidden = (index: number, code: number): string => `docs/a${String.fromCodePoint(code)}${String(index)}b.md`;
+    const result = await review([{ subject: "Add notes", write: Object.fromEntries(INVISIBLE_LETTERS.map((_, index) => [plain(index), "notes\n"])) }], BASE_FILES, (text) =>
+      INVISIBLE_LETTERS.reduce((patched, code, index) => patched.replaceAll(plain(index), hidden(index, code)), text),
+    );
+    expect(result.verdict).toBe("rejected");
+    const reason = result.reasons.find((entry) => entry.startsWith("a path holds a control, invisible or reordering character")) ?? "";
+    for (const [index, code] of INVISIBLE_LETTERS.entries()) {
+      expect(reason, codeOf(code)).toContain(`docs/a<${codeOf(code)}>${String(index)}b.md`);
+      expect(result.reasons.join(" "), codeOf(code)).not.toContain(String.fromCodePoint(code));
+    }
+  }, SLOW);
+});
+
+describe("review.md's words on building the branch", () => {
+  const task = parseTask(
+    ["---", "id: gate-check", "title: Gate check", "budget_usd: 1", "timeout_minutes: 30", 'acceptance: "pnpm test"', "---", "Check the gate."].join("\n"),
+    "gate-check.md",
+  );
+  const baseSha = "b".repeat(40);
+  const head = "c".repeat(40);
+  /** Fixed words, the same in every review: what was reviewed, the only way to build the branch, and the file that must not be applied. */
+  const BUILDING =
+    "The format-patch files (`patch-*.patch` in the `outputs` folder beside this file) are the reviewed form: this review read the change from them. Build the branch only with `git am` on them, in their numbered order, on a new branch made at the base commit. `diff.patch` is not verified: nothing checks that it holds the same change as the patches (this review only checks that it is present and not empty, and searches it for secret-shaped text), so it must not be applied.";
+
+  for (const verdict of ["ready-for-review", "rejected"] as const) {
+    it(`says near the top of a ${verdict} review that the patches are the reviewed form, built only with git am, and that diff.patch must not be applied`, () => {
+      const review: Review = {
+        verdict,
+        reasons: verdict === "rejected" ? ["protected path changed: AGENTS.md (agent instructions)"] : [],
+        flags: ["src/x.ts (script)"],
+        changed: ["M AGENTS.md"],
+        patches: ["patch-0001.patch"],
+        diffFile: "diff.patch",
+      };
+      const lines = reviewMarkdown(task, { kind: "ran", taskId: task.id, runDir: "run", branch: "credit/gate-check", baseSha, costUsd: 1, costKnown: true, result: sessionResult([], head, [head]), review }).split("\n");
+      const heading = lines.indexOf("## Building the branch");
+      expect(heading).toBeGreaterThan(0);
+      expect(lines.slice(heading + 1, heading + 3)).toEqual(["", BUILDING]);
+      // Before every section that carries what the run supplied.
+      expect(heading).toBeLessThan(lines.findIndex((line) => /^## (Why it is rejected|Look closely|Changed files)/u.test(line)));
+      // The run's branch is named as one to build, not one that exists.
+      expect(lines).toContain(`- Base: ${baseSha}; branch name: \`credit/gate-check\`, which does not exist yet: build it from the patches as below`);
+      expect(lines.join("\n")).not.toMatch(/branch to open/u);
+    });
+  }
+});

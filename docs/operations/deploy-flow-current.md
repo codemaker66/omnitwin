@@ -73,6 +73,16 @@ dashboards before a release.
 - Rollback is manual: redeploy the previous provider deployment or revert and
   push a new commit. Database rollback is not automatic and must follow
   expand-contract discipline.
+  - Standing rule, in force from 25 November 2026: while the API half of the
+    guest-plan notes work is live (#389, merge
+    `8ccf0d1e5b9245e8ef2a461a43e84d59abd904ef`), never roll the web back past
+    its web half (#388, merge `4af5bc3b134fff3c1528dc189f369bb0ce23fe0c`)
+    unless #389 is rolled back first. A web build without #388 opens a guest
+    plan's link through the public read, which under #389 withholds the
+    guest's notes, and venue staff's next save through the signed-in batch
+    then stores every piece without its note, erasing them all. Until the
+    signed-in batch refuses such a save itself (T-759), only this rule
+    prevents it.
 - Manual database workflows exist for specific historical repairs; they are not
   a substitute for a general release process.
 

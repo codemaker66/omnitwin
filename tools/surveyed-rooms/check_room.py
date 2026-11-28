@@ -149,7 +149,7 @@ def validate(value, schema, root, path="$"):
         if "pattern" in schema and not ecma_pattern(schema["pattern"]).search(value):
             errors.append((path, f"{value!r} does not match {schema['pattern']}"))
         elif schema.get("format") == "date" and not is_calendar_date(value):
-            errors.append((path, f"{value!r} is not a date on the calendar (YYYY-MM-DD; the web's reader refuses any other)"))
+            errors.append((path, f"{value!r} is not a day on the calendar from the year 0001 (YYYY-MM-DD in ASCII digits)"))
     if isinstance(value, list):
         if "minItems" in schema and len(value) < schema["minItems"]:
             errors.append((path, f"fewer than {schema['minItems']} items"))

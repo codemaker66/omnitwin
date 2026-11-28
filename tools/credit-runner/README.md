@@ -1,0 +1,214 @@
+# Credit runner
+
+Runs one coding spec per Claude Managed Agents session in Anthropic's cloud
+sandbox, charges the session to a credit pot, and brings back a patch for review.
+No agent code runs on this machine.
+
+Some Claude plans include monthly API credit. It pays for the Claude API,
+Message Batches and Managed Agents sessions; it does not pay for Claude Code
+chats. Credit that is not spent by the end of its cycle is lost. This package is
+the part that turns such a pot into reviewed patches.
+
+## Status: run it by hand, attended
+
+`sandbox run` is for a person at the keyboard until the night-shift conveyor's
+ledger v2 lands. Until then a session's ledger line is written once the launcher
+has stopped it and read its cost, and nothing locks the check-then-spend step, so
+two launchers started at once can both pass the spend check.
+
+A graceful stop is booked before the launcher ends. Ctrl-C or Ctrl-Break (or a
+SIGTERM on Linux and macOS) stops the run as its deadline does: it interrupts the
+session and waits for it, books the platform's figure once it has stopped, or its
+whole budget as unknown if it would not stop, and exits non-zero. One press that
+reaches the launcher twice (on Linux and macOS the terminal and pnpm both pass
+Ctrl-C on) counts once; a second Ctrl-C there makes pnpm send the launcher a
+SIGTERM, so a quick double press books at once. A second press, or closing the
+window, books the session at once at its whole budget as unknown, once, then sends
+it one interrupt and exits within 2 s (in a real console, against a fake
+platform that answers at once, the process was gone about 0.3 s after a close;
+Windows allows about 5 s); a session the interrupt does not reach
+runs on until it stops or reaches its budget. `sandbox run` runs the launcher in
+one node process, so nothing between pnpm and the launcher can end it first, but
+on Windows pnpm may give the prompt back before the launcher has finished: keep
+the window open until it says the run has stopped, and do not press Ctrl-C at
+that prompt, which still reaches the launcher. A launcher started from a
+process that has Ctrl-C turned off (one started in a new process group, as some
+IDE terminals and schedulers do) never sees Ctrl-C; Ctrl-Break and closing the
+window still work.
+
+A hard kill (`taskkill /F`, SIGKILL, a crash, a power cut, or Windows shutting
+down, restarting or signing out) reaches no handler and books nothing; Windows has
+no kill a console program can catch, and `taskkill` without `/F` refuses the
+launcher's process. The next start with the same key and ledger finds the
+session. Before `run`
+reads the sandbox or creates anything, it lists the sessions this lane made, from
+a day before this lane's earliest ledger line, or from 24 November 2026 when the
+lane has none (a missing or empty ledger included), and refuses while any of them
+has no ledger line, matched by the session's id or the run id in its metadata.
+`status` names the same sessions. For one the platform does not report stopped,
+both say to let a launcher that is still following it finish first; otherwise
+`collect <session-id> --book` books it: the platform's figure once it has stopped,
+otherwise its whole budget as unknown, and nothing when a line exists (and a
+launcher that books it afterwards adds nothing either).
+
+The conveyor's ledger reserves the budget before the session starts and settles
+it after. Do not schedule or loop `sandbox run`.
+
+Three independent checks stand between a run and a merge:
+
+1. **This machine's inspection of the returned patches.** git reads the
+   format-patch files themselves, not a list the agent printed: every path they
+   touch, file modes (no symlinks or submodule links), protected files, deleted
+   or renamed tests, binary changes and secret-shaped text, and whether they
+   apply to the base. A consistency check also requires each patch's `From` line
+   to match the verifier's list of commits, in order. Both are written in the
+   agent's container, so this catches a stale or partial patch set, not a
+   forgery. `diff.patch` must come back and is scanned, but the launcher does not
+   prove it equal to the patches, so `review.md` says to build the branch only
+   with `git am` on the format-patch files and never to apply `diff.patch`; the
+   conveyor's delivery rebuilds the branch from the patches and compares it
+   before anything is pushed.
+2. **A differently briefed reviewer** on another model. It is not built yet;
+   until it is, a person reviews every patch.
+3. **CI on the pull request, which is the acceptance authority.**
+
+The in-sandbox verifier and `precondition.json` are advisory. Both come from a
+container the agent controls (the agent runs the verifier, and runs the
+precondition and writes its result), so they are evidence the agent produced: a
+failing, unreadable or missing result rejects a run, a passing one proves
+nothing and never clears it.
+
+## What a run can and cannot do
+
+| Guard | What it stops |
+|---|---|
+| The sandbox | A cloud container with limited egress (package registries, the public repository's host and the Node download host) and no credential in it. The agent's code never runs on this machine. Every `setup` and `run` reads the live environment and the agent version sessions are pinned to, and refuses to start if the networking, host list or MCP switch, or the agent's model, effort, speed, system prompt or tools (only bash and the file tools on, one config per tool, no web tool, no MCP server or toolset, no custom tool, no other agents, no skills) differ from what the code sets up, as after an edit in the Console. A change to the code's own settings updates the environment or makes a new agent version from the whole settings, so nothing set on a newer version carries over. |
+| The key | Read from a file only this account can open, in a folder outside every git work tree: the CLI refuses a key folder inside the repository, or one with a `.git` file or folder in it or in any folder above it (checked where the folder really is, through junctions and links, and as written), and `setup-keys.ps1` refuses a `-KeyDir` spelled with a leading `\` or `/` (the long-path and network forms) and one whose real path reaches a `.git` (it asks node, so node must be on `PATH`); `*.key` is git-ignored. Only a workspace API key (`sk-ant-api`, two digits and a dash, then the key) is taken as the runner's key, by the CLI and the script: any other credential, such as an Admin key (`sk-ant-admin...`), an OAuth access or refresh token (`sk-ant-oat...`, `sk-ant-ort...`) or a session key (`sk-ant-sid...`), is refused without printing it, and the client refuses a key that is not one line of that shape before it is built, with a reason that names no part of it. The key goes to the SDK client in-process and is never printed, logged or put in an environment variable. A key file readable by any other account is refused. The client sends it only to `https://api.anthropic.com`, as the `X-Api-Key` header, with only headers whose names SDK 0.131 itself builds: an `Authorization`, `Proxy-Authorization` or `Cookie` header, or another `X-Api-Key`, refuses the request before anything is sent, and any other header is dropped. It follows redirects itself: one to another host is followed only for a file's content (a GET or HEAD of `/v1/files/<id>/content`, handed to storage), without the key, and every other endpoint refuses a redirect off `https://api.anthropic.com`, so no status, cost or event comes from another host; any other method is followed only through a same-origin 307 or 308. A refused request is not retried, whatever the redirect's target says, and the error says why without repeating the server's Location, host or path. An answer from that other host that is not a success reaches the client as its status alone, with no body. An error printed to the terminal has its control characters removed and each message cut at 2,000 characters. The launcher refuses to start while `ANTHROPIC_BASE_URL` names another host or `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_CUSTOM_HEADERS` is set. |
+| The session budget | A hard cap the platform checks before every model request; the launcher also refuses a job whose whole budget does not fit under the lane and pot caps in the ledger, or under `--job-cap` for its `--job` label. A session the launcher stops following without seeing it stop (the deadline plus the grace period passed, or its stream kept failing) is interrupted again and waited for; if it still runs, archiving it is tried, though the platform refuses to archive a running session (see Limits). Its ledger line is written as soon as the platform's final status and cost are read, before any output is downloaded, so a download that stalls or fails cannot hold it back, and a session gets one line. Whenever the platform cannot confirm a session has stopped, it is booked at its whole budget (or its last cost figure, if higher), marked `costKnown: false` in the ledger; one request already in flight can still take it past that figure. So is a session whose platform cost is not a whole number of cents in USD. The budget (one cent to 50 dollars), time limit, grace period and output caps are checked before the ledger is read or the sandbox set up. |
+| The spec | Strict front matter: an unknown key is an error, `budget_usd` is at most 50 and `timeout_minutes` a whole number of at most 240. The command-line `--budget` and `--timeout` overrides obey the same limits. |
+| The project rules | `src/project-rules.ts` filters AGENTS.md sentence by sentence before it reaches the agent: no deployment or live-check text, no pointer to a credentials folder, no instruction to update the task list or session logs. It refuses to continue if a secrets folder or a local path would still reach the agent. A test runs it on the real AGENTS.md. |
+| The review | `review.md` is this machine's reading of the returned format-patch files (`src/sandbox/patches.ts`). git reads them in a throwaway repository that holds only the base commit's trees, and applies them only to that repository's index, never to a checkout: `mailsplit` and `mailinfo` split each file as `git am` would, `git apply --check` proves the series applies to the base, `--numstat` and `--summary` give every old and new path and file mode, `ls-tree` gives the base's own modes, and git's own diff of each commit against the one before it (the patches applied to that index one at a time), read with the base's `.gitattributes` rather than the patched ones (through `--attr-source`, so this machine's git must be 2.41 or newer), says which files each commit changes as binary, as `git log -p` shows them. The run is rejected if the patches do not apply, their `From` lines do not match the verifier's list of commits, they touch a protected path (deploy, environment and infrastructure config such as `.railway/` and `infra/`; install-time code and settings: `patches/`, `.pnpmfile.cjs`, `pnpm-workspace.yaml`, `.npmrc`, `binding.gyp`, `package.json5`, `package.yaml`, `.corepack.env` and anything under `node_modules/`; CI and hooks; agent instructions and goals: `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md` and `CLAUDE.local.md` in any folder, `GOAL.md`, `goals/` and anything under `.claude/`; editor and dev-container config under `.vscode/` and `.devcontainer/`; `.gitattributes`, the task ledger and session logs: the list in `src/git.ts`, from which the agent's brief and the grader's rubric are built; matched ignoring case, as a Windows checkout resolves names, and any path with an 8.3 short-name segment such as `CLAUDE~1`), hold a path with a control, format or default-ignorable character (one a file list shows as nothing, or that reorders the text around it), change a package.json's install scripts (`pnpm:devPreinstall`, `preinstall`, `install`, `postinstall`, `prepare`, `prepublish`, `prepublishOnly`) or its `pnpm`, `resolutions`, `packageManager` or `devEngines` field, or leave one that is not a JSON object (each package.json the patches change, in any folder, read at the base and after every patch of the series, each against the base, as JSON.parse reads it, as pnpm does, so an escaped or split key counts as the key it spells), delete or rename away a test, create or change a symlink or submodule link, change a binary file (a binary patch section, or a file whose content one commit changes and that git's diff of that commit calls binary: a path the base's `.gitattributes` marks `-diff` or `binary`, or a NUL byte in the first 8,000 bytes of either side unless the base's `.gitattributes` sets `diff` on the path, which makes git show it as text; a rename or mode change that keeps a binary file's content is not a change to it), or add a secret-shaped string in a message, an added line or a path; also if any other `.patch` output came back, or two format-patch files share a base name, `precondition.json` is missing for a task with a precondition, says the precondition failed, or cannot be read, the verifier failed or printed no readable result, or the session ended on exhausted retries, was terminated, or would not stop. It flags lockfile, manifest, migration, script and build-config changes, new source files, and each code file the patches only add lines to. In `review.md` each reason, flag and changed path is one inline code span on its own bullet, holding the launcher's words with whatever the agent or the session supplied (output names, paths), and the session's id, status and stop reason and the grader's verdict are code spans too, each fenced so nothing inside can close it, and the grader's explanation and the verifier's output are fenced blocks: none of it renders as a tag, link, image or heading in a Markdown preview or a pull-request body. |
+
+### Limits
+
+- A hard-killed launcher's session is found only at the next `run` or `status`
+  with the same key and ledger, and booked by `collect --book`. Until then it is
+  bounded only by its own budget on the platform, a hard cap in list cost: SDK
+  0.131 has no platform-side time limit to send, and the launcher's own timeout
+  dies with it. Before pointing the config at another pot's key, run `status`
+  with the old one and book what it names.
+- The platform refuses to archive a running session, so one that still runs after
+  the interrupt and the wait is booked at its whole budget as unknown and can go
+  on spending up to that budget.
+- The startup check assumes a session that is not deleted stays listable, archived
+  ones included, from 24 November 2026 on; that was read from the API's types and
+  documentation, not checked against the live API. A session deleted in the
+  Console is never listed, so never caught.
+- A new dependency, or a lockfile entry, is only flagged: pnpm 9 runs its own
+  install script when the branch is installed, and the repository sets no
+  `onlyBuiltDependencies` allow list, so the person reviewing reads the lockfile
+  change.
+- Two launchers started at once can both pass the spend check.
+- On the first run after this check lands, a session of this lane whose spend is
+  already in the ledger without its session id (a hand-written line, or an
+  unclear create's line from before lines carried the run id) is named as
+  unbooked. Check each session `status` names against the ledger before booking
+  it, or it is counted twice.
+- Every `run` and `status` lists every session of the key's workspace created
+  since a day before this lane's earliest ledger line, every lane and archived
+  ones included, so the listing grows through the ledger's life. It costs API
+  calls, not credit.
+- The caps count every line in the ledger file, and the startup check lists from
+  24 November 2026 when this lane has no line. Start a new credit cycle by
+  raising the caps, not by emptying or replacing the ledger: `run` would then
+  count the last cycle's sessions as unbooked and refuse, and booking them would
+  charge the old spend to the new cycle.
+
+Nothing here is pushed. The launcher never holds a GitHub credential; the patch
+comes back as files and a person (or the conveyor's delivery step) opens the pull
+request.
+
+## One-time setup
+
+1. In each Console organisation that holds a pot, create an API key for the runner.
+2. In your own PowerShell window, from the repo root, run the setup script and paste each key at its hidden prompt:
+
+   ```powershell
+   .\tools\credit-runner\setup-keys.ps1 -Pot pot-1
+   ```
+
+   It writes `<keyDir>\pot-1.key` and makes the folder readable by your account only. `-KeyDir` picks another folder (a relative one is taken from your window's location; one inside any git work tree, or spelled with a leading `\` or `/`, is refused, and the check needs node on `PATH`); keep it equal to `keyDir` in your config. It takes only a workspace API key (`sk-ant-api`, two digits and a dash, then the key) at the prompt, and names an Admin key, an OAuth token or a session key when it refuses one. The runner refuses a key file that any account other than yours, SYSTEM or Administrators can open, including narrow grants such as a sandbox group.
+3. Copy `sandbox.config.example.json` to `sandbox.config.json` (git-ignored) and fill in your own folders, key file and caps.
+4. Check it:
+
+   ```powershell
+   pnpm --filter @omnitwin/credit-runner sandbox status
+   pnpm --filter @omnitwin/credit-runner sandbox setup
+   ```
+
+`status` shows whether the key file is present and private, the sandbox ids, the spend against the lane and pot caps and the git the review will use (it needs 2.41 or newer), names any session of this lane that has no ledger line, and warns first when the key folder is inside a git work tree. `setup` creates the environment and the agent from the project rules at master.
+
+## Running
+
+```powershell
+pnpm --filter @omnitwin/credit-runner sandbox run <spec.md> --job <label> [--budget <usd>] [--timeout <min>] [--job-cap <usd>]
+pnpm --filter @omnitwin/credit-runner sandbox collect <session-id> --book [--budget <usd>]
+pnpm --filter @omnitwin/credit-runner sandbox collect <session-id> <spec.md> --run-dir <dir> --base <sha> [--budget <usd>] [--book]
+```
+
+`run` looks up master's commit with `git ls-remote` and fetches it, trees only, into a throwaway repository (the review reads the patches the same way), so it writes no `FETCH_HEAD`, ref or object into the checkout it is run from and downloads only the blobs it reads. It then checks the spend and starts a session with a single create call (no SDK retry, one minute for the whole call, response body included; after any failure other than a refusal by the server, such as a broken connection, a timeout, a server error or a success response whose body broke, it looks the session up by its metadata, follows it if found and otherwise books the whole budget as unknown, since a create still in flight may yet start it; the error then names the per-run id the session's metadata carries, which `kickoff.md` in the run folder also holds). It follows the session's events, reconnecting and dropping duplicates; it stops after thirty reconnects in a row that bring nothing new. It denies any tool call that asks for approval, and sends the deny again after a reconnect if it did not arrive; from the deadline's interrupt on, and while it stops a session, it answers no ask, since a confirmation would wake the agent. Once it has stopped following, it reads the platform's final status and cost and writes the ledger line, before any download. It downloads only what the review reads, the format-patch files (in the order of their base names), `diff.patch` and `precondition.json`, streamed to disk under names it chooses (`patch-0001.patch`, ..., `diff.patch`, `precondition.json`), never the agent's. A file listed over 16 MiB (or past 64 MiB for the run), or with an invalid size, is refused before it is downloaded; a download is cut off at the cap, and abandoned after 5 minutes, its partial file removed. Each of those rejects the run, as do any of these outputs that the API lists but will not serve, any other `.patch` output, more than 50 `.patch` outputs, and, among the outputs it would download, a name Windows opens as a device (`NUL`, `CON`, `COM1`, ...). Every other output (logs, the verifier's own JSON) stays in the sandbox. It writes `review.md` and `result.json` under `<workRoot>/runs/<task-id>/<stamp>/`. The exit code is 0 for ready-for-review, 2 for rejected, 1 for a job that did not start.
+
+`collect` rebuilds a finished session's record and review from its history. It starts nothing, and says whether the ledger already holds a line for the session, by its id or its run id (a launcher that died may have left none). With `--book`, alone or with the rebuild, it books a session the ledger has no line for: the platform's figure once the session has stopped, otherwise its whole budget as unknown; when a line exists it adds nothing and says so. A session whose cost cannot be read is shown at the whole budget it was counted at, not as zero.
+
+## The in-sandbox verifier
+
+`sandbox/verify.mjs` is uploaded to the container and run by the agent on its final commit. It checks that the branch sits on the base commit, is clean and carries the task trailer; that the acceptance command passes; and that it fails when the fix is taken away (changed non-test files put back to the base, or, for a test-only change, the spec's `mutation` command breaking the code under test). Only a numeric, non-zero exit that did not time out counts as failing without the fix; a timeout, a signal or a command that never started proves nothing. It prints one `VERIFY_RESULT {json}` line, with the branch's commits oldest first, the end of the run without the fix (which `review.md` shows) and a flag when the change adds a non-test file or only adds lines to a code file. The agent must run it as a bash call of its own, exactly `node /mnt/session/uploads/verify.mjs` (only spaces, tabs and newlines around it are ignored); the launcher reads the line only from such a call, and only when it is the only `VERIFY_RESULT` line in that call's result. That rule rejects anything appended or wrapped around the command; it cannot rule out a function named `node` defined in an earlier call of a persistent shell, which is one reason the result is advisory (see the status section above). It is typed (`checkJs`) and linted with the package.
+
+## Adding a spec
+
+A spec is a markdown file: front matter that sets the run, and a body that is the brief the agent receives.
+
+```markdown
+---
+id: t582-splat-poller-deadline
+title: Stop the splat progress poller when a tile hangs
+budget_usd: 5
+acceptance: "pnpm --filter @omnitwin/web exec vitest run src/components/rooms/__tests__/RoomSplatScene.test.tsx"
+---
+What to build, where, the constraints, the tests to add, and what done looks like.
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `id` | required | Lowercase letters, digits and dashes. It names the branch `credit/<id>`. |
+| `title` | the id | Shown in the review. |
+| `budget_usd` | `5` | The session's hard cap (at most 50). |
+| `timeout_minutes` | `60` | Wall-clock limit before the agent is interrupted (whole minutes, at most 240). |
+| `acceptance` | required | A shell command run at the repository root in the container. Quote it if it contains `#` or `:`. |
+| `mutation` | none | For a test-only change: a command that breaks the code under test; the tests must then fail. |
+| `precondition` | none | A cheap check, run right after checkout, that the code the brief cites has not moved. The agent runs it and records its result in `precondition.json`, in its own container, so the file is advisory like the verifier: a false, unreadable or missing one rejects the run, and a true one proves nothing. |
+| `model` | `claude-opus-5-5` | Only that value: the sandbox agent runs one model, so `run` and `collect` refuse any other. |
+| `effort` | `high` | Only that value, for the same reason. |
+| `enabled` | `true` | Only `true`: the lane runs every spec it is given, so `run` and `collect` refuse `false`. |
+| `read_only` | `false` | Only `false`: the sandbox agent always has its full toolset, so `run` and `collect` refuse `true`. |
+| `install` | `true` | Only `true`: the agent always installs, so `run` and `collect` refuse `false`. |
+| `base` | master | Only master, spelled `master`, `origin/master`, `refs/heads/master` or `refs/remotes/origin/master`: every run starts from master, so `run` and `collect` refuse any other base. |
+| `allowed_tools`, `extra_allowed_tools` | none | Not at all: the sandbox agent has one fixed toolset, so `run` and `collect` refuse a spec that has either key, even with an empty list. |
+
+Every key above `model` takes effect; the rest are accepted only at the value the lane runs, and anything else is refused with the key named. Unknown keys are rejected, so a typo cannot silently fall back to a default.
+
+**Writing a spec the agent can finish on its own:**
+
+- Name the files, the behaviour, the tests to add, and the definition of done.
+- Pick an acceptance command that needs no network, GPU or browser. Unit tests, typecheck and lint work; the container has Postgres for the database suites.
+- Leave out anything that needs a person's judgement (design, copy, look) and anything that changes deployment, environment or install-time config, a package.json's install scripts or its `pnpm`, `resolutions`, `packageManager` or `devEngines` field, agent instructions or editor config: the review rejects those.
+
+## Tests
+
+```powershell
+pnpm --filter @omnitwin/credit-runner test
+pnpm --filter @omnitwin/credit-runner typecheck
+pnpm --filter @omnitwin/credit-runner lint
+```
+
+`src/__tests__/sandbox.test.ts` drives the launcher against a fake API (`fake-api.ts`) and real format-patch files that `patch-fixture.ts` makes with git: the happy path; the review's rejections (a forged verifier line, a protected path, symlink, submodule link, binary change or secret that only the patches show, a deleted or renamed test, an incomplete or reordered patch set, patches that do not apply); `review.md`'s code spans, read as CommonMark reads them; reconnects; a session that never stops, a failing interrupt, create or deny; the ledger line written before any download, and once; stop signals (the first takes the deadline's path, a second books at once and only once, and no handler outlives the run); the startup check of unbooked lane sessions and `collect --book`, and a later booking that finds the line already written; the spend caps; collecting; agent versioning and the live boundary check (networking, model, effort, system prompt, tools); the output plan (names, sizes, caps, deadlines, outputs the API will not serve); and, through the real SDK client over a fake fetch, the create's one attempt and deadline, the lookup after an unclear create, and streamed downloads. `sandbox-keys.test.ts` covers the header allow-list, the redirect rule, refused requests not being retried, the refused key kinds, and the key-folder checks of the CLI and `setup-keys.ps1`. `units.test.ts` covers the front matter, the protected paths (every entry, letter case, short names, and nearby paths that pass), the ledger line's run id, git's limits and the key-file gate on a real file (its ACL on Windows, its mode elsewhere). `sandbox-gate.test.ts` holds the binary rule commit by commit (a NUL added then removed, a pure rename or mode change of a binary file) and runs every newly protected path, the install-time changes in any package.json, and nearby paths and changes that pass, through the real inspection. `sandbox-download.test.ts` covers the cap and the deadline on a body whose cancel never settles. `sandbox-verify.test.ts` runs the real verifier against temporary git repositories. `sandbox-cli.test.ts` covers, in real child processes, a launcher killed outright mid-session and caught at the next start (with a ledger, a missing one and an empty one) and, on Linux, one Ctrl-C delivered twice taken as one press; and the command-line limits, the CLI's own words, the key folder inside the repository, the example config and the master lookup. `project-rules.test.ts` covers the AGENTS.md filter, including on the real file, and that the brief names every protected path.

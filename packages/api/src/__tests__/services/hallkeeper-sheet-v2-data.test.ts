@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { crowdedTradesHallDay, sheetTimes } from "@omnitwin/types";
 import {
   ApprovedSnapshotUnavailableError,
   buildSheetApproval,
@@ -339,5 +340,20 @@ describe("deriveSheetTiming", () => {
 
   it("returns null for an unparseable instant instead of freezing Invalid Date into a snapshot", () => {
     expect(deriveSheetTiming(new Date("not-a-date"), null, 90)).toBeNull();
+  });
+
+  it("gives setupBy as the START of the setup window: the crowded day's breakfast opens at 07:00 for 08:00 doors", () => {
+    // setupBy is a historical name. Both of its sources start a window: the
+    // room's Setup phase (the Day Board's setup start) and the booking less
+    // the changeover time. The sheet's Ready by is sheetTimes(), not this.
+    const day = crowdedTradesHallDay();
+    const booking = day.calendar.entries.find((entry) => entry.entryType === "booking" && entry.title === "Merchants' Breakfast Briefing");
+    if (booking?.entryType !== "booking") throw new Error("the crowded day has a Grand Hall breakfast");
+    const setup = day.calendar.entries.find((entry) => entry.entryType === "phase" && entry.eventId === booking.eventId && entry.spaceId === booking.spaceId);
+    if (setup?.entryType !== "phase") throw new Error("the breakfast has a Setup phase in its room");
+    const timing = deriveSheetTiming(new Date(booking.startsAt), new Date(setup.startsAt), 60);
+    expect(timing).toEqual({ eventStart: "2026-11-14T08:00:00.000Z", setupBy: "2026-11-14T07:00:00.000Z", bufferMinutes: 60 });
+    expect(timing?.setupBy).toBe(setup.startsAt);
+    expect(sheetTimes({ timing, instructions: null })).toMatchObject({ setupFrom: setup.startsAt, readyBy: booking.startsAt, guestsIn: booking.startsAt });
   });
 });
