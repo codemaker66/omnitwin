@@ -155,7 +155,7 @@ const OTHER_TAB_WORDS = "This list was also changed in another tab. This tab's v
 const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
 const ADDED_AFTER_DELETE_WORDS = "This list was changed in another tab after it was deleted here. It is kept in this browser again.";
 const REMOVED_BY_RULE_WORDS = "This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
-const OTHER_TAB_BUSY_WORDS = "Another tab is busy with this list, so your last change is not kept yet. It will be kept as soon as that tab has finished.";
+const OTHER_TAB_BUSY_WORDS = "Another tab is busy with this list, so your last change is not kept yet. It is tried again while this page is open.";
 const LAST_CHANGE_NOT_KEPT_WORDS = "The last change made to this list before you left it was not kept: another tab was busy with the list.";
 /** Another plan, for a case that goes from one plan's list to another's. */
 const OTHER_PLAN_ID = "7a3c9d2f-0e5b-4c7a-9b2d-3f8e6a1b0c45";

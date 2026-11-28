@@ -123,9 +123,13 @@ export const PRINT_OF_OLDER_COPY =
  */
 export const NOT_DELETED = "This list could not be deleted from this browser just now. Try again.";
 
-/** Another tab is at work on this list and has not finished: the change made here waits, and is tried again. */
+/**
+ * Another tab is at work on this list and has not finished: the change made here waits, and is
+ * tried again for as long as a kit page is open. The words promise no more than that: once the
+ * page has gone, nothing tries again.
+ */
 export const OTHER_TAB_BUSY =
-  "Another tab is busy with this list, so your last change is not kept yet. It will be kept as soon as that tab has finished.";
+  "Another tab is busy with this list, so your last change is not kept yet. It is tried again while this page is open.";
 
 /**
  * The Print button stopped before the dialog: what it had just saved is not kept yet, because

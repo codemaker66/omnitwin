@@ -32,7 +32,7 @@ const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It
 const ADDED_AFTER_DELETE_WORDS = "This list was changed in another tab after it was deleted here. It is kept in this browser again.";
 const PRINT_OF_OLDER_COPY_WORDS = "That printout was made from an older copy of this list, which was changed in another tab. Do not use that printout: print it again.";
 const REMOVED_BY_RULE_WORDS ="This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
-const OTHER_TAB_BUSY_WORDS = "Another tab is busy with this list, so your last change is not kept yet. It will be kept as soon as that tab has finished.";
+const OTHER_TAB_BUSY_WORDS = "Another tab is busy with this list, so your last change is not kept yet. It is tried again while this page is open.";
 const PRINT_HELD_WORDS = "Another tab is busy with this list, so nothing was printed. Press Print again in a moment.";
 const SHEET_LINKS = [
   ["Table plan", "table-plan"],
