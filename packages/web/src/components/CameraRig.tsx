@@ -40,10 +40,12 @@ import {
   computeKeyboardPanStep,
   computePanBounds,
   computeZoomFrameScale,
+  holdOrbitTarget,
   isCameraKeyboardInputLocked,
   isCameraKeyboardPanSuspendedByPlannerState,
   zoomWhileFingersDown,
   type CameraKeyboardPlannerState,
+  type FloorFootprint,
 } from "../lib/camera-rig.js";
 import { useEscapeLayer, usePlannerKeyBindings } from "../lib/planner-keys.js";
 
@@ -101,6 +103,12 @@ function isCameraKeyboardPanSuspended(): boolean {
 
 export interface CameraRigProps {
   readonly dimensions: SpaceDimensions;
+  /**
+   * Where the room's outline lies on the floor (its box): every pan is held
+   * within it and its margin. Null for a room drawn about its origin from its
+   * width and length.
+   */
+  readonly footprint?: FloorFootprint | null;
   readonly smoothControls?: boolean;
   /** A frozen timeline camera owns the canvas without changing the live rig. */
   readonly suspended?: boolean;
@@ -136,16 +144,21 @@ interface HumanPovDragState {
  * RTS-style camera rig (StarCraft 2 feel) for venue planning.
  *
  * Controls:
- * - WASD / Arrow keys: Pan camera across the room
+ * - Arrow keys (nothing selected): Pan camera across the room
  * - Scroll wheel: Inertial zoom in/out (momentum-based, smooth coast)
  * - Right-click drag: Orbit (rotate around look-at point)
- * - Middle-click drag: Pan
+ * - Middle-click drag, or shift with the right button: Pan
+ * - Two fingers: Pan, and pinch to zoom; one finger orbits
  * - Left-click: Reserved for object selection (no camera action)
  *
  * Pan speed scales with zoom distance (closer = slower, further = faster).
- * Camera target is clamped to room bounds with a small margin.
+ * Every pan holds the orbit target within the room's bounds (computePanBounds:
+ * the floor plan with a fifth of each side as margin, and as far below the
+ * floor and above the ceiling as that reaches across the room) and moves the
+ * camera by the same correction, so at a bound the view stops without turning
+ * (T-724).
  */
-export function CameraRig({ dimensions, smoothControls = true, suspended = false, captureUnavailableKey = null, defaultPose = null, onOpeningPose }: CameraRigProps): React.ReactElement {
+export function CameraRig({ dimensions, footprint = null, smoothControls = true, suspended = false, captureUnavailableKey = null, defaultPose = null, onOpeningPose }: CameraRigProps): React.ReactElement {
   const { camera, gl, invalidate, size } = useThree();
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
@@ -178,7 +191,10 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   const ordinaryLimits = computeDistanceLimits(stableDimensions);
   const limits = { ...ordinaryLimits, maxDistance: recoveryActive
     ? Math.max(ordinaryLimits.maxDistance, recoveryLimit.distance) : ordinaryLimits.maxDistance };
-  const bounds = computePanBounds(stableDimensions);
+  // The pan hold reads the current room's bounds from here (T-724).
+  const bounds = computePanBounds(stableDimensions, footprint);
+  const boundsRef = useRef(bounds);
+  boundsRef.current = bounds;
 
   // Ordinary poses remain aspect-aware: portrait uses the captured interior
   // angle; landscape uses the elevated planning composition. Terminal capture
@@ -446,10 +462,50 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   const panDelta = useRef(new Vector3());
   const zoomDir = useRef(new Vector3());
 
-  const clampTarget = useCallback((t: Vector3): void => {
-    t.x = Math.max(bounds.minX, Math.min(bounds.maxX, t.x));
-    t.z = Math.max(bounds.minZ, Math.min(bounds.maxZ, t.z));
-  }, [bounds]);
+  /** Where the target stood as the orbit's running update began: the pan that update applies is held against it. */
+  const panFrom = useRef(new Vector3());
+  /** Whether the orbit's update is running: the hold touches only the pan it applies. */
+  const panning = useRef(false);
+  /** Where the target stood before an arrow key's step. */
+  const keyPanFrom = useRef(new Vector3());
+
+  // Every pan holds the target within the room's bounds, the camera moved by
+  // the same correction (T-724). OrbitControls pans in its update() and
+  // nowhere else: each move of a drag or of two fingers, and each step of the
+  // coast after release, adds to the target there. So the hold wraps that
+  // update and holds just what it adds, against where the target stood as it
+  // began: at "change", which the update sends for each move over a
+  // millimetre, so that whatever hears it reads the held target; and as it
+  // returns, for a smaller move it does not report. Whatever code places
+  // between updates (a glide, a tour, the hall's stage, the opening, a
+  // restore) is never held, so a target code leaves outside the bounds stays
+  // there: a pan may bring it back towards the room but carry it no further
+  // out. The arrow keys move the target themselves and hold their own step.
+  const holdPan = useCallback((controls: OrbitControlsImpl): void => {
+    if (panning.current) holdOrbitTarget(controls.target, controls.object.position, boundsRef.current, panFrom.current);
+  }, []);
+  // drei makes the controls once for each camera, so this wraps each one it makes.
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (controls === null) return;
+    const update = controls.update;
+    controls.update = (): void => {
+      // An update asked for while one runs (by something that heard its "change") is part of that one.
+      if (panning.current) {
+        update.call(controls);
+        return;
+      }
+      panFrom.current.copy(controls.target);
+      panning.current = true;
+      try {
+        update.call(controls);
+        holdPan(controls);
+      } finally {
+        panning.current = false;
+      }
+    };
+    return () => { controls.update = update; };
+  }, [camera, holdPan]);
 
   // Damping decay — after an OrbitControls interaction (orbit, pan),
   // keep rendering frames so damping can interpolate smoothly.
@@ -491,12 +547,14 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   }, [clearCameraInteractionTimer]);
 
   const onControlsChange = useCallback(() => {
-    if (suspendedRef.current) return;
     const controls = controlsRef.current;
+    // Held first, so the view kept for a resize is the held one.
+    if (controls !== null) holdPan(controls);
+    if (suspendedRef.current) return;
     if (controls !== null) (heldTarget.current ??= new Vector3()).copy(controls.target);
     dampingFrames.current = smoothControls ? DAMPING_SETTLE_FRAMES : 0;
     invalidate();
-  }, [invalidate, smoothControls]);
+  }, [holdPan, invalidate, smoothControls]);
 
   useEffect(() => () => {
     clearCameraInteractionTimer();
@@ -820,7 +878,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     }
   });
 
-  // Per-frame: inertial zoom + WASD panning + damping decay
+  // Per-frame: inertial zoom + arrow-key panning + damping decay
   useFrame((_state, delta) => {
     const controls = controlsRef.current;
     if (controls === null) return;
@@ -913,13 +971,14 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     const moveX = (rightX * dx + forward.x * -dz) * speed;
     const moveZ = (rightZ * dx + forward.z * -dz) * speed;
 
+    // Move camera by same amount to keep relative offset, the step held
+    // within the room's bounds as a pan is (T-724).
+    keyPanFrom.current.copy(controls.target);
     controls.target.x += moveX;
     controls.target.z += moveZ;
-    clampTarget(controls.target);
-
-    // Move camera by same amount to keep relative offset
     camera.position.x += moveX;
     camera.position.z += moveZ;
+    holdOrbitTarget(controls.target, camera.position, boundsRef.current, keyPanFrom.current);
 
     controls.update();
     invalidate();
