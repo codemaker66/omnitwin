@@ -578,7 +578,7 @@ describe("the terms of service", () => {
   });
 
   it("says the Grand Hall's dimensions were measured, not published by the venue", () => {
-    // Blake, 11 November 2026: "The measured 21.14 x 10.59 m". Every page that
+    // Blake's decision, 11 November 2026: the measured size. Every page that
     // gives the Grand Hall's size gives the laser scan's, so the terms may not
     // call every room dimension the venue's own published figure.
     const text = textOf("terms");

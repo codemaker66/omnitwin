@@ -99,7 +99,9 @@ async function linkTheSheet(page: Page): Promise<void> {
   });
   await page.route(`${API}/hallkeeper/${LAYOUT}/summary**`, (route) => {
     void route.fulfill({ json: { data: HallkeeperSheetSummarySchema.parse({
-      configId: LAYOUT, readyBy: at("16:00"), eventStart: at("18:00"), total: 43, checked: 12,
+      // The API's summary sends the sheet's Ready by (sheetTimes): with no
+      // final time from the planner, when guests come in.
+      configId: LAYOUT, readyBy: at("18:00"), eventStart: at("18:00"), total: 43, checked: 12,
     }) } });
   });
 }
@@ -258,7 +260,7 @@ test.describe("Day Board", () => {
     // It unfolds under its own room, not at the foot of the page.
     await expect(page.locator(".dayboard-room-item").filter({ has: page.locator('[aria-label="Grand Hall"]') }).getByRole("region", { name: "Grand Hall: Chamber dinner" })).toBeVisible();
     await expect(slot.getByRole("link", { name: /Open setup sheet/u })).toHaveAttribute("href", `/hallkeeper/${LAYOUT}?eventId=${EVENT}`);
-    await expect(slot.getByText("Ready by 16:00 · 12 of 43 checked")).toBeVisible();
+    await expect(slot.getByText("Ready by 18:00 · 12 of 43 checked")).toBeVisible();
     const filled = await slot.locator(".dayboard-slot-progress-bar > span").evaluate((bar) => bar.getBoundingClientRect().width / (bar.parentElement?.getBoundingClientRect().width ?? 1));
     expect(filled).toBeCloseTo(12 / 43, 1);
     expect(await unreadableText(page, ".dayboard", "a linked sheet on a phone")).toEqual([]);

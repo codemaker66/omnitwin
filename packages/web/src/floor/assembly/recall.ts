@@ -235,13 +235,19 @@ export function consumeAssemblyRequest(request: AssemblyRequest): void {
 
 /**
  * The planner's side of Layout Recall. `wanted`: this device asks for the
- * Assembly. `stage`: the drawn Grand Hall is there to play in (the Assembly
- * is mounted). `elsewhere`: the open room is known not to be one it plays in.
- * `coming`: the Assembly may still play here, but its stage or its code is
- * still on its way, so a hold waits for it (up to HOLD_CAP_MS). `always`: a
- * layout plays on every open here, seen or not.
+ * Assembly. `stage`: the drawn Grand Hall is there for it to play in, so it
+ * mounts there. `elsewhere`: the open room is known not to be one it plays in.
+ * `coming`: the Assembly may still play here, but the room is not yet known,
+ * so a hold waits for it (up to HOLD_CAP_MS). `always`: a layout plays on
+ * every open here, seen or not.
+ *
+ * A stage the Assembly is not yet on is on its way too: the Assembly mounts
+ * only once its code is in and the 3D view has built the hall, and that first
+ * build can hold the page for seconds (T-742). A hold waits for it until the
+ * Assembly is on its stage (`onStage`), up to HOLD_CAP_MS.
  */
 export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: boolean, coming = false, always = false): void {
+  const onStage = useAssemblyRecallStore((state) => state.onStage);
   useEffect(() => {
     if (!wanted) return undefined;
     asked = true;
@@ -272,8 +278,8 @@ export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: bo
   }, [elsewhere, stage, wanted]);
 
   useEffect(() => {
-    setStageComing(wanted && coming);
-  }, [coming, wanted]);
+    setStageComing(wanted && (coming || (stage && !onStage)));
+  }, [coming, onStage, stage, wanted]);
 }
 
 /** Tests: forget every opening and hold. */
