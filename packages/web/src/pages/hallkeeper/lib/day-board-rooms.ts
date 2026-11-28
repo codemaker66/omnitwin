@@ -1,4 +1,5 @@
 import type { CalendarRoom } from "@omnitwin/types";
+import { formatWallTime } from "../../diary/lib/board-time.js";
 import {
   formatMinutes,
   type DayBoardLane,
@@ -9,12 +10,14 @@ import {
 } from "./day-board-state.js";
 
 // ---------------------------------------------------------------------------
-// The rooms board (the Day Board in the desks' register, Blake's concept C,
-// chosen 10 November 2026): the day read room by room. Each room's slots fall
-// into what has finished, what the room is doing or will do first, what
-// comes next and what comes after; the copper plane counts the day and its
-// counts filter the rooms; one sentence says what matters. Pure, like the
-// state machine it reads: the page renders what this returns.
+// The rooms board (the Day Board in the desks' register, read room by room
+// since 10 November 2026; the sentence first since 22 November 2026, T-753).
+// Each room's slots fall into what has finished, what the room is doing or
+// will do first, what comes next and what comes after; its card names the
+// lead, what comes then and why the room is at risk, and keeps every other
+// slot for All of today. One line counts the day and its counts filter the
+// rooms; one sentence says what matters. Pure, like the state machine it
+// reads: the page renders what this returns.
 // ---------------------------------------------------------------------------
 
 /** A room's day as the rooms board reads it. */
@@ -34,6 +37,11 @@ export interface RoomDay {
   readonly next: DayBoardSlot | null;
   /** Everything after the next. */
   readonly later: readonly DayBoardSlot[];
+  /** Every slot but the lead, in time order: the card's All of today. */
+  readonly others: readonly DayBoardSlot[];
+  /** The first function still ahead that is at risk, whose reason the card
+   *  gives, or null. */
+  readonly atRisk: DayBoardSlot | null;
   /** The room's edge: red while anything still ahead of it is at risk, else
    *  its lead's tone, faded once the room's day is done. */
   readonly tone: DayBoardTone;
@@ -53,7 +61,7 @@ export function roomDay(lane: DayBoardLane): RoomDay {
   // it is never named "Next" or "Later".
   const alsoNow = after.filter(underWay);
   const toCome = after.filter((slot) => !underWay(slot));
-  const atRisk = ahead.some((slot) => slot.state === "exception");
+  const atRisk = ahead.find((slot) => slot.state === "exception") ?? null;
   return {
     room: lane.room,
     slots: lane.slots,
@@ -62,15 +70,23 @@ export function roomDay(lane: DayBoardLane): RoomDay {
     alsoNow,
     next: toCome[0] ?? null,
     later: toCome.slice(1),
-    tone: atRisk ? "red" : lead?.tone ?? (earlier.length > 0 ? "faded" : "quiet"),
+    others: lane.slots.filter((slot) => slot !== lead),
+    atRisk,
+    tone: atRisk !== null ? "red" : lead?.tone ?? (earlier.length > 0 ? "faded" : "quiet"),
   };
 }
 
+/** What a room's card says comes next, by its doors: "then 18:30 ·
+ *  Wedding dinner"; null when nothing does. */
+export function thenLine(day: RoomDay, timeZone: string): string | null {
+  return day.next === null ? null : `then ${formatWallTime(day.next.startsAtMs, timeZone)} · ${day.next.title}`;
+}
+
 // ---------------------------------------------------------------------------
-// The copper plane: the day in counts, each count a filter on the rooms.
+// The line of counts: the day in counts, each count a filter on the rooms.
 // ---------------------------------------------------------------------------
 
-export type BoardFocus = "all" | "risk" | "waiting" | "live" | "setup" | "ahead";
+export type BoardFocus = "all" | "risk" | "live" | "setup" | "ahead";
 
 /** The states between the organisers being due and the doors opening. */
 const GETTING_READY: ReadonlySet<DayBoardState> = new Set<DayBoardState>(["organisers-due", "guests-due", "imminent"]);
@@ -79,7 +95,6 @@ function slotInFocus(slot: DayBoardSlot, focus: BoardFocus): boolean {
   switch (focus) {
     case "all": return true;
     case "risk": return slot.state === "exception";
-    case "waiting": return (slot.attention?.unownedCount ?? 0) > 0;
     case "live": return slot.state === "live";
     case "setup": return GETTING_READY.has(slot.state);
     case "ahead": return slot.state === "scheduled";
@@ -95,42 +110,27 @@ export function roomInFocus(day: RoomDay, focus: BoardFocus): boolean {
   return day.slots.some((slot) => slotInFocus(slot, focus));
 }
 
-export interface PlaneStage {
-  readonly focus: BoardFocus;
-  readonly label: string;
+/** One count on the line: the functions in a state, in words. */
+export interface DayCount {
+  readonly focus: Exclude<BoardFocus, "all">;
   readonly count: number;
-  /** What the count covers that its filter cannot show, or null. */
-  readonly note: string | null;
+  /** "2 at risk", "3 live", "1 setting up", "7 still to come". */
+  readonly words: string;
 }
 
-/** The plane's counts of functions, in the order a day asks for attention.
- *  "Requests waiting" counts the requests nobody has, and its filter shows
- *  the rooms whose bookings they are on. Today (`waiting` given) it counts
- *  every one of them, as the list beside the rooms and the sentence do, and
- *  says how many are on no booking of today's, so a filter that shows fewer
- *  rooms, or none, never contradicts it. Another day it counts those on
- *  that day's own bookings and says so, beside a list of today's. */
-export function planeStages(lanes: readonly DayBoardLane[], waiting?: number): readonly PlaneStage[] {
+const COUNT_WORDS: readonly (readonly [Exclude<BoardFocus, "all">, string])[] = [
+  ["risk", "at risk"], ["live", "live"], ["setup", "setting up"], ["ahead", "still to come"],
+];
+
+/** The day's counts of functions, in the order a day asks for attention.
+ *  No total of bookings, which invited a sum that does not add up, and no
+ *  requests: the panel's heading counts those. */
+export function dayCounts(lanes: readonly DayBoardLane[]): readonly DayCount[] {
   const slots = lanes.flatMap((lane) => lane.slots);
-  const count = (focus: BoardFocus): number => slots.filter((slot) => slotInFocus(slot, focus)).length;
-  const onBookings = slots.reduce((sum, slot) => sum + (slot.attention?.unownedCount ?? 0), 0);
-  const elsewhere = waiting === undefined ? 0 : Math.max(0, waiting - onBookings);
-  const requests: PlaneStage = waiting === undefined
-    ? { focus: "waiting", label: "Waiting this day", count: onBookings, note: null }
-    : {
-      focus: "waiting",
-      label: "Requests waiting",
-      count: waiting,
-      note: elsewhere === 0 ? null : `${String(elsewhere)} not on today’s bookings`,
-    };
-  return [
-    { focus: "risk", label: "At risk", count: count("risk"), note: null },
-    requests,
-    { focus: "live", label: "Live", count: count("live"), note: null },
-    { focus: "setup", label: "Setting up", count: count("setup"), note: null },
-    { focus: "ahead", label: "Still to come", count: count("ahead"), note: null },
-    { focus: "all", label: "Bookings", count: slots.length, note: null },
-  ];
+  return COUNT_WORDS.map(([focus, words]) => {
+    const count = slots.filter((slot) => slotInFocus(slot, focus)).length;
+    return { focus, count, words: `${String(count)} ${words}` };
+  });
 }
 
 const NUMBER_WORDS: readonly string[] = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
@@ -150,8 +150,8 @@ function listed(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1] ?? ""}`;
 }
 
-/** What the list of rooms shows under the plane. It names the rooms (the
- *  plane counts functions, so a second count here would only disagree):
+/** What the list of rooms shows under the counts. It names the rooms (the
+ *  counts are of functions, so a second count here would only disagree):
  *  "Six rooms in use", "Live now in Saloon and North Gallery". */
 export function showingLine(rooms: readonly string[], focus: BoardFocus): string {
   const where = rooms.length > 3 ? `${countWord(rooms.length).toLowerCase()} rooms` : listed(rooms);
@@ -159,7 +159,6 @@ export function showingLine(rooms: readonly string[], focus: BoardFocus): string
   switch (focus) {
     case "all": return `${countWord(rooms.length)} ${plural(rooms.length, "room", "rooms")} in use`;
     case "risk": return none ? "Nothing is at risk" : `At risk in ${where}`;
-    case "waiting": return none ? "No room has a request waiting" : `Requests waiting in ${where}`;
     case "live": return none ? "Nothing is live" : `Live now in ${where}`;
     case "setup": return none ? "Nothing is setting up" : `Setting up in ${where}`;
     case "ahead": return none ? "Nothing still to come" : `Still to come in ${where}`;
@@ -171,28 +170,44 @@ export function showingLine(rooms: readonly string[], focus: BoardFocus): string
 }
 
 // ---------------------------------------------------------------------------
-// The sentence under the title: what matters, from the board alone.
+// The day's sentence, the board's headline: what matters, from the board alone.
 // ---------------------------------------------------------------------------
 
-/** A run of the sentence; a strong run may carry the tone of what it names. */
-export type SummaryPart = string | { readonly strong: string; readonly tone?: "risk" | "copper" };
+/** A run of the sentence: plain words; a strong run, which may carry the
+ *  tone of what it names and the room it is; or a room named in passing.
+ *  A run that is a room carries its id, so a phone can take the reader to
+ *  that room's card. */
+export type SummaryPart =
+  | string
+  | { readonly strong: string; readonly tone?: "risk" | "copper"; readonly roomId?: string }
+  | { readonly room: string; readonly roomId: string };
+
+/** The rooms as runs of the sentence: "A, B and C". */
+function listedRooms(rooms: readonly CalendarRoom[]): readonly SummaryPart[] {
+  return rooms.flatMap((room, index): readonly SummaryPart[] => {
+    const part: SummaryPart = { room: room.name, roomId: room.id };
+    if (index === 0) return [part];
+    return [index === rooms.length - 1 ? " and " : ", ", part];
+  });
+}
 
 function riskParts(lanes: readonly DayBoardLane[], today: boolean): readonly SummaryPart[] {
   const rooms = lanes.filter((lane) => lane.slots.some((slot) => slot.state === "exception"));
   const only = rooms[0];
   if (only === undefined) return [];
   if (rooms.length > 1) {
-    const names = listed(rooms.map((lane) => lane.room.name));
     // "Now" only of today: another day's changeover is at risk, not urgent.
     // The names are rooms, so the count is of rooms.
-    return today
-      ? [{ strong: `${countWord(rooms.length)} rooms`, tone: "risk" }, ` need you now: ${names}.`]
-      : [{ strong: `${countWord(rooms.length)} rooms`, tone: "risk" }, ` have a changeover at risk: ${names}.`];
+    return [
+      { strong: `${countWord(rooms.length)} rooms`, tone: "risk" },
+      today ? " need you now: " : " have a changeover at risk: ",
+      ...listedRooms(rooms.map((lane) => lane.room)),
+      ".",
+    ];
   }
   const overrun = only.slots.some((slot) => slot.exception === "overrun");
-  return overrun
-    ? [{ strong: only.room.name, tone: "risk" }, " is running over."]
-    : [{ strong: only.room.name, tone: "risk" }, "’s changeover is at risk."];
+  const named: SummaryPart = { strong: only.room.name, tone: "risk", roomId: only.room.id };
+  return overrun ? [named, " is running over."] : [named, "’s changeover is at risk."];
 }
 
 function requestParts(lanes: readonly DayBoardLane[], unowned: readonly UnownedRequest[], nowMs: number): readonly SummaryPart[] {
@@ -264,5 +279,5 @@ export function boardSummary(input: {
 
 /** The sentence as plain text, for a label or a test. */
 export function summaryText(parts: readonly SummaryPart[]): string {
-  return parts.map((part) => (typeof part === "string" ? part : part.strong)).join("");
+  return parts.map((part) => (typeof part === "string" ? part : "room" in part ? part.room : part.strong)).join("");
 }

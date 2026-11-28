@@ -10,6 +10,9 @@ import { describe, expect, it } from "vitest";
 //     rooms scroll under it (D7).
 //   - "Print today" prints every room and every slot in words: paper hides
 //     the screen's chrome, never a room, a slot or what it says.
+//   - Live is calm (T-753, 22 November 2026): the house ink, an ink dot in a
+//     thin ink ring that breathes, and never the refusal's oxblood or the
+//     red that means trouble.
 // ---------------------------------------------------------------------------
 
 interface Rule {
@@ -95,8 +98,28 @@ describe("the Day Board's stylesheet", () => {
     expect(rules(CSS).filter((rule) => rule.selectors.includes(".dayboard[data-layout=\"phone\"] .dayboard-next"))).toHaveLength(1);
   });
 
-  it("gives the wall's height to its rooms, not to a note on counts that filter nothing", () => {
-    expect(cascaded(rules(CSS), ".dayboard[data-register=\"wall\"] .dayboard-stage-note").get("display")).toBe("none");
+  it("draws live in the house ink, as an ink dot in a thin ink ring that breathes, never in oxblood or red", () => {
+    const board = cascaded(rules(CSS), ".dayboard");
+    expect(board.get("--lt-live")).toBe("var(--house-ink-1)");
+    // Every rule that draws live, on every register, keeps clear of the
+    // refusal colour and of the reds that mean trouble.
+    const live = rules(CSS).filter((rule) => rule.selectors.some((selector) => /live/u.test(selector) && !/dayboard-live-dot/u.test(selector)));
+    expect(live.length).toBeGreaterThan(4);
+    for (const rule of live) {
+      for (const [property, value] of rule.declarations) {
+        expect(`${rule.selectors.join(", ")} { ${property}: ${value} }`).not.toMatch(/oxblood|--lt-red|--db-red|brick|alert|#8e3a2c/iu);
+      }
+    }
+    // The ring round the dot, in the live tone, breathing on the epoch.
+    const ring = cascaded(rules(CSS), ".dayboard-slab[data-motion=\"live-breath\"] .dayboard-dot::after");
+    expect(ring.get("border")).toBe("1.5px solid var(--db-tone)");
+    expect(ring.get("animation")).toBe("lt-live-ring var(--lt-breath-live) ease-in-out infinite");
+    expect(ring.get("animation-delay")).toBe("calc(-1ms * var(--lt-epoch-phase-ms))");
+    // The old glow from the slot's edge is gone.
+    expect(rules(CSS).some((rule) => rule.selectors.includes(".dayboard-slab[data-motion=\"live-breath\"]::after"))).toBe(false);
+    // On the forest panel live is sage-lit, never the brick of trouble.
+    expect(cascaded(rules(CSS), ".dayboard-detail.dayboard-tone-live").get("--db-tone-lit")).toBe("var(--house-sage-lit)");
+    expect(cascaded(rules(CSS), ".dayboard-detail.dayboard-tone-red").get("--db-tone-lit")).toBe("var(--house-brick-lit)");
   });
 
   it("prints every room and every slot in words, hiding only the screen's chrome", () => {
@@ -108,19 +131,26 @@ describe("the Day Board's stylesheet", () => {
       .filter((selector) => !selector.includes("::"))
       .map(hiddenTarget));
     const operational = [
-      "dayboard-rooms", "dayboard-room-item", "dayboard-room", "dayboard-room-main", "dayboard-room-head",
-      "dayboard-room-name", "dayboard-room-count", "dayboard-slab", "dayboard-slab-head", "dayboard-slab-title",
-      "dayboard-verb", "dayboard-verb-words", "dayboard-slab-time", "dayboard-slab-notes", "dayboard-gap-words",
-      "dayboard-slab-why", "dayboard-slab-seen", "dayboard-line", "dayboard-line-items", "dayboard-line-label",
-      "dayboard-free", "dayboard-summary", "dayboard-title", "dayboard-print-note", "dayboard-stale",
+      "dayboard-rooms", "dayboard-room-item", "dayboard-room", "dayboard-room-main", "dayboard-room-name",
+      "dayboard-slab", "dayboard-slab-head", "dayboard-slab-title", "dayboard-verb", "dayboard-verb-words",
+      "dayboard-slab-time", "dayboard-slab-notes", "dayboard-gap-words", "dayboard-slab-why", "dayboard-slab-seen",
+      "dayboard-now-free", "dayboard-room-why", "dayboard-room-foot", "dayboard-then", "dayboard-today-list",
+      "dayboard-free", "dayboard-summary", "dayboard-overline", "dayboard-subtitle", "dayboard-title",
+      "dayboard-print-note", "dayboard-stale",
     ];
     expect(operational.filter((name) => hidden.has(name))).toEqual([]);
     // What paper does hide is the screen's own furniture.
     expect([...hidden].sort()).toEqual([
-      "dayboard-announcer", "dayboard-bar", "dayboard-days", "dayboard-detail-frame", "dayboard-legend", "dayboard-next",
-      "dayboard-panel", "dayboard-plane", "dayboard-print", "dayboard-rail", "dayboard-ring", "dayboard-room-field",
-      "dayboard-room-photo", "dayboard-scale", "dayboard-status", "dayboard-tools", "dayboard-wall-foot",
+      "dayboard-announcer", "dayboard-counts", "dayboard-days", "dayboard-detail-frame", "dayboard-legend",
+      "dayboard-legend-toggle", "dayboard-next", "dayboard-overline-time", "dayboard-panel", "dayboard-print", "dayboard-rail",
+      "dayboard-room-field", "dayboard-room-photo", "dayboard-status", "dayboard-today-toggle", "dayboard-tools",
+      "dayboard-wall-foot",
     ]);
+    // A day folded away under All of today still prints, every slot of it.
+    const folded = cascaded(print, ".dayboard-today-list[hidden]");
+    expect(folded.get("display")).toBe("block !important");
+    // The title the screen keeps for assistive technology prints.
+    expect(cascaded(print, ".dayboard-title.dayboard-sr").get("position")).toBe("static");
     // A room is never split across two pages, and the wall's rooms are not
     // held to one screen's height on paper.
     const item = print.find((rule) => rule.selectors.includes(".dayboard-room-item"));

@@ -13,7 +13,7 @@ import { getSheetSummary } from "../../api/hallkeeper-summary.js";
 import { formatWallTime } from "../diary/lib/board-time.js";
 import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
-import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
+import { dayBoardRoomPhoto } from "./lib/day-board-photo.js";
 import { isQueuedObservation, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
 import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib/day-board-sheet.js";
 import type { DayBoardSlot } from "./lib/day-board-state.js";
@@ -220,7 +220,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   readonly closeLabel: string;
 }): ReactElement {
   const occasion = occasionLabel(slot.eventType);
-  const photo = venueSlug === null ? null : roomPhoto(venueSlug, room.slug);
+  const photo = venueSlug === null ? null : dayBoardRoomPhoto(venueSlug, room.slug);
   // One tap at a time; the words say what happened to it (S5, D10).
   const [busy, setBusy] = useState<ObservationKind | null>(null);
   const [seenLine, setSeenLine] = useState<string | null>(null);

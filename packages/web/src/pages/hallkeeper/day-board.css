@@ -1,19 +1,20 @@
 /* ---------------------------------------------------------------------------
-   The Day Board (goal 19 S3) in the desks' register (Blake's concept C, 10
-   November 2026): the ivory sheet on the sage ground, the copper plane of
-   the day's counts, the forest panel beside it, the Newsreader serif for what
-   is read and Inter for what is done. The Enquiries desk set the frame
+   The Day Board (goal 19 S3) in the desks' register, the sentence first
+   (direction A, 22 November 2026, T-753): the ivory sheet on the sage ground,
+   the day's sentence as the headline, a card per room, the forest panel
+   beside them, the Newsreader serif for what is read and Inter for what is
+   done. The Enquiries desk set the frame
    (components/dashboard/enquiries/EnquiriesDesk.css); the board fills it
    with rooms.
 
    Colour discipline (D3 law 8): text is never tinted by state. Tone lives in
-   the dot, the icon, a room's edge, a verb's wash, the bar and the ring, and
-   the words carry the meaning on their own, which is also what keeps every
-   state legible for a colour-blind hallkeeper. Every state colour is a
-   `--lt-*` token from docs/design/living-timetable/attention-system.md, the
-   ramp Blake spoke (green, then orange, then red for live); the `--db-*`
-   names are the legend's aliases, audited pairwise in
-   src/__tests__/house-tokens.test.ts.
+   the dot, the icon, a room's edge and a verb's wash, and the words carry
+   the meaning on their own, which is also what keeps every state legible
+   for a colour-blind hallkeeper. Every state colour is a `--lt-*` token from
+   docs/design/living-timetable/attention-system.md: green as the organisers
+   are due, amber as the guests are, live in the house's calm ink (an ink dot
+   in a thin ink ring), and red for trouble only. The `--db-*` names are the
+   legend's aliases, audited pairwise in src/__tests__/house-tokens.test.ts.
 
    Motion discipline (D3 laws 1, 2, 5, 6): the only animations are the
    breaths this file declares, on opacity and transform, each phase-locked
@@ -38,7 +39,9 @@
      bans gold-family literals, and the status amber is the one it keeps. */
   --lt-amber: var(--house-amber-mark);
   --lt-amber-deep: #b5581a;
-  --lt-live: var(--vv-oxblood, #8e3a2c);
+  /* Live is calm: the house ink, its dot in a thin ring of the same ink. Red
+     is for trouble only (22 November 2026). */
+  --lt-live: var(--house-ink-1);
   --lt-sage: var(--hk-sage, #a9c3a4);
   --lt-sage-ink: var(--house-sage-text);
   --lt-faded: var(--house-slate-dot);
@@ -74,8 +77,7 @@
   --db-red: var(--lt-red);
 
   /* --- geometry ----------------------------------------------------------- */
-  --db-photo: 96px;
-  --db-gutter: 16px;
+  --db-photo: 116px;
   --db-ease-out: var(--house-ease-out);
 
   min-height: 100%;
@@ -85,15 +87,15 @@
   line-height: 1.45;
 }
 
-/* Each tone, as the slab, the room's edge and the bar read it. */
-.dayboard-tone-quiet, .dayboard-room[data-tone="quiet"], .dayboard-seg[data-tone="quiet"] { --db-tone: var(--db-quiet); }
-.dayboard-tone-green, .dayboard-room[data-tone="green"], .dayboard-seg[data-tone="green"] { --db-tone: var(--db-green); }
-.dayboard-tone-amber, .dayboard-room[data-tone="amber"], .dayboard-seg[data-tone="amber"] { --db-tone: var(--db-amber); }
-.dayboard-tone-amber-deep, .dayboard-room[data-tone="amber-deep"], .dayboard-seg[data-tone="amber-deep"] { --db-tone: var(--db-amber-deep); }
-.dayboard-tone-live, .dayboard-room[data-tone="live"], .dayboard-seg[data-tone="live"] { --db-tone: var(--db-live); }
-.dayboard-tone-sage, .dayboard-room[data-tone="sage"], .dayboard-seg[data-tone="sage"] { --db-tone: var(--db-sage); }
-.dayboard-tone-faded, .dayboard-room[data-tone="faded"], .dayboard-seg[data-tone="faded"] { --db-tone: var(--db-faded); }
-.dayboard-tone-red, .dayboard-room[data-tone="red"], .dayboard-seg[data-tone="red"] { --db-tone: var(--db-red); }
+/* Each tone, as the slab and the room's edge read it. */
+.dayboard-tone-quiet, .dayboard-room[data-tone="quiet"] { --db-tone: var(--db-quiet); }
+.dayboard-tone-green, .dayboard-room[data-tone="green"] { --db-tone: var(--db-green); }
+.dayboard-tone-amber, .dayboard-room[data-tone="amber"] { --db-tone: var(--db-amber); }
+.dayboard-tone-amber-deep, .dayboard-room[data-tone="amber-deep"] { --db-tone: var(--db-amber-deep); }
+.dayboard-tone-live, .dayboard-room[data-tone="live"] { --db-tone: var(--db-live); }
+.dayboard-tone-sage, .dayboard-room[data-tone="sage"] { --db-tone: var(--db-sage); }
+.dayboard-tone-faded, .dayboard-room[data-tone="faded"] { --db-tone: var(--db-faded); }
+.dayboard-tone-red, .dayboard-room[data-tone="red"] { --db-tone: var(--db-red); }
 
 /* Said to assistive tech; never drawn. */
 .dayboard-announcer,
@@ -115,12 +117,12 @@
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(400px, 34vw, 540px);
+  grid-template-columns: minmax(0, 1fr) clamp(380px, 31vw, 520px);
   align-items: start;
   gap: 24px;
   box-sizing: border-box;
   min-height: calc(100dvh - 80px);
-  padding: 24px;
+  padding: 20px 24px 24px;
   background: var(--house-ground);
 }
 
@@ -145,14 +147,15 @@
    what is really behind it; its tilted right edge is the ground showing
    through the lower corner. */
 .dayboard-sheet {
-  --db-pad-left: clamp(24px, 3.4vw, 56px);
+  --db-pad-left: clamp(22px, 2.6vw, 44px);
+  --db-pad-right: clamp(24px, 2.6vw, 44px);
   position: relative;
   isolation: isolate;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
   min-width: 0;
-  padding: 34px clamp(28px, 3.2vw, 52px) 48px var(--db-pad-left);
+  padding: 22px var(--db-pad-right) 36px var(--db-pad-left);
   background: var(--lt-ground);
 }
 
@@ -168,53 +171,56 @@
   pointer-events: none;
 }
 
-/* --- the head: the day, the title, the sentence ----------------------------- */
+/* --- the head: the overline, the day controls, the sentence ---------------- */
 
 .dayboard-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 
-.dayboard-headline {
+/* "SATURDAY 14 NOVEMBER · 14:20" with the day controls and how fresh the day
+   is beside it, quieter. */
+.dayboard-overline-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 20px;
+  gap: 6px 18px;
 }
 
-.dayboard-greeting {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 0.6em;
+.dayboard-overline {
   margin: 0;
   color: var(--house-ink-2);
   font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
-.dayboard-titleline {
+.dayboard-head-tools {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 14px 24px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 14px;
 }
 
+/* The title is for assistive technology; on screen the sentence heads the day. */
 .dayboard-title {
-  margin: 2px 0 0;
+  margin: 0;
   font: 400 clamp(38px, 3.6vw, 54px)/1.04 var(--house-serif);
   letter-spacing: -0.022em;
 }
 
+/* The day's sentence: the headline. */
 .dayboard-summary {
-  max-width: 62ch;
-  margin: 6px 0 0;
-  color: var(--house-ink-2);
-  font: 400 19px/1.5 var(--house-serif);
+  max-width: 46ch;
+  margin: 2px 0 0;
+  color: var(--lt-ink);
+  font: 400 clamp(22px, 1.9vw, 28px)/1.28 var(--house-serif);
+  letter-spacing: -0.008em;
   text-wrap: pretty;
 }
 
@@ -226,14 +232,23 @@
 .dayboard-summary strong[data-tone="risk"] { color: var(--house-brick-text); }
 .dayboard-summary strong[data-tone="copper"] { color: var(--house-copper-text); }
 
-/* How fresh the day is, quietly, on the greeting's line. */
+/* On a phone a room the sentence names takes the reader to its card. */
+.dayboard-summary-room {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--house-rule-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+/* How fresh the day is, quietly, beside the day controls. */
 .dayboard-status {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
   color: var(--house-ink-2);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .dayboard-live-dot {
@@ -259,7 +274,7 @@
   font-weight: 600;
 }
 
-/* ← Today → and the day itself: one quiet control on the title's line. */
+/* ← Today → and the day itself: one quiet control on the overline's line. */
 .dayboard-days {
   display: inline-flex;
   align-items: stretch;
@@ -269,20 +284,20 @@
 .dayboard-days > button,
 .dayboard-day-field input {
   box-sizing: border-box;
-  min-height: 44px;
+  min-height: 36px;
   margin: 0;
-  border: 1px solid var(--house-edge);
-  background: var(--house-paper);
+  border: 1px solid var(--house-rule-strong);
+  background: transparent;
   color: var(--lt-ink);
-  font: 500 14px/1 var(--house-sans);
+  font: 500 13px/1 var(--house-sans);
 }
 
 .dayboard-days > button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 44px;
-  padding: 0 14px;
+  min-width: 36px;
+  padding: 0 11px;
   cursor: pointer;
   transition: background-color var(--house-motion-hover) var(--house-ease-out);
 }
@@ -293,16 +308,16 @@
 
 .dayboard-days > button:first-child { border-radius: 3px 0 0 3px; }
 .dayboard-days > button:nth-child(3) { border-radius: 0 3px 3px 0; }
-.dayboard-days > button[aria-pressed="true"] { font-weight: 600; box-shadow: inset 0 -3px 0 var(--lt-ink); }
+.dayboard-days > button[aria-pressed="true"] { font-weight: 600; box-shadow: inset 0 -2px 0 var(--lt-ink); }
 .dayboard-days > button:active { transform: translateY(1px); }
 
 .dayboard-day-field {
   display: inline-flex;
-  margin-left: 10px;
+  margin-left: 8px;
 }
 
 .dayboard-day-field input {
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 3px;
 }
 
@@ -312,38 +327,82 @@
   .dayboard-tools .vv-chime-toggle:hover { background: var(--house-sheet-hover); }
 }
 
+/* A finger's height on a touch screen, however quiet the control. */
+@media (pointer: coarse) {
+  .dayboard-days > button,
+  .dayboard-day-field input { min-height: 44px; }
+  .dayboard-days > button { min-width: 44px; }
+}
+
 /* --- this hallkeeper's next action ------------------------------------------ */
 
+/* One line: the mark, the label, the words, and Take it. */
 .dayboard-next {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin: 22px 0 0;
-  padding: 6px 16px;
+  gap: 6px 12px;
+  margin: 16px 0 0;
+  padding: 8px 10px 8px 14px;
   border-left: 3px solid var(--lt-hairline);
   background: var(--lt-raised);
   color: var(--lt-ink);
 }
 
-.dayboard-next > svg {
+.dayboard-next-request { border-left-color: var(--lt-ring); }
+.dayboard-next[data-urgent="true"] { border-left-color: var(--lt-urgent-label); }
+
+/* The mark carries the request's halo while nobody owns it. */
+.dayboard-next-mark {
+  position: relative;
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
   color: var(--lt-hairline);
 }
 
-.dayboard-next-request { border-left-color: var(--lt-ring); }
-.dayboard-next-request > svg { color: var(--lt-ring); }
-.dayboard-next[data-urgent="true"] { border-left-color: var(--lt-urgent-label); }
-.dayboard-next[data-urgent="true"] > svg { color: var(--lt-urgent-label); }
+.dayboard-next-request .dayboard-next-mark { color: var(--lt-ring); }
+.dayboard-next[data-urgent="true"] .dayboard-next-mark { color: var(--lt-urgent-label); }
+
+/* The halo that breathes: a line round the mark, so the words keep their
+   full ink (law 8) while the attention moves. */
+.dayboard-next-mark::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* "URGENT" in brick capitals; "Take now" in the request's copper. */
+.dayboard-next-label {
+  flex: none;
+  color: var(--lt-ring);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.dayboard-next[data-urgent="true"] .dayboard-next-label { color: var(--lt-urgent-label); }
 
 .dayboard-next-line {
   display: inline-flex;
+  flex: 1 1 18ch;
   align-items: center;
-  min-height: 44px;
+  min-width: 0;
+  min-height: 40px;
   padding: 0;
   border: 0;
   background: none;
   color: inherit;
-  font: 400 19px/1.35 var(--house-serif);
+  font: 400 19px/1.3 var(--house-serif);
   text-align: left;
   overflow-wrap: anywhere;
 }
@@ -358,106 +417,118 @@ button.dayboard-next-line {
 
 button.dayboard-next-line:hover { text-decoration-color: currentColor; }
 
-/* --- the copper plane: the day in counts, each count a filter --------------- */
-
-/* The plane carries its own copper, so every count is measured against what
-   is really behind it; the tilt is cut from its own box. */
-.dayboard-plane {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  margin: 26px 0 4px calc(-1 * var(--db-pad-left) - 12px);
-  padding: 12px 14px 10px calc(var(--db-pad-left) + 12px);
-  background: var(--house-plane);
-  clip-path: polygon(0 7%, 100% 0, calc(100% - 10px) 100%, 6px 100%);
-}
-
-.dayboard-stage {
-  position: relative;
-  display: grid;
-  align-content: start;
-  gap: 4px;
-  min-width: 0;
-  min-height: 84px;
-  margin: 0;
-  padding: 10px 10px 12px 16px;
+/* Take it: the line's one action, in the forest every decision wears. */
+.dayboard-take {
+  flex: none;
+  min-height: 40px;
+  padding: 0 18px;
   border: 0;
-  border-left: 1px solid #b9906f88;
-  background: transparent;
-  color: var(--house-plane-ink);
-  font: inherit;
-  text-align: left;
+  border-radius: 3px;
+  background: var(--house-forest);
+  color: var(--house-forest-ink-1);
+  font: 600 14px/1 var(--house-sans);
+  cursor: pointer;
+  transition: transform var(--house-motion-hover) var(--house-ease-out);
 }
 
-button.dayboard-stage {
+.dayboard-take:active { transform: translateY(1px); }
+.dayboard-take:focus-visible { outline: 2px solid var(--lt-focus); outline-offset: 2px; }
+
+.dayboard-next-working,
+.dayboard-next-waiting {
+  flex: none;
+  color: var(--house-ink-2);
+  font-size: 13.5px;
+}
+
+.dayboard-next-error {
+  flex: 1 0 100%;
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--lt-red);
+  color: var(--lt-ink);
+  font-size: 13.5px;
+}
+
+@media (pointer: coarse) {
+  .dayboard-take,
+  .dayboard-next-line { min-height: 44px; }
+}
+
+/* --- the line of counts: the day in counts, each count a filter ------------- */
+
+.dayboard-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  margin: 12px 0 0;
+  color: var(--house-ink-2);
+  font-size: 14px;
+}
+
+.dayboard-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  margin: 0;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--house-ink-2);
+  font: inherit;
+  white-space: nowrap;
+}
+
+button.dayboard-count {
   cursor: pointer;
   transition: background-color var(--house-motion-hover) var(--house-ease-out);
 }
 
-button.dayboard-stage:hover { background: var(--house-plane-hover); }
-
-.dayboard-stage:first-child {
-  padding-left: 0;
-  border-left: 0;
-}
-
-.dayboard-stage b {
-  color: var(--house-ink-1);
-  font-size: clamp(30px, 2.6vw, 42px);
-  font-weight: 300;
-  line-height: 1.04;
-  letter-spacing: -0.045em;
+.dayboard-count b {
+  color: var(--lt-ink);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.dayboard-stage b[data-alert="true"] { color: var(--house-plane-attention); }
+.dayboard-count[data-alert="true"] b { color: var(--house-brick-text); }
 
-.dayboard-stage > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13.5px;
-  line-height: 1.25;
+.dayboard-count[aria-pressed="true"] {
+  background: var(--house-sheet-selected);
+  box-shadow: inset 0 0 0 1.5px var(--lt-ink);
+  color: var(--lt-ink);
 }
 
-/* What a count covers that its filter cannot show ("1 not on today's
-   bookings"), under its label in the plane's own ink. */
-.dayboard-stage-note {
-  font-size: 12px;
-  line-height: 1.25;
+@media (hover: hover) and (pointer: fine) {
+  button.dayboard-count:hover { background: var(--house-sheet-hover); }
 }
 
-.dayboard-stage[aria-pressed="true"] > span {
-  color: var(--house-ink-1);
-  font-weight: 600;
+@media (pointer: coarse) {
+  button.dayboard-count { min-height: 44px; }
 }
 
-.dayboard-stage[aria-pressed="true"]::after {
-  content: "";
-  position: absolute;
-  right: 10px;
-  bottom: 2px;
-  left: 16px;
-  height: 3px;
-  background: var(--house-ink-1);
+.dayboard-count-sep {
+  color: var(--house-ink-3);
 }
 
-.dayboard-stage:first-child[aria-pressed="true"]::after { left: 0; }
-
-.dayboard-stage-dot {
+.dayboard-count-dot {
+  position: relative;
   flex: none;
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
 }
 
-/* On the copper only the plane's own dots clear 3:1. */
-.dayboard-stage-dot[data-focus="risk"] { background: var(--house-plane-attention); }
-.dayboard-stage-dot[data-focus="waiting"] { background: var(--house-plane-dot-new); }
-.dayboard-stage-dot[data-focus="live"] { background: var(--lt-live); }
-.dayboard-stage-dot[data-focus="setup"] { background: var(--house-plane-dot-review); }
-.dayboard-stage-dot[data-focus="ahead"] { background: var(--lt-hairline); }
-.dayboard-stage-dot[data-focus="all"] { display: none; }
+.dayboard-count-dot[data-focus="risk"] { background: var(--lt-red); }
+.dayboard-count-dot[data-focus="setup"] { background: var(--lt-amber); }
+.dayboard-count-dot[data-focus="ahead"] { background: var(--lt-hairline); }
+/* Live's mark everywhere: an ink dot in a thin ink ring. */
+.dayboard-count-dot[data-focus="live"] {
+  background: var(--lt-live);
+  box-shadow: 0 0 0 2px var(--lt-ground), 0 0 0 3px var(--lt-live);
+}
 
 /* --- the tools: rooms, the Diary, the wall, print, sound and alerts --------- */
 
@@ -466,7 +537,7 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 8px 10px;
-  margin: 28px 0 0;
+  margin: 26px 0 0;
 }
 
 .dayboard-tools > button,
@@ -500,9 +571,13 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
 
 .dayboard-room-field select {
   min-width: 11em;
-  min-height: 44px;
+  min-height: 36px;
   text-transform: none;
   letter-spacing: 0;
+}
+
+@media (pointer: coarse) {
+  .dayboard-room-field select { min-height: 44px; }
 }
 
 /* --- notices ---------------------------------------------------------------- */
@@ -553,27 +628,16 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
 
 .dayboard-stale .dayboard-refresh { margin-left: auto; }
 
-/* --- the rooms --------------------------------------------------------------- */
+/* --- the rooms: a card each, two to a row ------------------------------------ */
 
-/* "Six rooms in use", then the hours across every room's bar, aligned with
-   the bars by the same columns the rows use. */
+/* "Six rooms in use", and the room chosen on its own from the list. */
 .dayboard-rooms-head {
-  display: grid;
-  grid-template-columns: var(--db-photo) minmax(0, 1fr);
-  column-gap: 20px;
-  align-items: end;
-  margin: 28px 0 0 calc(-1 * var(--db-gutter));
-  padding-left: var(--db-gutter);
-}
-
-.dayboard-rooms-line {
-  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px 16px;
-  margin: 0 0 8px;
+  margin: 20px 0 8px;
 }
 
 .dayboard-showing {
@@ -585,118 +649,54 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
   text-transform: uppercase;
 }
 
-.dayboard-scale {
-  grid-column: 2;
-  position: relative;
-  height: 46px;
-}
-
-.dayboard-scale-track {
-  position: absolute;
-  inset: 0 12px 0 12px;
-}
-
-.dayboard-tick {
-  position: absolute;
-  bottom: 0;
-  width: 1px;
-  height: 5px;
-  background: var(--house-rule-strong);
-}
-
-.dayboard-tick.is-major {
-  height: 9px;
-  background: var(--house-ink-3);
-}
-
-.dayboard-tick-label {
-  position: absolute;
-  bottom: 12px;
-  left: 0;
-  transform: translateX(-50%);
-  color: var(--house-ink-2);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.dayboard-now {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 0;
-}
-
-/* The plaque names the present; its line runs through the ticks only, so
-   it never strikes through an hour's label. */
-.dayboard-now::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: -1px;
-  width: 2px;
-  height: 11px;
-  background: var(--house-copper-text);
-}
-
-.dayboard-now-plaque {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  padding: 2px 7px;
-  border-radius: 2px;
-  background: var(--house-copper-text);
-  color: #fff8f0;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 14px;
-  white-space: nowrap;
-}
-
-/* Near the ends the plaque leans inward, its line still on the present. */
-.dayboard-now[data-edge="end"] .dayboard-now-plaque { transform: translateX(calc(-100% + 8px)); }
-.dayboard-now[data-edge="start"] .dayboard-now-plaque { transform: translateX(-8px); }
-
-.dayboard-now-time {
-  margin-left: 5px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums;
-}
-
 .dayboard-rooms {
-  margin: 4px 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.dayboard-room-item + .dayboard-room-item {
-  border-top: 1px solid var(--lt-line);
+.dayboard-room-item {
+  min-width: 0;
+}
+
+/* An opened slot unfolds under its room across both columns. */
+.dayboard-room-item:has(> .dayboard-detail-frame) {
+  grid-column: 1 / -1;
 }
 
 .dayboard-room {
   position: relative;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: var(--db-photo) minmax(0, 1fr);
-  column-gap: 20px;
+  column-gap: 14px;
   align-items: start;
-  margin-left: calc(-1 * var(--db-gutter));
-  padding: 16px 0 16px var(--db-gutter);
+  height: 100%;
+  padding: 12px 12px 12px 16px;
+  border: 1px solid var(--lt-line);
+  border-radius: 3px;
+  background: var(--lt-raised);
 }
 
-/* The room's edge: its lead's tone, red while something it shows is at risk. */
+/* A card the day's sentence took the reader to holds the focus; the ring
+   shows only for a keyboard. */
+.dayboard-room:focus { outline: none; }
+.dayboard-room:focus-visible { outline: 2px solid var(--lt-focus); outline-offset: 2px; }
+
+/* The room's edge: its lead's tone, red while anything ahead is at risk,
+   the house ink while it is live. */
 .dayboard-room::before {
   content: "";
   position: absolute;
-  top: 18px;
-  bottom: 18px;
+  top: 12px;
+  bottom: 12px;
   left: 0;
   width: 3px;
-  border-radius: 2px;
+  border-radius: 0 2px 2px 0;
   background: var(--db-tone, transparent);
 }
 
@@ -705,10 +705,10 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
 
 .dayboard-room-photo {
   box-sizing: border-box;
+  display: block;
   width: var(--db-photo);
   height: calc(var(--db-photo) * 0.75);
-  border: 1px solid var(--house-rule-strong);
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--house-sheet-selected);
   object-fit: cover;
 }
@@ -723,66 +723,87 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
 .dayboard-room-main {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  align-content: start;
   gap: 4px;
   min-width: 0;
 }
 
-.dayboard-room-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 12px;
-}
-
 .dayboard-room-name {
   margin: 0;
-  font: 400 24px/1.15 var(--house-serif);
+  font: 400 20px/1.15 var(--house-serif);
   letter-spacing: -0.01em;
 }
 
-.dayboard-room-count {
-  margin: 0;
+/* A room with nothing under way says so in a quiet line of its own. */
+.dayboard-now-free {
+  margin: 2px 0 0;
   color: var(--house-ink-2);
-  font-size: 12.5px;
+  font: italic 400 16px/1.35 var(--house-serif);
 }
 
-/* --- a room's day in words: earlier, the lead, next and later --------------- */
+/* Why the room is at risk, when it is what comes later that is. */
+.dayboard-room-why,
+.dayboard-slab-why {
+  max-width: 64ch;
+  margin: 0;
+  padding-left: 9px;
+  border-left: 2px solid var(--lt-red);
+  color: var(--lt-ink);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
 
-/* A labelled line: "Earlier", "Next", "Later" in a column of their own, the
-   slots beside them. */
-.dayboard-line {
-  display: grid;
-  grid-template-columns: 4.6em minmax(0, 1fr);
-  align-items: baseline;
-  column-gap: 8px;
+/* "then 18:30 · Wedding dinner", and All of today beside it. */
+.dayboard-room-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px 12px;
+  margin-top: 2px;
+}
+
+.dayboard-then {
+  min-width: 0;
   margin: 0;
   color: var(--house-ink-2);
   font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
-.dayboard-line-items {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 16px;
-  min-width: 0;
+.dayboard-today-toggle {
+  flex: none;
+  min-height: 32px;
+  margin: 0 0 0 auto;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--lt-ink);
+  font: 500 12.5px/1.2 var(--house-sans);
+  text-decoration: underline;
+  text-decoration-color: var(--house-rule-strong);
+  text-underline-offset: 4px;
+  cursor: pointer;
 }
 
-.dayboard-line.is-free {
-  display: block;
-  padding: 6px 0;
-  font-style: italic;
-  font-family: var(--house-serif);
-  font-size: 16px;
+@media (pointer: coarse) {
+  .dayboard-today-toggle { min-height: 44px; }
 }
 
-.dayboard-line-label {
-  color: var(--house-ink-2);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+/* Every other slot of the room, one to a line. */
+.dayboard-today-list {
+  display: grid;
+  gap: 0;
+  margin: 2px 0 0;
+  padding: 4px 0 0;
+  border-top: 1px solid var(--lt-line);
+  list-style: none;
 }
+
+.dayboard-today-list[hidden] { display: none; }
+
+/* --- a slot: the lead on its card, or a line under All of today ------------- */
 
 .dayboard-slab {
   position: relative;
@@ -820,15 +841,15 @@ button.dayboard-slab:active { transform: translateY(1px); }
 /* A finished slot keeps its words at full ink; only its tone fades. */
 .dayboard-slab.dayboard-tone-faded { opacity: 1; }
 
-/* The lead: what the room is doing, or will do first. */
+/* The lead: the now line over the function, its time and guests. */
 .dayboard-slab.is-lead {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   justify-items: start;
-  gap: 4px;
-  width: 100%;
-  margin: 0 0 0 -10px;
-  padding: 7px 10px 8px;
+  gap: 3px;
+  width: calc(100% + 12px);
+  margin: 0 0 0 -6px;
+  padding: 5px 6px 6px;
 }
 
 .dayboard-slab-head {
@@ -839,6 +860,7 @@ button.dayboard-slab:active { transform: translateY(1px); }
   min-width: 0;
 }
 
+/* The now line: the state's dot and its words. */
 .dayboard-verb {
   display: inline-flex;
   align-items: center;
@@ -854,16 +876,16 @@ button.dayboard-slab:active { transform: translateY(1px); }
   color: var(--db-tone, var(--lt-ink-dim));
 }
 
-/* The lead's and the next's verb on a wash of their own tone: a tag the eye
-   can run down the rooms by, its words in ink. */
-.is-lead .dayboard-verb,
-.is-next .dayboard-verb {
+/* The lead's verb on a wash of its own tone: a tag the eye can run down the
+   rooms by, its words in ink. */
+.is-lead .dayboard-verb {
   padding: 3px 10px 3px 8px;
   border-radius: 13px;
-  background: color-mix(in srgb, var(--db-tone, var(--lt-hairline)) 12%, var(--lt-ground));
+  background: color-mix(in srgb, var(--db-tone, var(--lt-hairline)) 11%, var(--lt-raised));
 }
 
 .dayboard-dot {
+  position: relative;
   flex: none;
   width: 8px;
   height: 8px;
@@ -871,8 +893,22 @@ button.dayboard-slab:active { transform: translateY(1px); }
   background: var(--db-tone, var(--lt-hairline));
 }
 
+/* Live: an ink dot inside a thin ink ring. The ring is what breathes. */
+.dayboard-slab[data-motion="live-breath"] .dayboard-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1.5px solid var(--db-tone);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: lt-live-ring var(--lt-breath-live) ease-in-out infinite;
+  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
+}
+
+.dayboard-slab[data-motion="live-breath"] .dayboard-verb { padding-left: 11px; }
+
 .is-lead .dayboard-slab-title {
-  font: 400 21px/1.2 var(--house-serif);
+  font: 400 19px/1.2 var(--house-serif);
   letter-spacing: -0.005em;
 }
 
@@ -883,7 +919,7 @@ button.dayboard-slab:active { transform: translateY(1px); }
   align-items: center;
   gap: 2px 10px;
   color: var(--house-ink-2);
-  font-size: 13.5px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -891,6 +927,8 @@ button.dayboard-slab:active { transform: translateY(1px); }
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  color: var(--house-ink-2);
+  font-size: 13px;
 }
 
 .dayboard-gap-words.is-short {
@@ -918,47 +956,18 @@ button.dayboard-slab:active { transform: translateY(1px); }
   color: var(--house-ink-3);
 }
 
-/* Why a slot is at risk, in its own words. */
-.dayboard-slab-why {
-  max-width: 64ch;
-  padding-left: 10px;
-  border-left: 2px solid var(--db-tone, var(--lt-red));
-  color: var(--lt-ink);
-  font-size: 13.5px;
-  line-height: 1.4;
-}
-
-/* Next: the verb's tag, the title and any ring on one line; its turn-round
-   under it. */
-.dayboard-slab.is-next {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  max-width: 100%;
-  justify-items: start;
-  gap: 3px;
-  margin: 0 0 0 -4px;
-  padding: 4px;
-}
-
-.is-next .dayboard-slab-head { gap: 4px 12px; }
-.is-next .dayboard-slab-notes { font-size: 13px; }
-
-.is-next .dayboard-slab-title {
-  font: 400 16.5px/1.25 var(--house-serif);
-}
-
-/* Earlier and later: compact, the title then its verb. */
+/* A line under All of today: compact, the title then its verb. */
 .dayboard-slab.is-line {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0 6px;
-  padding: 3px 6px;
+  gap: 0 8px;
+  width: calc(100% + 12px);
+  margin: 0 0 0 -6px;
+  padding: 5px 6px;
   color: var(--lt-ink);
   font-size: 13.5px;
 }
-
-.dayboard-line-items > .dayboard-slab { min-width: 0; max-width: 100%; }
 
 .is-line .dayboard-slab-title { font-weight: 500; }
 
@@ -980,123 +989,11 @@ button.dayboard-slab:active { transform: translateY(1px); }
 /* On a touch screen every slot is a finger's height (44 px), however few
    its words. */
 @media (pointer: coarse) {
-  button.dayboard-slab.is-line,
-  button.dayboard-slab.is-next {
+  button.dayboard-slab.is-line {
     min-height: 44px;
     align-content: center;
     align-items: center;
   }
-}
-
-/* --- the bar: the room's whole day, with the present marked ----------------- */
-
-.dayboard-bar {
-  position: relative;
-  display: block;
-  height: 14px;
-  margin: 8px 12px 2px;
-  border-radius: 2px;
-  background: var(--house-sheet-selected);
-}
-
-.dayboard-bar-slot { display: contents; }
-
-.dayboard-seg {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  display: flex;
-  min-width: 3px;
-  overflow: hidden;
-  border-radius: 2px;
-  box-shadow: inset -1px 0 0 var(--lt-ground);
-}
-
-.dayboard-seg > span { flex: none; height: 100%; }
-.dayboard-seg-setup { background: color-mix(in srgb, var(--db-tone) 38%, var(--lt-ground)); }
-.dayboard-seg-live { background: var(--db-tone); }
-.dayboard-seg-clear { background: color-mix(in srgb, var(--lt-sage-ink) 30%, var(--lt-ground)); }
-
-/* What has finished stays on the bar as a pale block; a hold is drawn as an
-   outline, not yet the room's; the open slot is ringed in ink. */
-.dayboard-seg[data-tone="faded"] .dayboard-seg-live { background: color-mix(in srgb, var(--lt-faded) 55%, var(--lt-ground)); }
-/* A booking that runs for days (an exhibition) is the room's background,
-   not its moment: its days are drawn quietly. */
-.dayboard-seg[data-days="true"] .dayboard-seg-live { background: color-mix(in srgb, var(--db-tone) 40%, var(--lt-ground)); }
-.dayboard-seg[data-kind="hold"] > .dayboard-seg-live {
-  background: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--db-tone) 45%, transparent) 4px 6px);
-  box-shadow: inset 0 0 0 1.5px var(--db-tone);
-}
-.dayboard-seg[data-selected="true"] { outline: 2px solid var(--lt-ink); outline-offset: 1px; }
-
-.dayboard-bar-gap {
-  position: absolute;
-  top: 50%;
-  height: 2px;
-  margin-top: -1px;
-  background: var(--lt-red);
-}
-
-.dayboard-bar-now {
-  position: absolute;
-  top: -5px;
-  bottom: -5px;
-  width: 2px;
-  margin-left: -1px;
-  background: var(--house-copper-text);
-}
-
-/* --- the copper ring --------------------------------------------------------- */
-
-.dayboard-ring {
-  position: relative;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 2px 10px 2px 7px;
-  border: 2px solid var(--lt-ring);
-  border-radius: 14px;
-  background: var(--lt-raised);
-  color: var(--lt-ink);
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.dayboard-ring svg {
-  flex: none;
-  color: var(--lt-ring);
-}
-
-/* Words never cut short: a narrow row wraps them. */
-.dayboard-ring-words {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.dayboard-ring[data-level="urgent"] .dayboard-ring-words {
-  color: var(--lt-urgent-label);
-}
-
-.dayboard-ring[data-level="owned"] {
-  border-color: var(--lt-sage-ink);
-}
-
-.dayboard-ring[data-level="owned"] svg { color: var(--lt-sage-ink); }
-
-/* The halo that breathes: a second copper line outside the ring, so the
-   words inside keep their full ink (law 8) while the attention moves. */
-.dayboard-ring::after {
-  content: "";
-  position: absolute;
-  inset: -5px;
-  border: 2px solid var(--lt-ring);
-  border-radius: 18px;
-  opacity: 0;
-  pointer-events: none;
 }
 
 /* --- the breaths (D3): opacity and transform only, phase-locked ------------- */
@@ -1106,19 +1003,21 @@ button.dayboard-slab:active { transform: translateY(1px); }
   50% { opacity: calc(1 - var(--lt-dot-amplitude)); transform: scale(0.84); }
 }
 
-@keyframes lt-live-breath {
-  0%, 100% { opacity: 0; }
-  50% { opacity: var(--lt-live-amplitude); }
+/* Live's ring: calm, never under two thirds of its ink, a little wider at
+   the top of the breath. */
+@keyframes lt-live-ring {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.66; transform: scale(1.22); }
 }
 
 @keyframes lt-halo-breath {
   0%, 100% { opacity: 0; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(1.04); }
+  50% { opacity: 0.7; transform: scale(1.12); }
 }
 
 @keyframes lt-halo-pulse {
   0%, 100% { opacity: 0.2; transform: scale(1); }
-  50% { opacity: 0.9; transform: scale(1.08); }
+  50% { opacity: 0.9; transform: scale(1.18); }
 }
 
 @keyframes lt-arrive {
@@ -1141,47 +1040,29 @@ button.dayboard-slab:active { transform: translateY(1px); }
   animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
 }
 
-.dayboard-slab[data-motion="live-breath"] .dayboard-dot {
-  animation: lt-dot-breath var(--lt-breath-live) ease-in-out infinite;
-  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
-}
-
-/* The live slot's own breath: a glow in the live colour from its left edge,
-   never past --lt-live-amplitude, the room's heartbeat and the proof the
-   board is live. */
-.dayboard-slab[data-motion="live-breath"]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--lt-live), transparent 70%);
-  opacity: 0;
-  pointer-events: none;
-  animation: lt-live-breath var(--lt-breath-live) ease-in-out infinite;
-  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
-}
-
-.dayboard-ring[data-level="attention"]::after {
+/* A request nobody owns: the halo breathes round the next action's mark;
+   an urgent one pulses. */
+.dayboard-next-mark[data-level="attention"]::after {
   animation: lt-halo-breath var(--lt-breath-attention) ease-in-out infinite;
   animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
 }
 
-.dayboard-ring[data-level="urgent"]::after {
+.dayboard-next-mark[data-level="urgent"]::after {
   animation: lt-halo-pulse var(--lt-pulse-urgent) ease-in-out infinite;
   animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
 }
 
-/* One arrival stamp on the ring itself; the ring remounts on a new arrival. */
-.dayboard-ring[data-arrived="true"] {
+/* One arrival stamp on the mark; it remounts on a new request. */
+.dayboard-next-mark[data-arrived="true"] {
   animation: lt-arrive var(--lt-arrival) var(--db-ease-out) 1;
 }
 
 /* The socket down, offline or stale: every breath stops; the words still
    stand (D3 law 6). */
 .dayboard[data-frozen="true"] .dayboard-dot,
-.dayboard[data-frozen="true"] .dayboard-slab::after,
-.dayboard[data-frozen="true"] .dayboard-ring,
-.dayboard[data-frozen="true"] .dayboard-ring::after {
+.dayboard[data-frozen="true"] .dayboard-dot::after,
+.dayboard[data-frozen="true"] .dayboard-next-mark,
+.dayboard[data-frozen="true"] .dayboard-next-mark::after {
   animation: none;
 }
 
@@ -1205,23 +1086,20 @@ button.dayboard-slab:active { transform: translateY(1px); }
   min-width: 0;
 }
 
-.dayboard-rail-eyebrow {
+.dayboard-rail-title {
   margin: 0;
-  color: var(--house-ink-2);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  font: 400 26px/1.15 var(--house-serif);
+  letter-spacing: -0.01em;
 }
 
-.dayboard-rail-title {
+.dayboard-rail-count {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 12px;
+  gap: 4px 10px;
   margin: 0;
-  font: 400 30px/1.12 var(--house-serif);
-  letter-spacing: -0.01em;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .dayboard-rail-urgent {
@@ -1302,10 +1180,10 @@ button.dayboard-rail-item:disabled { cursor: default; }
   cursor: pointer;
 }
 
-/* On the narrow sheet the requests sit between the plane and the rooms. */
+/* On the narrow sheet the requests sit between the counts and the rooms. */
 .dayboard-sheet > .dayboard-rail {
-  margin: 22px 0 0;
-  padding: 18px 20px 12px;
+  margin: 18px 0 0;
+  padding: 16px 20px 12px;
   background: var(--lt-raised);
 }
 
@@ -1316,10 +1194,10 @@ button.dayboard-rail-item:disabled { cursor: default; }
    while the frame stays put. */
 .dayboard-panel {
   position: sticky;
-  top: 104px;
+  top: 100px;
   isolation: isolate;
   box-sizing: border-box;
-  height: calc(100dvh - 128px);
+  height: calc(100dvh - 124px);
   overflow: hidden;
   background: var(--house-forest);
   color: var(--house-forest-ink-1);
@@ -1343,13 +1221,13 @@ button.dayboard-rail-item:disabled { cursor: default; }
 }
 
 .dayboard-panel-body > .dayboard-rail {
-  padding: 34px clamp(28px, 2.8vw, 44px) 32px;
+  padding: 30px clamp(28px, 2.6vw, 42px) 30px;
 }
 
 /* Beside the sheet the panel draws the frame; the slot need not. */
 .dayboard-panel .dayboard-detail::before { display: none; }
 
-.dayboard-panel .dayboard-rail-eyebrow { color: var(--house-forest-ink-3); }
+.dayboard-panel .dayboard-rail-title { color: var(--house-forest-ink-1); }
 .dayboard-panel .dayboard-rail-note { color: var(--house-forest-ink-2); }
 .dayboard-panel .dayboard-rail-list li + li { border-top-color: var(--house-forest-rule); }
 .dayboard-panel .dayboard-rail-item { color: var(--house-forest-ink-1); }
@@ -1357,6 +1235,7 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard-panel .dayboard-rail-item[data-urgency="now"] > svg,
 .dayboard-panel .dayboard-rail-flag { color: var(--house-brick-lit); }
 .dayboard-panel .dayboard-rail-urgent { background: #5a2a20; color: var(--house-brick-lit); }
+.dayboard-panel .dayboard-rail-more { border-color: var(--house-forest-edge); background: transparent; color: var(--house-forest-ink-1); }
 
 @media (hover: hover) and (pointer: fine) {
   .dayboard-panel button.dayboard-rail-item:not(:disabled):hover { background: #ffffff0d; }
@@ -1467,16 +1346,21 @@ button.dayboard-rail-item:disabled { cursor: default; }
   font-weight: 600;
 }
 
-/* On forest the tone's dot and icon take the lit side of the ramp. */
+/* On forest the tone's dot and icon take the lit side of the ramp. Live is
+   sage-lit, calm; red is trouble's brick. */
 .dayboard-detail { --db-tone-lit: var(--house-forest-ink-2); }
 .dayboard-detail.dayboard-tone-green { --db-tone-lit: var(--house-sage-lit); }
 .dayboard-detail.dayboard-tone-amber,
 .dayboard-detail.dayboard-tone-amber-deep { --db-tone-lit: var(--house-amber-lit); }
-.dayboard-detail.dayboard-tone-live,
+.dayboard-detail.dayboard-tone-live { --db-tone-lit: var(--house-sage-lit); }
 .dayboard-detail.dayboard-tone-red { --db-tone-lit: var(--house-brick-lit); }
 .dayboard-detail.dayboard-tone-sage { --db-tone-lit: var(--house-sage-lit); }
 .dayboard-detail-verb .dayboard-dot { background: var(--db-tone-lit); }
 .dayboard-detail-verb > svg { color: var(--db-tone-lit); }
+/* Live's dot in its thin ring, still. */
+.dayboard-detail.dayboard-tone-live .dayboard-detail-verb .dayboard-dot {
+  box-shadow: 0 0 0 2px var(--house-forest), 0 0 0 3.5px var(--db-tone-lit);
+}
 
 .dayboard-slot-meta {
   margin: 10px 0 0;
@@ -1698,17 +1582,13 @@ button.dayboard-rail-item:disabled { cursor: default; }
 
 /* The detail under its room, on the narrow sheet and the phone. */
 .dayboard-detail-frame {
-  margin: 0 0 22px;
-}
-
-.dayboard-sheet .dayboard-detail-frame .dayboard-detail {
-  margin: 0 calc(-1 * clamp(28px, 3.2vw, 52px)) 0 calc(-1 * var(--db-pad-left));
+  margin: 10px 0 10px;
 }
 
 /* --- the legend, the free rooms, the print note ------------------------------ */
 
 .dayboard-free {
-  margin: 18px 0 0;
+  margin: 14px 0 0;
   color: var(--house-ink-2);
   font-size: 14px;
 }
@@ -1718,14 +1598,38 @@ button.dayboard-rail-item:disabled { cursor: default; }
   font-weight: 600;
 }
 
+/* What the colours mean: at the foot, folded until asked for. */
+.dayboard-legend-fold {
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--lt-line);
+}
+
+.dayboard-legend-toggle {
+  min-height: 36px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--house-ink-2);
+  font: 500 13px/1.2 var(--house-sans);
+  text-decoration: underline;
+  text-decoration-color: var(--house-rule-strong);
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .dayboard-legend-toggle { min-height: 44px; }
+}
+
 .dayboard-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 10px;
-  margin-top: 30px;
-  padding-top: 16px;
-  border-top: 1px solid var(--lt-line);
+  margin-top: 10px;
 }
+
+.dayboard-legend[hidden] { display: none; }
 
 .dayboard-chip {
   --db-chip-tone: var(--lt-ink-dim);
@@ -1758,9 +1662,15 @@ button.dayboard-rail-item:disabled { cursor: default; }
   background: var(--db-chip-tone);
 }
 
+/* Live's chip wears live's mark: the dot in its thin ring. */
+.dayboard-chip-live .dayboard-chip-dot {
+  margin: 0 2px;
+  box-shadow: 0 0 0 2px var(--lt-raised), 0 0 0 3.5px var(--db-chip-tone);
+}
+
 .dayboard-chip svg { color: var(--db-chip-tone); }
 
-/* The second channel: the ring and the band, in copper and slate. */
+/* The second channel: the request and the band, in copper and slate. */
 .dayboard-chip-ring {
   --db-chip-tone: var(--lt-ring);
   background: var(--lt-raised);
@@ -1790,59 +1700,68 @@ button.dayboard-rail-item:disabled { cursor: default; }
   .dayboard-desk { min-height: 0; }
 }
 
-/* --- the phone: the rooms in one column, a thumb's width -------------------- */
+/* --- the phone: the sentence, the next action, the counts, a room a row ----- */
 
 @media (max-width: 760px) {
-  .dayboard { --db-photo: 64px; --db-gutter: 12px; }
+  .dayboard { --db-photo: 64px; }
   .dayboard-desk { padding: 0; }
   .dayboard-desk::before,
   .dayboard-sheet::after { display: none; }
-  .dayboard-sheet { --db-pad-left: 18px; padding: 22px 18px 40px; }
+  .dayboard-sheet { --db-pad-left: 18px; --db-pad-right: 18px; padding: 16px 18px 40px; }
   .dayboard-stale { padding: 10px 18px; }
-  .dayboard-title { font-size: 40px; }
-  .dayboard-summary { font-size: 17px; }
-  .dayboard-titleline { align-items: stretch; }
+  .dayboard-head-tools { justify-content: flex-start; width: 100%; }
   .dayboard-days { flex-wrap: wrap; width: 100%; }
   .dayboard-days > button { flex: 1 1 0; }
   .dayboard-day-field { flex: 1 0 100%; margin: 8px 0 0; }
   .dayboard-day-field input { width: 100%; }
-  .dayboard-next-line { font-size: 17px; }
-  /* This hallkeeper's next action at the top, always (D7): it stays in
-     view while the rooms scroll under it. */
+  .dayboard-summary { font-size: 22px; }
+  /* This hallkeeper's next action at the top, always (D7): a forest card
+     that stays in view while the rooms scroll under it. */
   .dayboard[data-layout="phone"] .dayboard-next {
     position: sticky;
     top: 0;
     z-index: 5;
-    box-shadow: 0 4px 14px #50422914;
+    margin: 14px -18px 0;
+    padding: 12px 18px 14px;
+    border-left: 0;
+    background: var(--house-forest);
+    color: var(--house-forest-ink-1);
+    box-shadow: 0 6px 16px #0b1a1426;
   }
-  .dayboard-plane {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin: 20px -18px 4px;
-    padding: 8px 18px 6px;
+  .dayboard[data-layout="phone"] .dayboard-next-mark,
+  .dayboard[data-layout="phone"] .dayboard-next-label { color: var(--house-copper-lit); }
+  .dayboard[data-layout="phone"] .dayboard-next[data-urgent="true"] .dayboard-next-mark,
+  .dayboard[data-layout="phone"] .dayboard-next[data-urgent="true"] .dayboard-next-label { color: var(--house-brick-lit); }
+  .dayboard[data-layout="phone"] .dayboard-next-slot .dayboard-next-mark { color: var(--house-forest-ink-2); }
+  .dayboard[data-layout="phone"] .dayboard-next-line { font-size: 18px; }
+  .dayboard[data-layout="phone"] button.dayboard-next-line { text-decoration-color: var(--house-forest-edge); }
+  .dayboard[data-layout="phone"] :is(.dayboard-next-working, .dayboard-next-waiting) { color: var(--house-forest-ink-2); }
+  .dayboard[data-layout="phone"] .dayboard-next-error { border-left-color: var(--house-brick-lit); color: var(--house-forest-ink-1); }
+  /* Take it, across the card. */
+  .dayboard[data-layout="phone"] .dayboard-take {
+    flex: 1 0 100%;
+    min-height: 48px;
+    background: var(--house-cream);
+    color: var(--house-ink-1);
   }
-  .dayboard-plane { clip-path: polygon(0 3%, 100% 0, 100% 100%, 0 100%); }
-  .dayboard-stage { min-height: 70px; padding: 8px 8px 8px 12px; }
-  .dayboard-stage:nth-child(4) { padding-left: 0; border-left: 0; }
-  .dayboard-stage:nth-child(n + 4) { border-top: 1px solid #b9906f88; }
-  .dayboard-stage:nth-child(4)[aria-pressed="true"]::after { left: 0; }
-  .dayboard-stage b { font-size: 30px; }
-  .dayboard-stage > span { font-size: 12.5px; }
-  .dayboard-sheet > .dayboard-rail { margin: 18px -18px 0; padding: 16px 18px 10px; }
-  .dayboard-rail-title { font-size: 26px; }
-  .dayboard-room { column-gap: 14px; padding: 16px 0 16px var(--db-gutter); }
-  .dayboard-rooms-head { column-gap: 14px; }
-  .dayboard-room-name { font-size: 21px; }
-  .is-lead .dayboard-slab-title { font-size: 19px; }
-  .dayboard-line-label { min-width: 0; }
-  .dayboard-bar { margin-right: 6px; margin-left: 6px; }
-  .dayboard-scale-track { right: 6px; left: 6px; }
+  .dayboard[data-layout="phone"] .dayboard-take:focus-visible { outline-color: var(--house-cream); }
+  .dayboard-counts { margin-top: 10px; }
+  .dayboard-sheet > .dayboard-rail { margin: 16px -18px 0; padding: 16px 18px 10px; }
+  .dayboard-rail-title { font-size: 23px; }
+  /* A room a row, its photograph a small square. */
+  .dayboard-rooms { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .dayboard-room-item { scroll-margin-top: 150px; }
+  .dayboard-room { column-gap: 12px; padding: 10px 10px 10px 14px; }
+  .dayboard-room-photo { height: var(--db-photo); }
+  .dayboard-room-name { font-size: 19px; }
+  .is-lead .dayboard-slab-title { font-size: 18px; }
   .dayboard-sheet .dayboard-detail-frame .dayboard-detail { margin: 0 -18px; }
   .dayboard-detail { --db-panel-pad: 18px; }
   /* A phone is too narrow for the leaning frame: it would cross the words. */
   .dayboard-detail::before { display: none; }
 }
 
-/* --- the wall: the rooms on paper in a forest frame (D11, S8) ---------------
+/* --- the wall: the cards on paper in a forest frame (D11, S8) ---------------
    The whole screen and never more: nobody scrolls a wall. Type is set by the
    screen's height, so six rooms fit on a 720-line television as on 1080. */
 
@@ -1863,18 +1782,16 @@ button.dayboard-rail-item:disabled { cursor: default; }
   --lt-line: var(--house-rule);
   --lt-ink: var(--house-ink-1);
   --lt-ink-dim: var(--house-ink-2);
-  --db-photo: clamp(60px, 9vh, 112px);
-  --db-gutter: 0px;
   --db-wall-x: clamp(24px, 2.6vw, 52px);
   position: relative;
   isolation: isolate;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: clamp(8px, 1.4vh, 18px);
+  gap: clamp(8px, 1.3vh, 16px);
   height: 100dvh;
   overflow: hidden;
-  padding: clamp(18px, 3vh, 36px) var(--db-wall-x) clamp(14px, 2.2vh, 26px);
+  padding: clamp(18px, 3vh, 34px) var(--db-wall-x) clamp(14px, 2.2vh, 26px);
   color: var(--house-forest-ink-1);
   font-size: clamp(14px, 1.6vh, 17px);
 }
@@ -1893,6 +1810,7 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard[data-register="wall"] > * { flex: none; }
 .dayboard[data-register="wall"] .dayboard-stale { border-radius: 2px; }
 
+/* The day, the sentence over two lines, and the large clock. */
 .dayboard-wall-head {
   display: flex;
   align-items: flex-end;
@@ -1900,22 +1818,36 @@ button.dayboard-rail-item:disabled { cursor: default; }
   gap: 30px;
 }
 
-.dayboard[data-register="wall"] .dayboard-greeting { color: var(--house-forest-ink-3); font-size: clamp(12px, 1.4vh, 15px); }
-
-.dayboard[data-register="wall"] .dayboard-title {
-  margin-top: 4px;
-  font-size: clamp(32px, 4.6vh, 54px);
+.dayboard-wall-lead {
+  display: grid;
+  gap: clamp(4px, 0.8vh, 10px);
+  min-width: 0;
 }
+
+.dayboard[data-register="wall"] .dayboard-overline { color: var(--house-forest-ink-3); font-size: clamp(12px, 1.4vh, 15px); }
+
+.dayboard[data-register="wall"] .dayboard-summary {
+  max-width: 64ch;
+  color: var(--house-forest-ink-1);
+  font-size: clamp(22px, 3.1vh, 36px);
+  line-height: 1.22;
+  text-wrap: balance;
+}
+
+.dayboard[data-register="wall"] .dayboard-summary strong { color: var(--house-forest-ink-1); }
+.dayboard[data-register="wall"] .dayboard-summary strong[data-tone="risk"] { color: var(--house-brick-lit); }
+.dayboard[data-register="wall"] .dayboard-summary strong[data-tone="copper"] { color: var(--house-copper-lit); }
 
 .dayboard-wall-clock {
   display: grid;
+  flex: none;
   justify-items: end;
   gap: 4px;
   text-align: right;
 }
 
 .dayboard-wall-clock b {
-  font-size: clamp(40px, 6vh, 72px);
+  font-size: clamp(48px, 7.4vh, 88px);
   font-weight: 300;
   line-height: 1;
   letter-spacing: -0.04em;
@@ -1926,52 +1858,41 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard[data-register="wall"] .dayboard-corrected,
 .dayboard[data-register="wall"] .dayboard-presence { background: #ffffff14; color: var(--house-forest-ink-2); }
 
-/* The plane and the next action share one band across the frame. */
-.dayboard-wall-plane {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+/* One band across the frame: the counts as words, then the next action in
+   words. Paper, as the cards are. */
+.dayboard-wall-band {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  margin: 0 calc(-1 * var(--db-wall-x));
-  padding: clamp(4px, 0.8vh, 10px) var(--db-wall-x);
-  background: var(--house-plane);
+  gap: 4px 28px;
+  padding: clamp(4px, 0.8vh, 10px) clamp(14px, 1.2vw, 22px);
+  border-radius: 2px;
+  background: var(--house-sheet);
   color: var(--house-ink-1);
-  clip-path: polygon(0 6%, 100% 0, calc(100% - 12px) 100%, 0 100%);
 }
 
-.dayboard-wall-plane:empty { display: none; }
-
-.dayboard[data-register="wall"] .dayboard-plane {
-  margin: 0;
-  padding: 0;
-  clip-path: none;
-}
-.dayboard[data-register="wall"] .dayboard-plane:only-child { grid-column: 1 / -1; }
-.dayboard[data-register="wall"] .dayboard-stage { min-height: 0; padding-top: 2px; padding-bottom: 2px; }
-/* The wall's counts filter nothing, so they never contradict a filter: the
-   note stays in their spoken words and gives its height to the rooms. */
-.dayboard[data-register="wall"] .dayboard-stage-note { display: none; }
-.dayboard[data-register="wall"] .dayboard-stage b { font-size: clamp(28px, 4vh, 46px); }
-.dayboard[data-register="wall"] .dayboard-stage > span { font-size: clamp(13px, 1.4vh, 16px); }
+.dayboard[data-register="wall"] .dayboard-counts { margin: 0; font-size: clamp(15px, 1.9vh, 22px); }
+.dayboard[data-register="wall"] .dayboard-count { min-height: 0; padding: 2px 4px; color: var(--house-ink-2); }
+.dayboard[data-register="wall"] .dayboard-count-dot { width: 9px; height: 9px; }
 
 .dayboard[data-register="wall"] .dayboard-next {
+  flex: 1 1 24ch;
   margin: 0;
-  padding: 4px 0 4px 22px;
-  border-left: 1px solid #b9906f88;
+  padding: 2px 0 2px 18px;
+  border-left: 1px solid var(--lt-line);
   background: transparent;
-  color: var(--house-ink-1);
 }
 
-.dayboard[data-register="wall"] .dayboard-next > svg { color: var(--house-plane-attention); }
-.dayboard[data-register="wall"] .dayboard-next-line { min-height: 0; font-size: clamp(19px, 2.5vh, 30px); line-height: 1.2; }
+.dayboard[data-register="wall"] .dayboard-next-line { min-height: 0; font-size: clamp(18px, 2.4vh, 28px); line-height: 1.2; }
+.dayboard[data-register="wall"] .dayboard-next-label { font-size: clamp(12px, 1.4vh, 15px); }
 
-/* Six rooms at once: two columns of paper cards that share what is left of
-   the screen. Seven or more take three columns. */
+/* Six cards: two columns of paper that share what is left of the screen.
+   Seven or more take three columns. */
 .dayboard[data-register="wall"] .dayboard-rooms {
   flex: 1 1 0;
-  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: minmax(0, 1fr);
+  align-items: stretch;
   gap: clamp(8px, 1.2vh, 14px) clamp(14px, 1.2vw, 24px);
   min-height: 0;
   margin: 0;
@@ -1982,34 +1903,34 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard[data-register="wall"] .dayboard-room-item {
   min-height: 0;
   overflow: hidden;
-  border: 0;
   border-radius: 2px;
-  background: var(--house-sheet);
   color: var(--house-ink-1);
 }
 
+/* A generous photograph down the card's side, the room's words beside it. */
 .dayboard[data-register="wall"] .dayboard-room {
-  box-sizing: border-box;
+  grid-template-columns: minmax(0, 38%) minmax(0, 1fr);
+  column-gap: clamp(14px, 1.2vw, 24px);
+  align-items: stretch;
   height: 100%;
-  column-gap: clamp(12px, 1vw, 18px);
-  margin: 0;
-  padding: clamp(8px, 1.4vh, 16px) 16px clamp(8px, 1.2vh, 14px) 18px;
+  padding: 0 18px 0 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--house-sheet);
 }
 
-.dayboard[data-register="wall"] .dayboard-room::before { top: 0; bottom: 0; width: 5px; border-radius: 0; }
-.dayboard[data-register="wall"] .dayboard-room-main { gap: clamp(2px, 0.4vh, 5px); }
-.dayboard[data-register="wall"] .dayboard-room-name { font-size: clamp(20px, 2.7vh, 31px); }
-.dayboard[data-register="wall"] .dayboard-room-count { font-size: clamp(12px, 1.3vh, 15px); }
-.dayboard[data-register="wall"] .dayboard-verb { font-size: clamp(13px, 1.5vh, 16px); }
-.dayboard[data-register="wall"] .dayboard-slab.is-lead { margin: 0; padding: 2px 0; gap: 3px; }
+.dayboard[data-register="wall"] .dayboard-room::before { top: 0; bottom: 0; left: auto; right: 0; width: 5px; border-radius: 0; }
+.dayboard[data-register="wall"] .dayboard-room-photo { width: 100%; height: 100%; border-radius: 0; }
+.dayboard[data-register="wall"] .dayboard-room-main { align-content: center; gap: clamp(2px, 0.5vh, 6px); padding: clamp(8px, 1.2vh, 14px) 0; }
+.dayboard[data-register="wall"] .dayboard-room-name { font-size: clamp(20px, 2.7vh, 32px); }
+/* The now line in large type. */
+.dayboard[data-register="wall"] .dayboard-verb { font-size: clamp(16px, 2.3vh, 27px); gap: 9px; }
+.dayboard[data-register="wall"] .dayboard-dot { width: 11px; height: 11px; }
+.dayboard[data-register="wall"] .dayboard-slab.is-lead { width: 100%; margin: 0; padding: 0; gap: clamp(2px, 0.5vh, 6px); }
 .dayboard[data-register="wall"] .is-lead .dayboard-slab-title { font-size: clamp(17px, 2.2vh, 26px); }
-.dayboard[data-register="wall"] .is-next .dayboard-slab-title { font-size: clamp(15px, 1.8vh, 20px); }
-.dayboard[data-register="wall"] .dayboard-slab.is-next { padding: 0 4px; }
-.dayboard[data-register="wall"] :is(.dayboard-slab-time, .dayboard-slab-notes, .dayboard-slab-why, .dayboard-line, .dayboard-line-label) {
-  font-size: clamp(12.5px, 1.45vh, 15.5px);
+.dayboard[data-register="wall"] :is(.dayboard-slab-time, .dayboard-slab-why, .dayboard-room-why, .dayboard-then, .dayboard-now-free) {
+  font-size: clamp(13px, 1.55vh, 17px);
 }
-.dayboard[data-register="wall"] .dayboard-ring { font-size: clamp(12px, 1.35vh, 15px); padding-top: 1px; padding-bottom: 1px; }
-.dayboard[data-register="wall"] .dayboard-bar { height: clamp(10px, 1.4vh, 16px); margin: clamp(4px, 0.9vh, 10px) 0 2px; }
 
 .dayboard[data-register="wall"] .dayboard-free {
   margin: 0;
@@ -2023,22 +1944,21 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard[data-register="wall"] .dayboard-legend {
   margin: 0;
   padding: 8px 0 0;
-  border-top-color: var(--house-forest-rule);
+  border-top: 1px solid var(--house-forest-rule);
 }
 
 .dayboard[data-register="wall"] .dayboard-chip { font-size: clamp(12px, 1.25vh, 14px); }
 
 /* A short screen keeps its height for the rooms' words. Every slot says its
-   state in words and an icon, so it spares the legend, the photographs, the
-   reason a changeover is at risk and the ring on what comes next (the plane
-   counts every request and the next action names the first), all of which
-   the office view and the phone give in full. */
+   state in words and an icon, so it spares the legend, the photographs and
+   the reason a changeover is at risk, all of which the office view and the
+   phone give in full. */
 @media (max-height: 820px) {
-  .dayboard[data-register="wall"] :is(.dayboard-legend, .dayboard-slab-why, .dayboard-room-photo, .is-next .dayboard-ring) { display: none; }
-  .dayboard[data-register="wall"] .dayboard-room { grid-template-columns: minmax(0, 1fr); }
-  /* Seven rooms or more on a short screen: each keeps what it is doing and
-     its day's bar; what comes next is a step away on the office view. */
-  .dayboard[data-register="wall"] .dayboard-rooms[data-count="many"] .dayboard-line.is-next { display: none; }
+  .dayboard[data-register="wall"] :is(.dayboard-legend, .dayboard-slab-why, .dayboard-room-why, .dayboard-room-photo) { display: none; }
+  .dayboard[data-register="wall"] .dayboard-room { grid-template-columns: minmax(0, 1fr); padding-left: 18px; }
+  /* Seven rooms or more on a short screen: each keeps what it is doing;
+     what comes then is a step away on the office view. */
+  .dayboard[data-register="wall"] .dayboard-rooms[data-count="many"] .dayboard-then { display: none; }
 }
 .dayboard[data-register="wall"] .dayboard-notice { margin: 0; }
 
@@ -2090,7 +2010,7 @@ button.dayboard-rail-item:disabled { cursor: default; }
     overflow: visible;
   }
 
-  .dayboard-wall-plane { clip-path: none; background: #fff; }
+  .dayboard-wall-band { background: #fff; }
 
   .dayboard-desk,
   .dayboard-sheet {
@@ -2117,19 +2037,35 @@ button.dayboard-rail-item:disabled { cursor: default; }
   .dayboard-room-field,
   .dayboard-days,
   .dayboard-status,
-  .dayboard-ring,
   .dayboard-rail,
   .dayboard-panel,
   .dayboard-next,
-  .dayboard-plane,
-  .dayboard-scale,
-  .dayboard-bar,
+  .dayboard-counts,
+  .dayboard-overline-time,
   .dayboard-room-photo,
+  .dayboard-today-toggle,
   .dayboard-legend,
+  .dayboard-legend-toggle,
   .dayboard-wall-foot,
   .dayboard-detail-frame,
   .dayboard-announcer {
     display: none !important;
+  }
+
+  /* A day folded away under All of today still prints, every slot of it. */
+  .dayboard-today-list[hidden] {
+    display: block !important;
+  }
+
+  /* The title kept on screen for assistive technology heads the paper. */
+  .dayboard-title.dayboard-sr {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0 0 4px;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
   }
 
   /* Every word in black: a printer's grey is not the screen's. */
@@ -2139,7 +2075,7 @@ button.dayboard-rail-item:disabled { cursor: default; }
   }
 
   .dayboard-title { font-size: 22pt; }
-  .dayboard-summary { font-size: 11pt; }
+  .dayboard-summary { font-size: 12pt; }
 
   /* The stale band prints: a sheet from an offline board must say so. */
   .dayboard-stale {
@@ -2148,13 +2084,16 @@ button.dayboard-rail-item:disabled { cursor: default; }
     border: 1px solid #000;
   }
 
-  .dayboard-rooms-head { display: block; margin: 12px 0 0; padding: 0; }
+  .dayboard-rooms-head { margin: 12px 0 0; }
+  .dayboard-rooms { display: block; }
   .dayboard-room-item { break-inside: avoid; border-top: 1px solid #000; }
 
   .dayboard-room {
     display: block;
     margin: 0;
     padding: 6px 0 8px;
+    border: 0;
+    background: none;
   }
 
   .dayboard-room::before { display: none; }
@@ -2164,9 +2103,9 @@ button.dayboard-rail-item:disabled { cursor: default; }
   /* Every slot a plain black-on-white line: what, when and where it stands. */
   .dayboard-slab,
   .dayboard-slab.is-lead,
-  .dayboard-slab.is-next,
   .dayboard-slab.is-line {
-    display: inline;
+    display: block;
+    width: auto;
     margin: 0;
     padding: 0;
     color: #000;
@@ -2175,18 +2114,19 @@ button.dayboard-rail-item:disabled { cursor: default; }
     animation: none !important;
   }
 
-  .dayboard-slab::after { display: none; }
+  .dayboard-dot::after { display: none; }
 
-  .is-lead .dayboard-verb,
-  .is-next .dayboard-verb { padding: 0; background: none; }
+  .is-lead .dayboard-verb { padding: 0; background: none; }
 
-  .dayboard-line,
+  .dayboard-today-list { border: 0; padding: 0; }
+
   .dayboard-slab-time,
   .dayboard-slab-notes,
   .dayboard-slab-why,
+  .dayboard-room-why,
   .dayboard-slab-seen,
-  .dayboard-room-count,
-  .dayboard-line-label,
+  .dayboard-then,
+  .dayboard-now-free,
   .dayboard-free {
     color: #000;
   }

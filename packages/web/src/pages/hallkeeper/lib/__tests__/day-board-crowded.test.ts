@@ -7,7 +7,7 @@ import {
 } from "@omnitwin/types";
 import { deriveDayBoard, type DayBoard, type DayBoardSlot } from "../day-board-state.js";
 import { boardWindow } from "../day-board-layout.js";
-import { boardSummary, planeStages, roomDay, roomInFocus, summaryText } from "../day-board-rooms.js";
+import { boardSummary, dayCounts, roomDay, roomInFocus, summaryText, thenLine } from "../day-board-rooms.js";
 import { boardRange } from "../../../diary/lib/board-time.js";
 
 // ---------------------------------------------------------------------------
@@ -94,8 +94,9 @@ describe("the Day Board on a crowded day, at its busiest moment (14:20)", () => 
     expect(unowned.length).toBeGreaterThanOrEqual(10);
     expect(new Set(busiest.unowned.map((request) => request.id))).toEqual(new Set(unowned.map((request) => request.id)));
     const urgent = open.find((request) => request.urgency === "now" && request.ownerUserId === null);
-    expect(busiest.nextAction).toMatchObject({ kind: "request", requestId: urgent?.id });
-    expect(busiest.nextAction.line).toContain("Chairs × 6");
+    expect(busiest.nextAction).toMatchObject({ kind: "request", requestId: urgent?.id, label: "URGENT", urgent: true });
+    expect(busiest.nextAction.words).toBe("Chairs × 6 · Saloon · waiting 8 min");
+    expect(busiest.nextAction.line).toBe("URGENT: Chairs × 6 · Saloon · waiting 8 min");
   });
 
   it("rings the slots that have work open, and owns what is owned", () => {
@@ -159,6 +160,17 @@ describe("the rooms board on a crowded day, at its busiest moment (14:20)", () =
     expect(titles(saloon.later)).toEqual(["Speyside whisky tasting"]);
     expect(saloon.tone).toBe("live");
 
+    // Each card names what comes next by its doors, and the function at risk
+    // whose reason it gives: here what each room will do first.
+    expect(thenLine(grandHall, TIME_ZONE)).toBe("then 18:30 · Morrison–Adeyemi wedding · dinner and ceilidh");
+    expect(grandHall.atRisk).toBe(grandHall.lead);
+    const southGallery = room("South Gallery");
+    // The lunch was seen done and nobody has cleared it: the portraits lead, at risk.
+    expect(southGallery.lead?.title).toBe("Bridal portraits");
+    expect(southGallery.atRisk).toBe(southGallery.lead);
+    expect(southGallery.atRisk?.exceptionDetail).toMatch(/^Book club lunch not yet cleared · /u);
+    expect(thenLine(southGallery, TIME_ZONE)).toBe("then 16:45 · House block · deep clean");
+
     // Every slot of the day is in exactly one of the four.
     for (const day of rooms) {
       const read = [...day.earlier, ...(day.lead === null ? [] : [day.lead]), ...(day.next === null ? [] : [day.next]), ...day.later];
@@ -167,13 +179,10 @@ describe("the rooms board on a crowded day, at its busiest moment (14:20)", () =
     }
   });
 
-  it("counts the day on the plane, and each count finds the rooms it names", () => {
-    // Today's board: the requests count is every one nobody has, as the list
-    // beside the rooms counts them; each is on one of today's bookings.
-    const stages = planeStages(busiest.lanes, busiest.unowned.length);
-    expect(stages.map((stage) => [stage.label, stage.count, stage.note])).toEqual([
-      ["At risk", 2, null], ["Requests waiting", busiest.unowned.length, null], ["Live", 3, null], ["Setting up", 1, null], ["Still to come", 7, null], ["Bookings", 21, null],
-    ]);
+  it("counts the day in one line, and each count finds the rooms it names", () => {
+    // The requests are counted on the panel's heading, and no total of
+    // bookings invites a sum that does not add up.
+    expect(dayCounts(busiest.lanes).map((stage) => stage.words).join(" · ")).toBe("2 at risk · 3 live · 1 setting up · 7 still to come");
     expect(rooms.filter((day) => roomInFocus(day, "risk")).map((day) => day.room.name)).toEqual(["Grand Hall", "South Gallery"]);
     expect(rooms.filter((day) => roomInFocus(day, "live")).map((day) => day.room.name))
       .toEqual(["Saloon", "Robert Adam Room", "North Gallery"]);
@@ -186,7 +195,9 @@ describe("the rooms board on a crowded day, at its busiest moment (14:20)", () =
     expect(summaryText(parts ?? [])).toBe(
       `Two rooms need you now: Grand Hall and South Gallery. ${String(busiest.unowned.length)} requests have no one on them; the longest has waited 1 h 50. Three functions are live and one is getting ready.`,
     );
-    expect(parts?.filter((part) => typeof part !== "string" && part.tone === "risk")).toEqual([{ strong: "Two rooms", tone: "risk" }]);
+    expect(parts?.filter((part) => typeof part !== "string" && "strong" in part && part.tone === "risk")).toEqual([{ strong: "Two rooms", tone: "risk" }]);
+    // Each room it names can take a phone to its card.
+    expect(parts?.filter((part) => typeof part !== "string" && "room" in part).map((part) => typeof part !== "string" && "room" in part ? part.room : "")).toEqual(["Grand Hall", "South Gallery"]);
   });
 
   it("counts the exhibition in its days, and names them", () => {

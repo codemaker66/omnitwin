@@ -172,7 +172,7 @@ describe("deriveDayBoard — the ramp, in Blake's words", () => {
     expect(slot.countdown).toBe("Doors · 9 min");
   });
 
-  it("live: red, the room's heartbeat, with time elapsed", () => {
+  it("live: the house ink, calm, the room's heartbeat, with time elapsed", () => {
     const response = baseResponse();
     response.entries = [booking(-72, 90)];
     const slot = soleSlot(response);
@@ -591,21 +591,29 @@ describe("the UNOWNED rail and the next action", () => {
     ]);
     expect(board.unowned.map((item) => item.id)).toEqual(["now-new", "routine-old"]);
     expect(board.unowned[0]?.line).toBe("Chairs × 10 · Saloon · waiting 3 min");
+    // Urgent says so in capitals before the words; the line says both, once.
     expect(board.nextAction).toEqual({
-      kind: "request", line: "Take now: Chairs × 10 · Saloon · waiting 3 min", bookingId: BOOKING_2, requestId: "now-new",
+      kind: "request", label: "URGENT", words: "Chairs × 10 · Saloon · waiting 3 min", urgent: true,
+      line: "URGENT: Chairs × 10 · Saloon · waiting 3 min", bookingId: BOOKING_2, requestId: "now-new",
     });
+    // Without the urgent one, the oldest is taken now.
+    const routine = deriveDayBoard(response, NOW, "Europe/London", [
+      request({ id: "routine-old", urgency: "routine", createdAt: new Date(NOW - 10 * MIN).toISOString() }),
+    ]).nextAction;
+    expect(routine).toMatchObject({ kind: "request", label: "Take now", urgent: false, requestId: "routine-old" });
+    expect(routine.line).toBe(`Take now: ${routine.words}`);
   });
 
   it("names the nearest moment when nothing is waiting, and quiet when nothing is on", () => {
     const response = baseResponse();
     response.entries = [booking(200, 400), booking(9, 100, { id: BOOKING_2, spaceId: SALOON })];
     expect(deriveDayBoard(response, NOW).nextAction).toEqual({
-      kind: "slot", line: "Saloon · Doors · 9 min", bookingId: BOOKING_2, requestId: null,
+      kind: "slot", label: null, words: "Saloon · Doors · 9 min", urgent: false, line: "Saloon · Doors · 9 min", bookingId: BOOKING_2, requestId: null,
     });
     const onlyLater = baseResponse();
     onlyLater.entries = [booking(200, 400)];
     expect(deriveDayBoard(onlyLater, NOW).nextAction.line).toBe("Next: Grand Hall · Chamber dinner · setup 16:20 (3 h 20)");
-    expect(deriveDayBoard(baseResponse(), NOW).nextAction).toEqual({ kind: "quiet", line: "Nothing scheduled.", bookingId: null, requestId: null });
+    expect(deriveDayBoard(baseResponse(), NOW).nextAction).toEqual({ kind: "quiet", label: null, words: "Nothing scheduled.", urgent: false, line: "Nothing scheduled.", bookingId: null, requestId: null });
   });
 });
 

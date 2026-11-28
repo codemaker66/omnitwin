@@ -1,14 +1,18 @@
-// Day Board visual-verification harness (goal 19 S3) — drives its OWN
-// headless Chromium via Playwright, same family as visual-check.mjs /
-// rite-visual-check.mjs. Verifies the attention system (D3) as rendered:
-//   1. motion on:  every state's verb on screen; the breaths RUNNING at
-//      their cadences (4 s organisers, 3 s guests, 2 s doors, 4 s live) and
+// Day Board visual-verification harness (goal 19 S3; the sentence first,
+// T-753) — drives its OWN headless Chromium via Playwright, same family as
+// visual-check.mjs / rite-visual-check.mjs. Verifies the board as rendered:
+//   1. motion on: the overline, the day's sentence, the counts and a card per
+//      room with its photograph, what comes then and why it is at risk;
+//      every state's verb; the breaths RUNNING at their cadences (4 s
+//      organisers, 3 s guests, 2 s doors, 4 s live's ink ring) and
 //      phase-locked (every breath shares one animation-delay — the epoch);
-//      the copper ring breathing on an unowned request, pulsing on an urgent
-//      one, still once owned; the UNOWNED rail and the next-action line;
+//      the halo pulsing round the next action while an urgent request nobody
+//      owns waits, with Take it; the panel of unclaimed requests, never
+//      repeating the next action's; no request drawn on a card;
 //   2. reduced motion: every animation computed to "none" while the verbs
 //      still carry the full meaning;
-//   3. the phone: every room in one column, the page no wider than the screen;
+//   3. the phone: the rooms one to a row with small square photographs, the
+//      page no wider than the screen;
 //   4. the wall register (?register=wall);
 //   5. an open slot, with the request region mounted;
 //   6. (goal 19 S4) the open slot's conversation: the request card on the
@@ -256,18 +260,17 @@ async function preparePage(context, path = "/hallkeeper/today") {
   return page;
 }
 
-/** Every slab's state, motion and ring, with the computed animations that
- *  carry them: [{ state, motion, attention, verb, dot, overlay, ring }]. */
+/** Every slab's state and motion, with the computed animations that carry
+ *  them: [{ state, motion, attention, verb, dot, ring }], `ring` being live's
+ *  ring round the dot. */
 async function readSlabs(page) {
   return page.evaluate(() => {
     const last = (value) => value.split(", ").pop() ?? "";
     const readings = [];
     for (const slab of document.querySelectorAll(".dayboard-slab")) {
-      const dot = getComputedStyle(slab.querySelector(".dayboard-dot"));
-      const overlay = getComputedStyle(slab, "::after");
-      const ringElement = slab.querySelector(".dayboard-ring");
-      // The halo breathes, not the ring: its words keep their full ink.
-      const ring = ringElement === null ? null : getComputedStyle(ringElement, "::after");
+      const dotElement = slab.querySelector(".dayboard-dot");
+      const dot = getComputedStyle(dotElement);
+      const ring = getComputedStyle(dotElement, "::after");
       readings.push({
         title: slab.querySelector(".dayboard-slab-title")?.textContent ?? "",
         state: slab.dataset.state ?? "",
@@ -275,17 +278,21 @@ async function readSlabs(page) {
         attention: slab.dataset.attention ?? "",
         verb: slab.querySelector(".dayboard-verb-words")?.textContent ?? "",
         dot: { name: dot.animationName, duration: dot.animationDuration, delay: last(dot.animationDelay) },
-        overlay: { name: overlay.animationName, duration: overlay.animationDuration, delay: last(overlay.animationDelay) },
-        ring: ring === null ? null : {
-          level: ringElement.dataset.level ?? "",
-          words: ringElement.querySelector(".dayboard-ring-words")?.textContent ?? "",
-          name: last(ring.animationName),
-          duration: last(ring.animationDuration),
-          delay: last(ring.animationDelay),
-        },
+        ring: { name: last(ring.animationName), duration: last(ring.animationDuration), delay: last(ring.animationDelay), border: ring.borderTopColor },
       });
     }
     return readings;
+  });
+}
+
+/** The next action's mark and its halo. */
+async function readNextMark(page) {
+  return page.evaluate(() => {
+    const last = (value) => value.split(", ").pop() ?? "";
+    const mark = document.querySelector(".dayboard-next-mark");
+    if (mark === null) return null;
+    const halo = getComputedStyle(mark, "::after");
+    return { level: mark.getAttribute("data-level") ?? "", name: last(halo.animationName), duration: last(halo.animationDuration), delay: last(halo.animationDelay) };
   });
 }
 
@@ -303,8 +310,11 @@ try {
     reducedMotion: "no-preference",
   });
   const page = await preparePage(motionContext);
-  // textContent, not innerText: the verbs are uppercased by CSS and the NOW
-  // plaque is laid out on two lines; the words themselves are what matter.
+  // Every slot under All of today is on screen for the words that follow.
+  for (const fold of await page.getByRole("button", { name: "All of today" }).all()) await fold.click();
+  await page.getByRole("button", { name: "What the colours mean" }).click();
+  // textContent, not innerText: the overline and the labels are uppercased
+  // by CSS; the words themselves are what matter.
   const text = await page.locator(".dayboard").evaluate((board) => board.textContent ?? "");
 
   check("live verb", /LIVE · \d+ (?:min|h(?: \d{2})?) elapsed/u.test(text));
@@ -317,43 +327,56 @@ try {
   check("legend teaches every state in the slots' words", [
     "Scheduled", "Organisers due", "Guests due", "Doors soon", "Live", "Clear-down", "Ended", "Changeover at risk",
   ].every((words) => text.includes(words)));
-  check("NOW plaque on the ruler", /NOW\d{1,2}:\d{2}/u.test(text));
-  const shortGaps = await page.locator(".dayboard-bar-gap").count();
-  check(`short changeovers drawn against the rule on their rooms' bars (${String(shortGaps)})`, shortGaps === 3);
-  // The rule on the bar is a picture nothing reads aloud: the words carry it.
+  const overline = await page.locator(".dayboard-overline").evaluate((element) => element.textContent ?? "");
+  check(`the overline names the day and the venue's time (${overline})`, /^[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+ · 13:00$/u.test(overline));
+  check("the title is for assistive technology, the sentence the headline",
+    (await page.getByRole("heading", { level: 1, name: "The Day Board" }).evaluate((title) => title.classList.contains("dayboard-sr")))
+    && (await page.locator(".dayboard-summary").count()) === 1);
+  const counts = await page.locator(".dayboard-counts").evaluate((element) => element.textContent ?? "");
+  // Functions, not rooms: both of the Saloon's turnover pair are at risk.
+  check(`one quiet line of counts (${counts})`, counts === "2 at risk·1 live·3 setting up·2 still to come");
+  check("a card for every room in use", (await page.locator(".dayboard-room").count()) === ROOMS.length);
+  const photos = await page.locator(".dayboard-room img").evaluateAll((images) => images.map((image) => image.getAttribute("src") ?? ""));
+  check(`each room pictured empty, from the venue's own views (${photos.join(", ")})`, photos.length === 3 && photos.every((src) => src.startsWith("/images/rooms/day-board/")));
+  check("no bar, no ring and no booking count on a card", (await page.locator(".dayboard-bar, .dayboard-ring, .dayboard-room-count").count()) === 0);
+  const saloon = page.getByRole("region", { name: "Saloon" });
+  check("a card says what comes then", /^then \d{2}:\d{2} · Turnover pair A$/u.test((await saloon.locator(".dayboard-then").innerText()).trim()));
+  check("a card says why it is at risk when what is at risk comes later", /this changeover needs 60/u.test(await saloon.locator(".dayboard-room-why").innerText()));
+  // A short turn-round is said in words under All of today.
   check("a short turn-round says how long it has and what the rule needs", /Turn-round 30 min · needs 1 h/u.test(text));
   const laterAtRisk = page.locator(".dayboard-slab.is-line", { hasText: "Turnover pair B" });
   check("a later function at risk says why on its line, and in the words a screen reader hears", (await laterAtRisk.count()) === 1
     && /this changeover needs 60/u.test(await laterAtRisk.innerText())
     && /this changeover needs 60/u.test((await laterAtRisk.getAttribute("aria-label")) ?? ""));
-  check("the next action is the urgent request nobody owns", /^Take now:/u.test((await page.locator(".dayboard-next").innerText()).trim()));
-  check("UNOWNED rail lists the two requests nobody has", (await page.locator(".dayboard-rail-item").count()) === 2);
+  check("the next action is the urgent request nobody owns, with Take it",
+    (await page.locator(".dayboard-next-label").innerText()).trim() === "URGENT"
+    && (await page.locator(".dayboard-next").getByRole("button", { name: "Take it" }).count()) === 1);
+  check("the panel counts both requests nobody has and lists only the one not named above",
+    /2 waiting/u.test(await page.locator(".dayboard-rail-count").innerText()) && (await page.locator(".dayboard-rail-item").count()) === 1);
 
   const slabs = await readSlabs(page);
   const byState = Object.fromEntries(slabs.map((slab) => [slab.state, slab]));
   check("every state is on the board", ["live", "guests-due", "organisers-due", "imminent", "scheduled", "done", "exception"].every((state) => state in byState));
   check("two slabs carry the changeover exception", slabs.filter((slab) => slab.state === "exception").length === 2);
 
-  const cadence = { "breath-4s": "4s", "breath-3s": "3s", "breath-2s": "2s", "live-breath": "4s" };
-  const breathing = slabs.filter((slab) => slab.motion !== "none");
-  check("every slab with a motion breathes on its dot", breathing.length >= 4 && breathing.every((slab) => slab.dot.name === "lt-dot-breath"));
-  check("cadences: 4 s organisers, 3 s guests, 2 s doors, 4 s live", breathing.every((slab) => slab.dot.duration === cadence[slab.motion]));
-  check("the live slab breathes its overlay at 4 s", byState.live?.overlay.name === "lt-live-breath" && byState.live?.overlay.duration === "4s");
-  check("still states do not move", slabs.filter((slab) => slab.motion === "none").every((slab) => slab.dot.name === "none" && slab.overlay.name === "none"));
+  const cadence = { "breath-4s": "4s", "breath-3s": "3s", "breath-2s": "2s" };
+  const breathing = slabs.filter((slab) => slab.motion in cadence);
+  check("every slab whose moment approaches breathes on its dot", breathing.length >= 3 && breathing.every((slab) => slab.dot.name === "lt-dot-breath"));
+  check("cadences: 4 s organisers, 3 s guests, 2 s doors", breathing.every((slab) => slab.dot.duration === cadence[slab.motion]));
+  // Live is calm: an ink dot that holds still in a thin ink ring that breathes.
+  check("live's ink ring breathes at 4 s round a still dot", byState.live?.ring.name === "lt-live-ring" && byState.live?.ring.duration === "4s" && byState.live?.dot.name === "none");
+  check("still states do not move", slabs.filter((slab) => slab.motion === "none").every((slab) => slab.dot.name === "none" && slab.ring.name === "none"));
 
-  const rings = slabs.filter((slab) => slab.ring !== null);
-  const ringByLevel = Object.fromEntries(rings.map((slab) => [slab.ring.level, slab.ring]));
-  check("an unowned request's halo breathes at 4 s", ringByLevel.attention?.name === "lt-halo-breath" && ringByLevel.attention?.duration === "4s");
-  check("an urgent request's halo pulses at 1.5 s", ringByLevel.urgent?.name === "lt-halo-pulse" && ringByLevel.urgent?.duration === "1.5s");
-  check("an owned request's ring is still and names its owner", ringByLevel.owned?.name === "none" && ringByLevel.owned?.words === "Elaine has this");
+  const mark = await readNextMark(page);
+  check("an urgent request nobody owns pulses its halo round the next action at 1.5 s", mark?.level === "urgent" && mark.name === "lt-halo-pulse" && mark.duration === "1.5s");
 
   // Each breath samples its own epoch phase the moment it begins (D3 law 1);
   // breaths that began in the same render differ by the milliseconds between
   // their samples, never by a beat.
   const delaysMs = [
     ...breathing.map((slab) => slab.dot.delay),
-    ...(byState.live ? [byState.live.overlay.delay] : []),
-    ...rings.filter((slab) => slab.ring.name !== "none").map((slab) => slab.ring.delay),
+    ...(byState.live ? [byState.live.ring.delay] : []),
+    ...(mark !== null && mark.name !== "none" ? [mark.delay] : []),
   ].map((delay) => Math.round(Number.parseFloat(delay) * 1000));
   const spread = delaysMs.length === 0 ? Number.NaN : Math.max(...delaysMs) - Math.min(...delaysMs);
   check(`phase lock: every breath on one epoch phase within 50 ms (spread ${String(spread)} ms over ${String(delaysMs.length)} breaths)`, delaysMs.length >= 5 && spread <= 50);
@@ -367,17 +390,28 @@ try {
   });
   const calm = await preparePage(calmContext);
   const calmSlabs = await readSlabs(calm);
-  check("reduced motion: no dot, overlay or ring animates", calmSlabs.every((slab) =>
-    slab.dot.name === "none" && slab.overlay.name === "none" && (slab.ring === null || slab.ring.name === "none")));
+  const calmMark = await readNextMark(calm);
+  check("reduced motion: no dot, ring or halo animates", calmSlabs.every((slab) =>
+    slab.dot.name === "none" && slab.ring.name === "none") && (calmMark === null || calmMark.name === "none"));
   check("reduced motion: the verbs still carry the meaning", calmSlabs.every((slab) => slab.verb.length > 0));
   await calm.screenshot({ path: join(OUT, "reduced-motion.png"), fullPage: true });
 
   // ---- Pass 3: the phone ---------------------------------------------------
   const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const phone = await preparePage(phoneContext);
-  const fits = await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-  check("phone: every room in one column, the page no wider than the screen", fits
+  const fits = await phone.evaluate(() => ({
+    page: document.documentElement.scrollWidth <= window.innerWidth,
+    lefts: new Set([...document.querySelectorAll(".dayboard-room")].map((room) => Math.round(room.getBoundingClientRect().left))).size,
+    squares: [...document.querySelectorAll(".dayboard-room-photo")].every((photo) => {
+      const box = photo.getBoundingClientRect();
+      return Math.round(box.width) === Math.round(box.height);
+    }),
+    sticky: getComputedStyle(document.querySelector(".dayboard-next") ?? document.body).position,
+  }));
+  check("phone: the rooms one to a row with square photographs, the page no wider than the screen", fits.page && fits.lefts === 1 && fits.squares
     && (await phone.locator(".dayboard[data-layout='phone']").count()) === 1 && (await phone.locator(".dayboard-room").count()) >= 2);
+  check("phone: the next action held at the top, Take it across it", fits.sticky === "sticky"
+    && (await phone.locator(".dayboard-next .dayboard-take").count()) === 1);
   await phone.screenshot({ path: join(OUT, "phone.png"), fullPage: true });
 
   // ---- Pass 4: the wall ----------------------------------------------------
@@ -385,6 +419,11 @@ try {
   const wall = await preparePage(wallContext, "/hallkeeper/today?register=wall");
   check("wall: the forest frame, without the day controls", (await wall.locator(".dayboard[data-register='wall']").count()) === 1
     && (await wall.getByRole("button", { name: "Previous day" }).count()) === 0);
+  check("wall: one band of counts and the next action in words, nothing to press",
+    (await wall.locator(".dayboard-wall-band .dayboard-counts").count()) === 1
+    && (await wall.locator(".dayboard-wall-band .dayboard-next").count()) === 1
+    && (await wall.locator(".dayboard-wall-band button").count()) === 0);
+  check("wall: the cards fold nothing away", (await wall.locator(".dayboard-today-toggle").count()) === 0);
   await wall.screenshot({ path: join(OUT, "wall.png"), fullPage: true });
 
   // The office narrows the rooms to those at risk, then becomes the wall:
@@ -392,7 +431,7 @@ try {
   // switch remounts the board under the staff shell and reads the day again
   // (a frame of "Loading the day's bookings…"), so the rooms are awaited.
   const narrowed = await preparePage(wallContext);
-  await narrowed.getByRole("button", { name: /^At risk, /u }).click();
+  await narrowed.getByRole("button", { name: /^\d+ at risk$/u }).click();
   const officeRooms = await narrowed.locator(".dayboard-room").count();
   await narrowed.getByRole("button", { name: "Wall display" }).click();
   await narrowed.locator(".dayboard[data-register='wall'] .dayboard-room").first().waitFor({ timeout: 10_000 });

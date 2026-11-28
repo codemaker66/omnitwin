@@ -3,13 +3,14 @@ import type { CalendarResponse } from "@omnitwin/types";
 import { boardRange } from "../../../diary/lib/board-time.js";
 import { deriveDayBoard, runningDays, type DayBoardSlotObservation, type DayBoardSlotRequest } from "../day-board-state.js";
 import { boardWindow } from "../day-board-layout.js";
-import { boardSummary, countWord, planeStages, roomDay, roomInFocus, showingLine, summaryText } from "../day-board-rooms.js";
+import { boardSummary, countWord, dayCounts, roomDay, roomInFocus, showingLine, summaryText, thenLine } from "../day-board-rooms.js";
 import { turnRound } from "../../DayBoardRooms.js";
 
-// The rooms board's reading of a day (concept C): a room's slots fall into
-// earlier, lead, next and later; the plane counts and filters; the sentence
-// says only what the board knows. The crowded day is read in
-// day-board-crowded.test.ts; these are the edges.
+// The rooms board's reading of a day: a room's slots fall into earlier, lead,
+// next and later, and its card names the lead, what comes next and why it is
+// at risk; the line of counts filters; the sentence says only what the board
+// knows. The crowded day is read in day-board-crowded.test.ts; these are the
+// edges.
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
 const GRAND_HALL = "00000000-0000-4000-8000-0000000000a1";
@@ -160,38 +161,64 @@ describe("the turn-round's words", () => {
   });
 });
 
-describe("the plane", () => {
-  it("counts requests nobody has on the day's own bookings, and filters the rooms that have them", () => {
+describe("the line of counts", () => {
+  it("counts functions at risk, live, setting up and still to come, and each count finds the rooms it names", () => {
     const board = deriveDayBoard(
-      response([booking("a", -60, 60), booking("b", 3 * 60, 4 * 60, { spaceId: SALOON })]),
-      NOW, TZ, [request("r1", "a", 5), request("r2", "a", 2), request("r3", "a", 1, "00000000-0000-4000-8000-0000000000ff")],
+      response([booking("a", -60, 60), booking("b", 3 * 60, 4 * 60, { spaceId: SALOON }), booking("c", 50, 120, { spaceId: SALOON })]),
+      NOW, TZ, [request("r1", "a", 5)],
     );
-    const waiting = planeStages(board.lanes).find((stage) => stage.focus === "waiting");
-    expect(waiting?.count).toBe(2);
-    expect(board.lanes.map(roomDay).filter((day) => roomInFocus(day, "waiting")).map((day) => day.room.name)).toEqual(["Grand Hall"]);
-    expect(board.lanes.map(roomDay).filter((day) => roomInFocus(day, "ahead")).map((day) => day.room.name)).toEqual(["Saloon"]);
+    // No bookings total (it invited a sum that does not add up), and no
+    // requests: they are counted on the panel's heading.
+    expect(dayCounts(board.lanes)).toEqual([
+      { focus: "risk", count: 0, words: "0 at risk" },
+      { focus: "live", count: 1, words: "1 live" },
+      { focus: "setup", count: 1, words: "1 setting up" },
+      { focus: "ahead", count: 1, words: "1 still to come" },
+    ]);
+    const rooms = board.lanes.map(roomDay);
+    expect(rooms.filter((day) => roomInFocus(day, "live")).map((day) => day.room.name)).toEqual(["Grand Hall"]);
+    expect(rooms.filter((day) => roomInFocus(day, "ahead")).map((day) => day.room.name)).toEqual(["Saloon"]);
+    expect(rooms.filter((day) => roomInFocus(day, "all"))).toHaveLength(2);
   });
 
-  it("says what the list shows by naming its rooms, never a second count beside the plane's", () => {
+  it("says what the list shows by naming its rooms, never a second count beside the line's", () => {
     expect(showingLine(["Grand Hall", "Saloon", "Reception Room", "Robert Adam Room", "North Gallery", "South Gallery"], "all")).toBe("Six rooms in use");
     expect(showingLine(["Grand Hall"], "risk")).toBe("At risk in Grand Hall");
     expect(showingLine(["Saloon", "Robert Adam Room", "North Gallery"], "live")).toBe("Live now in Saloon, Robert Adam Room and North Gallery");
-    expect(showingLine(["A", "B", "C", "D"], "waiting")).toBe("Requests waiting in four rooms");
+    expect(showingLine(["A", "B", "C", "D"], "ahead")).toBe("Still to come in four rooms");
     expect(showingLine([], "live")).toBe("Nothing is live");
     expect(countWord(10)).toBe("Ten");
     expect(countWord(11)).toBe("11");
   });
+});
 
-  it("counts every request nobody has today, as the list and the sentence do, and says how many no room of today's can show", () => {
-    const board = deriveDayBoard(response([booking("a", -60, 60)]), NOW, TZ, [request("r1", "a", 5)]);
-    // Three on the list, one of them on today's dinner: the filter can show
-    // one room's worth, and the count says where the other two are not.
-    expect(planeStages(board.lanes, 3).find((stage) => stage.focus === "waiting"))
-      .toEqual({ focus: "waiting", label: "Requests waiting", count: 3, note: "2 not on today’s bookings" });
-    expect(planeStages(board.lanes, 1).find((stage) => stage.focus === "waiting")?.note).toBeNull();
-    // Another day counts that day's own and says so, beside a list of today's.
-    expect(planeStages(board.lanes).find((stage) => stage.focus === "waiting"))
-      .toEqual({ focus: "waiting", label: "Waiting this day", count: 1, note: null });
+describe("a room's card", () => {
+  it("names what comes next by its time, keeps every other slot for All of today, and finds the reason a room is at risk", () => {
+    const blocking = response([booking("a", -3 * 60, -2 * 60), booking("b", -60, 60), booking("c", 3 * 60, 4 * 60, { title: "Ceilidh" }), booking("d", 4 * 60 + 10, 5 * 60)]);
+    const board = deriveDayBoard({
+      ...blocking,
+      conflicts: { ...blocking.conflicts, conflicts: [{ id: "x", type: "insufficient_turnaround", severity: "blocking", spaceId: GRAND_HALL, entryIds: ["c", "d"], explanation: "10 minutes between events; this changeover needs 60." }] },
+    } as CalendarResponse, NOW, TZ);
+    const lane = board.lanes[0];
+    if (lane === undefined) throw new Error("no lane");
+    const day = roomDay(lane);
+    // 16:00 in Glasgow: the ceilidh's doors.
+    expect(thenLine(day, TZ)).toBe("then 16:00 · Ceilidh");
+    expect(day.others.map((slot) => slot.bookingId)).toEqual(["a", "c", "d"]);
+    // The live dinner leads; the first function at risk ahead of it gives the reason.
+    expect(day.lead?.bookingId).toBe("b");
+    expect(day.atRisk?.bookingId).toBe("c");
+    expect(day.atRisk?.exceptionDetail).toBe("10 minutes between events; this changeover needs 60.");
+  });
+
+  it("has nothing next and no reason on a quiet room, and every slot for All of today once the day is done", () => {
+    const board = deriveDayBoard(response([booking("a", -6 * 60, -5 * 60), booking("b", -4 * 60, -3 * 60)]), NOW, TZ);
+    const [grandHall, saloon] = board.lanes.map(roomDay);
+    expect(grandHall?.lead).toBeNull();
+    expect(grandHall === undefined ? "" : thenLine(grandHall, TZ)).toBeNull();
+    expect(grandHall?.others.map((slot) => slot.bookingId)).toEqual(["a", "b"]);
+    expect(grandHall?.atRisk).toBeNull();
+    expect(saloon?.others).toEqual([]);
   });
 });
 
@@ -242,6 +269,20 @@ describe("the sentence under the title", () => {
     // The names are rooms, so the count is of rooms.
     expect(summaryText(boardSummary({ lanes: atRisk.lanes, unowned: [], today: false, nowMs: NOW }) ?? []))
       .toBe("Four bookings across two rooms. Two rooms have a changeover at risk: Grand Hall and Saloon.");
+  });
+
+  it("carries each room it names, so a phone can link the name to the room's card", () => {
+    const pairs = response([booking("a", 4 * 60, 5 * 60), booking("b", 5 * 60 + 5, 6 * 60), booking("c", 4 * 60, 5 * 60, { spaceId: SALOON }), booking("d", 5 * 60 + 5, 6 * 60, { spaceId: SALOON })]);
+    const conflict = (id: string, room: string, entryIds: readonly string[]): unknown => ({ id, type: "insufficient_turnaround", severity: "blocking", spaceId: room, entryIds, explanation: "5 minutes; needs 60." });
+    const both = deriveDayBoard({ ...pairs, conflicts: { ...pairs.conflicts, conflicts: [conflict("x", GRAND_HALL, ["a", "b"]), conflict("y", SALOON, ["c", "d"])] } } as CalendarResponse, NOW, TZ);
+    const parts = boardSummary({ lanes: both.lanes, unowned: [], today: true, nowMs: NOW }) ?? [];
+    expect(parts.filter((part) => typeof part !== "string" && "room" in part)).toEqual([
+      { room: "Grand Hall", roomId: GRAND_HALL }, { room: "Saloon", roomId: SALOON },
+    ]);
+    expect(summaryText(parts)).toMatch(/^Two rooms need you now: Grand Hall and Saloon\./u);
+    // One room at risk is named in the strong run that carries the risk.
+    const one = deriveDayBoard({ ...pairs, conflicts: { ...pairs.conflicts, conflicts: [conflict("y", SALOON, ["c", "d"])] } } as CalendarResponse, NOW, TZ);
+    expect(boardSummary({ lanes: one.lanes, unowned: [], today: true, nowMs: NOW })?.[0]).toEqual({ strong: "Saloon", tone: "risk", roomId: SALOON });
   });
 });
 

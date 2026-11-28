@@ -35,11 +35,11 @@ that did not happen.
    Watch: the price on the estimate pays the slot that holds the window (a windowed rule prices only
    its slot); the Day Board (phone and wall) shows the slot within a few seconds.
 3. **The colours on the corrected time.** On the wall, the slot's state follows the venue's
-   buffers: green an hour before setup, amber half an hour before doors, red while live. If the
-   test slot is in the past or the future, read the words on the slab and the ruler instead and say
-   so.
+   buffers: green an hour before setup, amber half an hour before doors, the calm ink dot in its
+   breathing ring while live. If the test slot is in the past or the future, read the words on the
+   room's card instead and say so.
 4. **Ten more chairs.** As the client, on the event page, ask for ten more chairs on the live slot.
-   Start the stopwatch on send. Watch: the copper ring on the slot on the wall and on the phone.
+   Start the stopwatch on send. Watch: the request in the next action on the wall and on the phone.
    Record the seconds to each; the target is within one second. (Local measure: 358 ms.)
 5. **Two hands.** The hallkeeper on the phone and the second hallkeeper (or the office) press
    "I'll do it" as close to together as they can. Watch: exactly one owns it; the loser's card names

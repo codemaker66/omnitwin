@@ -9,11 +9,14 @@
 //
 // It checks what a hallkeeper must see on a crowded day (goal 05: "every
 // slot's severity is legible in a crowded day and under reduced motion"):
-// every function on its lane, every slab saying its state in words, the
-// UNOWNED rail holding every unowned request, the next action leading with
-// the urgent one; then it takes screenshots on the office screen, a phone,
-// the wall display and under reduced motion. It exits non-zero when a check
-// fails. Screenshots are evidence for a person to look at, not acceptance.
+// the day's sentence, the line of counts, a card per room in the venue's
+// order with its photograph, every function on its room's card or under All
+// of today, every slab saying its state in words, every unowned request in
+// the next action or the panel, the next action leading with the urgent one
+// and offering Take it; then it takes screenshots on the office screen, a
+// phone, the wall display and under reduced motion. It exits non-zero when a
+// check fails. Screenshots are evidence for a person to look at, not
+// acceptance.
 //
 // Run from the repo root with the web dev server up and @omnitwin/types built:
 //   pnpm --filter @omnitwin/types build
@@ -64,8 +67,10 @@ async function preparePage(context, path) {
     .filter((person) => person.role !== "client")
     .map((person) => ({ id: person.id, name: person.name, role: person.role }))));
   await page.route(`${API}/notifications**`, (route) => json(route, []));
+  // The fixture's rooms are Trades Hall's published rooms, so the venue
+  // answers to Trades Hall's slug and the board pictures them as it would.
   await page.route(`${API}/venues/${day.venue.id}`, (route) => json(route, {
-    id: day.venue.id, name: day.venue.name, slug: day.venue.slug, address: "Crowded-day fixture",
+    id: day.venue.id, name: day.venue.name, slug: "trades-hall-glasgow", address: "Crowded-day fixture",
     logoUrl: null, brandColour: null, timezone: day.timeZone, spaces: [],
   }));
   const errors = [];
@@ -118,11 +123,28 @@ try {
   check("every function of the day is on the board", slabs.length === bookings.length, `${String(slabs.length)} of ${String(bookings.length)}`);
   const silent = slabs.filter((slab) => slab.text.length === 0);
   check("every slab says its state in words", silent.length === 0, silent.map((slab) => slab.booking).join(", "));
-  const railText = (await page.locator("body").innerText()).replace(/\s+/gu, " ");
-  const missing = unowned.filter((request) => !railText.includes(request.roomName ?? ""));
-  check("the UNOWNED rail names the room of every unowned request", missing.length === 0, `${String(unowned.length)} unowned`);
-  check("the next action leads with the urgent request nobody has", railText.includes("Chairs × 6"));
-  check("the prize giving's changeover is called at risk", railText.includes("Changeover at risk"));
+  const rooms = await page.locator(".dayboard-room").evaluateAll((cards) => cards.map((card) => ({
+    name: card.getAttribute("aria-label") ?? "",
+    photo: card.querySelector("img")?.getAttribute("src") ?? "",
+  })));
+  const venueOrder = [...day.calendar.rooms].sort((a, b) => a.sortOrder - b.sortOrder).map((room) => room.name);
+  check("a card per room, in the venue's order", rooms.map((room) => room.name).join(", ") === venueOrder.join(", "),
+    rooms.map((room) => room.name).join(", "));
+  check("every room pictured", rooms.every((room) => room.photo !== ""), rooms.filter((room) => room.photo === "").map((room) => room.name).join(", "));
+  check("the four rooms the panoramas cover are pictured empty", rooms.filter((room) => room.photo.startsWith("/images/rooms/day-board/")).length === 4);
+  const counts = await page.locator(".dayboard-counts").evaluate((element) => element.textContent ?? "");
+  check("one quiet line of counts", counts === "2 at risk·3 live·1 setting up·7 still to come", counts);
+  check("the day's sentence heads the board", (await page.locator(".dayboard-summary").innerText()).startsWith("Two rooms need you now: Grand Hall and South Gallery."));
+  // Every request nobody has: the next action names one and the panel the rest.
+  const more = page.locator(".dayboard-rail-more");
+  if (await more.count() > 0) await more.click();
+  const listed = await page.locator(".dayboard-rail-item").count();
+  check("every unowned request is the next action or on the panel", listed + 1 === unowned.length, `${String(listed)} listed + 1 of ${String(unowned.length)}`);
+  const next = (await page.locator(".dayboard-next").innerText()).replace(/\s+/gu, " ");
+  check("the next action leads with the urgent request nobody has, and offers Take it",
+    next.includes("URGENT") && next.includes("Chairs × 6") && (await page.locator(".dayboard-next .dayboard-take").count()) === 1, next);
+  const boardText = (await page.locator(".dayboard").innerText()).replace(/\s+/gu, " ");
+  check("the prize giving's changeover is called at risk", boardText.includes("Changeover at risk"));
   check("the page raised no errors", errors.length === 0, errors.slice(0, 3).join(" | "));
   await page.screenshot({ path: join(OUT, "office.png"), fullPage: true });
   await reportCutVerbs(page, "office");
@@ -132,8 +154,8 @@ try {
   // Reduced motion: the same words, no breathing.
   const calm = await browser.newContext({ viewport: { width: 1440, height: 900 }, timezoneId: day.timeZone, reducedMotion: "reduce" });
   const reduced = await preparePage(calm, "/hallkeeper/today");
-  const animated = await reduced.page.locator(".dayboard-slab *").evaluateAll((nodes) => nodes
-    .filter((node) => getComputedStyle(node).animationName !== "none").length);
+  const animated = await reduced.page.locator(".dayboard *").evaluateAll((nodes) => nodes
+    .filter((node) => getComputedStyle(node).animationName !== "none" || getComputedStyle(node, "::after").animationName !== "none").length);
   check("under reduced motion nothing breathes", animated === 0, `${String(animated)} animated`);
   const calmSlabs = await slabWords(reduced.page);
   check("under reduced motion every slab still says its state", calmSlabs.every((slab) => slab.text.length > 0));
@@ -143,6 +165,8 @@ try {
   // A phone, and the wall display.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, timezoneId: day.timeZone });
   const onPhone = await preparePage(phone, "/hallkeeper/today");
+  const links = await onPhone.page.locator(".dayboard-summary a").evaluateAll((anchors) => anchors.map((anchor) => anchor.textContent ?? ""));
+  check("on a phone the sentence's rooms link to their cards", links.join(", ") === "Grand Hall, South Gallery", links.join(", "));
   await onPhone.page.screenshot({ path: join(OUT, "phone.png") });
   await reportCutVerbs(onPhone.page, "phone");
   await phone.close();

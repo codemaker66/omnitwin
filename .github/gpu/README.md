@@ -227,6 +227,17 @@ the new chrome's line in its receipt and its Keep mine case goes on to a reload
 that puts a table back; no identity changed, and the admission's source commit
 and hashes were taken again from that spec.
 
+On 22 November 2026 Blake chose the sentence first for the Day Board (T-753):
+the day's sentence heads it, the next action offers Take it, one line of counts
+filters the rooms, and each room is a card with its photograph, what it is
+doing now and what comes then, with no bar of the day and no hours above the
+rooms. So its phone case is restated one for one: it no longer proves the
+present on the hours above the rooms and on every room's bar, and now proves the
+rooms one to a row no wider than the phone, each with a small square
+photograph, the next action held at the top, and a slot opened under its own
+room to its sheet (`day-board.spec.ts`). The other three Day Board cases keep
+their identities. The totals are unchanged.
+
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
 layout cases retire with that public experience. Seven ordinary game cases in
