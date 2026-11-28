@@ -25,6 +25,8 @@ import { calculatePrice, type PricingRuleInput } from "../services/price-calcula
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
 import { lockFirstResponse, stampFirstResponse } from "../services/enquiry-funnel.js";
+import { followEnquiryName } from "../services/people-erasure.js";
+import type { PeopleConn } from "../services/people-records.js";
 import { outerColumn } from "../utils/outer-column.js";
 
 // ---------------------------------------------------------------------------
@@ -122,6 +124,30 @@ const WITHHELD_FIELDS: ReadonlySet<string> = new Set(VENUE_ONLY_FIELDS);
 function asSeenBy(user: JwtUser, row: EnquiryRow): EnquiryRow | CustomerEnquiry {
   if (isPlatformAdmin(user) || canManageVenue(user, row.venueId) || canManageCommercial(user, row.venueId)) return row;
   return Object.fromEntries(Object.entries(row).filter(([field]) => !WITHHELD_FIELDS.has(field))) as CustomerEnquiry;
+}
+
+/**
+ * An edit's writes, in the caller's transaction. When the edit gives a name,
+ * the enquiry row is locked FOR NO KEY UPDATE first, as the writers take an
+ * enquiry before any of its events, and the name it holds is read under that
+ * lock; once the row is written, the events the join of old records named
+ * from the old name follow the new one while they still hold the old one
+ * (followEnquiryName). Exported for the cases that hold an edit open beside
+ * the join or another edit.
+ */
+export async function writeEnquiryEdit(
+  tx: PeopleConn,
+  enquiryId: string,
+  changes: Record<string, unknown>,
+  name: string | undefined,
+): Promise<EnquiryRow | undefined> {
+  const [held] = name === undefined ? [] : await tx.select({ name: enquiries.name }).from(enquiries)
+    .where(eq(enquiries.id, enquiryId)).for("no key update");
+  const [row] = await tx.update(enquiries).set(changes).where(eq(enquiries.id, enquiryId)).returning();
+  if (held !== undefined && row !== undefined && held.name !== row.name) {
+    await followEnquiryName(tx, { enquiryId: row.id, venueId: row.venueId, from: held.name, to: row.name });
+  }
+  return row;
 }
 
 /** Who may date a reported reply further back than the report window. */
@@ -303,10 +329,7 @@ export async function enquiryRoutes(
     if (parsed.data.estimatedGuests !== undefined) updateData["estimatedGuests"] = parsed.data.estimatedGuests;
     if (parsed.data.message !== undefined) updateData["message"] = parsed.data.message;
 
-    const [updated] = await db.update(enquiries)
-      .set(updateData)
-      .where(eq(enquiries.id, params.data.id))
-      .returning();
+    const updated = await db.transaction((tx) => writeEnquiryEdit(tx, params.data.id, updateData, parsed.data.name));
 
     return { data: updated === undefined ? updated : asSeenBy(request.user, updated) };
   });

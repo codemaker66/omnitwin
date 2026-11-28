@@ -40,7 +40,7 @@ import {
 import { outerColumn } from "../utils/outer-column.js";
 import { lockGuestLead } from "./guest-lead-lock.js";
 import { ERASED_TEXT, isAddress, isOnlyName, jsonTextPatterns, mentionPatterns, namesToErase, withoutNames } from "./people-erasure-text.js";
-import { liveContact, type PeopleTx } from "./people-records.js";
+import { liveContact, type PeopleConn, type PeopleTx } from "./people-records.js";
 
 // ---------------------------------------------------------------------------
 // Erasure of one person at one venue (release audit people-privacy-5).
@@ -1401,18 +1401,56 @@ function joinedNameOf(name: string): readonly SQL[] {
   return trimmed === "" || name.includes("@") ? [] : [sql`left(${trimmed}, 200)`];
 }
 
+/** Whether any row points at the event "ev" (an alias of the statement it is
+ *  used in): a row of any table with a key to the event or to one of its
+ *  phases, the event's own phases apart, read from pg_constraint as it stands
+ *  (as the undo, spine_undo_joins, reads it), so a table added later counts. */
+async function pointedAtEvent(tx: PeopleTx): Promise<SQL> {
+  const keys = await tx.execute<{ schema: string; table: string; column: string; toEvent: boolean }>(sql`
+    select n."nspname" as "schema", t."relname" as "table", a."attname" as "column",
+      c."confrelid" = '"events"'::regclass as "toEvent"
+    from pg_constraint as c
+    join pg_class as t on t."oid" = c."conrelid"
+    join pg_namespace as n on n."oid" = t."relnamespace"
+    cross join lateral unnest(c."conkey", c."confkey") as k("referencing", "referenced")
+    join pg_attribute as a on a."attrelid" = c."conrelid" and a."attnum" = k."referencing"
+    join pg_attribute as r on r."attrelid" = c."confrelid" and r."attnum" = k."referenced" and r."attname" = 'id'
+    where c."contype" = 'f' and c."confrelid" in ('"events"'::regclass, '"event_phases"'::regclass)
+      and not (c."conrelid" = '"event_phases"'::regclass and c."confrelid" = '"events"'::regclass)`);
+  const pointing = keys.rows.map((key): SQL => {
+    const from = sql`${sql.identifier(key.schema)}.${sql.identifier(key.table)} as "ref"`;
+    const column = sql`"ref".${sql.identifier(key.column)}`;
+    const onEvent = sql`exists (select 1 from ${from} where ${column} = "ev"."id")`;
+    const onPhase = sql`exists (select 1 from ${from} where ${column} in (select ph."id" from "event_phases" as ph where ph."event_id" = "ev"."id"))`;
+    return key.toEvent ? onEvent : onPhase;
+  });
+  return or(...pointing) ?? sql`false`;
+}
+
 /**
  * A kept person's enquiry that never became a booking is deleted with nothing
  * reworded. The join of old records named an event it made for an enquiry,
- * and the event's client, from the enquiry's name (event_link_joins: made, in
- * force), and once that enquiry is gone a later erasure of the person may not
- * find the event. So, after the delete, each event the join made for an
- * enquiry that no longer exists, among the records' events (all of which the
- * person's own erasure attempt holds FOR UPDATE), loses what it still holds of
- * the name of an enquiry removed here, as the join wrote it: its name becomes
- * "Event" while it equals that name, and its client name is cleared while it
- * does. A name typed since stays, and what points at the event does not
- * matter. Returns the events changed.
+ * and the event's client, from the enquiry's name; it gave an event it made
+ * for the enquiry's deal or proposal the enquiry's name as its client
+ * (event_link_joins: made, in force). Once the enquiry is gone a later erasure
+ * of the person may not find those events, so, after the delete, among the
+ * records' events (all of which the person's own erasure attempt holds FOR
+ * UPDATE):
+ *   - an event made for an enquiry that no longer exists, that nothing points
+ *     at any more (no row of a table with a key to it or to one of its phases,
+ *     and no deal or client account of its own), is used by nobody: it is
+ *     named "Event" and its client cleared, whatever they hold;
+ *   - one something still points at may be in use, so a name typed on it
+ *     since stays: its name becomes "Event" while it equals the name of an
+ *     enquiry removed here as the join wrote it, and its client name is
+ *     cleared while it equals that;
+ *   - an event made for a deal or a proposal of the removed enquiry loses only
+ *     its client name, while that equals the removed enquiry's name as the
+ *     join wrote it; its own name is the deal's or the proposal's.
+ * The names compared are those the removed rows held when removed. An edit of
+ * an enquiry's name carries the copies with it (followEnquiryName), so they
+ * equal what the join wrote from the name as it now stands. Returns the
+ * events changed.
  */
 async function unnameLeftEvents(
   tx: PeopleTx,
@@ -1420,25 +1458,72 @@ async function unnameLeftEvents(
   removed: readonly { readonly id: string; readonly name: string }[],
 ): Promise<readonly string[]> {
   const reached = distinct([...records.eventIds, ...records.nearby.eventIds]);
+  if (reached.length === 0) return [];
   const copied = removed.flatMap((row) => joinedNameOf(row.name));
-  if (reached.length === 0 || copied.length === 0) return [];
-  const asJoined = sql.join(copied, sql`, `);
+  const holdsCopy = (column: SQL): SQL => (copied.length === 0 ? sql`false` : sql`${column} in (${sql.join(copied, sql`, `)})`);
+  const madeIn = (subject: SQL): SQL => sql`exists (select 1 from "event_link_joins" as "made"
+    where "made"."event_id" = "ev"."id" and "made"."venue_id" = ${records.venueId}
+      and "made"."event_made" and "made"."undone_at" is null and ${subject})`;
   // Made for an enquiry that no longer exists: one removed here, or one that went before it.
-  const madeForGone = sql`not exists (select 1 from "enquiries" as "gone" where "gone"."id" = "made"."subject_id")`;
+  const forGoneEnquiry = madeIn(sql`"made"."subject_kind" = 'enquiry' and not exists (select 1 from "enquiries" as "gone" where "gone"."id" = "made"."subject_id")`);
+  const forItsDealOrProposal = madeIn(sql`(("made"."subject_kind" = 'opportunity' and ${among(sql`"made"."subject_id"`, [...records.dealIds, ...records.nearby.dealIds])})
+    or ("made"."subject_kind" = 'proposal' and ${among(sql`"made"."subject_id"`, [...records.proposalIds, ...records.nearby.proposalIds])}))`);
+  const ownsNothing = sql`"ev"."opportunity_id" is null and "ev"."client_account_id" is null`;
+  const unused = sql`(${ownsNothing} and not (${await pointedAtEvent(tx)}))`;
+  const orphan = sql`(${forGoneEnquiry} and ${unused})`;
+  const nameGoes = sql`(${orphan} or (${forGoneEnquiry} and ${holdsCopy(sql`"ev"."name"`)}))`;
+  const clientGoes = sql`(${orphan} or ((${forGoneEnquiry} or ${forItsDealOrProposal}) and ${holdsCopy(sql`"ev"."client_name"`)}))`;
   const unnamed = await tx.execute<{ id: string }>(sql`
     update "events" as "ev" set
-      "name" = case when "ev"."name" in (${asJoined}) then ${UNNAMED_EVENT} else "ev"."name" end,
-      "client_name" = case when "ev"."client_name" in (${asJoined}) then null else "ev"."client_name" end
+      "name" = case when ${nameGoes} then ${UNNAMED_EVENT} else "ev"."name" end,
+      "client_name" = case when ${clientGoes} then null else "ev"."client_name" end
     where "ev"."id" in (${sql.join(reached.map((id) => sql`${id}::uuid`), sql`, `)})
-      and ("ev"."name" in (${asJoined}) or "ev"."client_name" in (${asJoined}))
-      and exists (
-        select 1 from "event_link_joins" as "made"
-        where "made"."event_id" = "ev"."id" and "made"."venue_id" = ${records.venueId}
-          and "made"."subject_kind" = 'enquiry' and "made"."event_made" and "made"."undone_at" is null
-          and ${madeForGone}
-      )
+      and ((${nameGoes} and "ev"."name" <> ${UNNAMED_EVENT}) or (${clientGoes} and "ev"."client_name" is not null))
     returning "ev"."id"`);
   return unnamed.rows.map((row) => row.id);
+}
+
+/**
+ * Staff changed an enquiry's name: the copies the join of old records made of
+ * the old name follow it, so what the events hold stays what the join would
+ * write from the name as it now stands. Called in the edit's transaction
+ * after the enquiry row was locked FOR NO KEY UPDATE and written (the writers'
+ * order: the enquiry before its events), with the name the row held under
+ * that lock. Only events of the enquiry's venue the join made (a made row in
+ * force: event_made, not undone, of that venue) change, each column only
+ * while it still holds the old name as the join wrote it, so a name typed
+ * since stays:
+ *   - an event made for the enquiry: its name and its client name;
+ *   - an event made for a deal or a proposal of the enquiry: its client name.
+ * They take the new name as the join would write it, or "Event" and no
+ * client when the join would copy none. Nothing changes when the old name
+ * gave no copy. Returns the events changed.
+ */
+export async function followEnquiryName(
+  tx: PeopleConn,
+  input: { readonly enquiryId: string; readonly venueId: string; readonly from: string; readonly to: string },
+): Promise<readonly string[]> {
+  const [before] = joinedNameOf(input.from);
+  if (before === undefined) return [];
+  const [after] = joinedNameOf(input.to);
+  const enquiryId = sql`${input.enquiryId}::uuid`;
+  const inForce = sql`"made"."event_id" = "ev"."id" and "made"."venue_id" = ${input.venueId}
+      and "made"."event_made" and "made"."undone_at" is null`;
+  const forIt = sql`exists (select 1 from "event_link_joins" as "made" where ${inForce}
+      and "made"."subject_kind" = 'enquiry' and "made"."subject_id" = ${enquiryId})`;
+  const forItsDealOrProposal = sql`exists (select 1 from "event_link_joins" as "made" where ${inForce} and (
+      ("made"."subject_kind" = 'opportunity' and "made"."subject_id" in (select d."id" from "opportunities" as d where d."source_enquiry_id" = ${enquiryId}))
+      or ("made"."subject_kind" = 'proposal' and "made"."subject_id" in (select p."id" from "proposals" as p where p."enquiry_id" = ${enquiryId}))))`;
+  const nameFollows = sql`(${forIt} and "ev"."name" = ${before})`;
+  const clientFollows = sql`((${forIt} or ${forItsDealOrProposal}) and "ev"."client_name" = ${before})`;
+  const followed = await tx.execute<{ id: string }>(sql`
+    update "events" as "ev" set
+      "name" = case when ${nameFollows} then ${after ?? UNNAMED_EVENT} else "ev"."name" end,
+      "client_name" = case when ${clientFollows} then ${after ?? null} else "ev"."client_name" end
+    where "ev"."venue_id" = ${input.venueId}
+      and (${nameFollows} or ${clientFollows})
+    returning "ev"."id"`);
+  return followed.rows.map((row) => row.id);
 }
 
 /** Whether a layout's day-of contact is them: their name (as a field that is

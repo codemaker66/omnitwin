@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Database } from "../db/client.js";
+import { enquiryRoutes, writeEnquiryEdit } from "../routes/enquiries.js";
 import { ErasureMovedOn, eraseLockedPerson, findPersonRecords, type ErasureOutcome } from "../services/people-erasure.js";
 import { lockPerson } from "../services/people-records.js";
 import { eraseLapsedPeople } from "../services/people-retention.js";
@@ -43,13 +45,27 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
   let spine: SpineDatabase | undefined;
   let pool: Pool;
   let db: Database;
+  let server: FastifyInstance | undefined;
 
   beforeAll(async () => {
     spine = await openSpineDatabase("people_erasure_links");
     pool = spine.pool;
     db = spine.db;
+    server = Fastify();
+    await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
+    await server.ready();
   }, 180_000);
-  afterAll(async () => { await spine?.close(); });
+  afterAll(async () => {
+    await server?.close();
+    await spine?.close();
+  });
+
+  /** PATCH /enquiries/:id as a platform admin of the venue, who may edit an enquiry in any state. */
+  async function edit(v: SpineVenue, enquiryId: string, body: Record<string, unknown>): Promise<LightMyRequestResponse> {
+    if (server === undefined) throw new Error("No server");
+    return server.inject({ method: "PATCH", url: `/enquiries/${enquiryId}`, payload: body,
+      headers: { authorization: `Bearer ${JSON.stringify({ ...v.admin, platformRole: "admin", email: `${v.admin.id}@people-links.invalid` })}` } });
+  }
 
   async function id(text: string, values: readonly unknown[]): Promise<string> {
     const [row] = (await pool.query<{ id: string }>(text, [...values])).rows;
@@ -915,18 +931,166 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await namedAnywhere(v, "Morag Keptwell")).toBe(0);
   });
 
-  it("the 24-month pass leaves a name staff typed on such an event since, and clears only the client name the join copied", async () => {
-    const v = await venueIn(pool, "retention, a made event renamed by staff");
-    const { personId: elspeth } = await keptByAnInk(v, "Elspeth Keptwell");
-    const spare = await enquiry(v, { contactId: elspeth, name: "Elspeth Keptwell", replied: true, at: longAgo });
+  /** A floor plan of the venue linked to the event: a row that points at it. */
+  async function planOn(v: SpineVenue, eventId: string): Promise<void> {
+    const plan = await id(`INSERT INTO configurations (space_id, venue_id, name, layout_style)
+      VALUES ($1, $2, 'TEST ONLY plan', 'dinner-rounds') RETURNING id`, [v.rooms.hall, v.venueId]);
+    await pool.query(`INSERT INTO event_configuration_links (event_id, configuration_id, link_type)
+      VALUES ($1, $2, 'source_configuration')`, [eventId, plan]);
+  }
+
+  /** A kept person's worked enquiry that never became a booking, and the event the join makes for it. */
+  async function spareAndMade(v: SpineVenue, personId: string, name: string): Promise<{ readonly spare: string; readonly made: string }> {
+    const spare = await enquiry(v, { contactId: personId, name, replied: true, at: longAgo });
     await join();
     const made = await eventOf("enquiries", spare);
+    expect(await joinOf("enquiry", spare)).toEqual({ event_id: made, event_made: true, path: "new_event" });
+    return { spare, made };
+  }
+
+  it("the 24-month pass leaves a name staff typed since on such an event something points at, and clears only the client name the join copied", async () => {
+    const v = await venueIn(pool, "retention, a made event renamed by staff");
+    const { personId: elspeth } = await keptByAnInk(v, "Elspeth Keptwell");
+    const { spare, made } = await spareAndMade(v, elspeth, "Elspeth Keptwell");
     expect(await names(made)).toEqual({ name: "Elspeth Keptwell", client_name: "Elspeth Keptwell" });
     await pool.query("UPDATE events SET name = 'TEST ONLY summer ball' WHERE id = $1", [made]);
+    await planOn(v, made);
 
     await passKeeps(v, elspeth);
     expect(await count("enquiries WHERE id = $1", [spare])).toBe(0);
     expect(await names(made)).toEqual({ name: "TEST ONLY summer ball", client_name: null });
+  });
+
+  it("the 24-month pass leaves a client name staff typed since on such an event something points at, and renames it", async () => {
+    const v = await venueIn(pool, "retention, a made event's client typed by staff");
+    const { personId: fenella } = await keptByAnInk(v, "Fenella Keptwell");
+    const { made } = await spareAndMade(v, fenella, "Fenella Keptwell");
+    await pool.query("UPDATE events SET client_name = 'TEST ONLY the family' WHERE id = $1", [made]);
+    await planOn(v, made);
+
+    await passKeeps(v, fenella);
+    expect(await names(made)).toEqual({ name: "Event", client_name: "TEST ONLY the family" });
+  });
+
+  it("the 24-month pass names an event the join made for a removed enquiry, that nothing points at, Event, whatever it holds", async () => {
+    const v = await venueIn(pool, "retention, made events nobody uses");
+    const { personId: ottilie } = await keptByAnInk(v, "Ottilie Keptwell");
+    // The enquiry is renamed after the join copied its name (a repair by SQL), so the event holds an older copy.
+    const { spare: renamed, made: oldCopy } = await spareAndMade(v, ottilie, "Ottilie Keptwell");
+    await pool.query("UPDATE enquiries SET name = 'Ottilie Keptwell-Barr' WHERE id = $1", [renamed]);
+    // Staff typed this one's name and client since.
+    const { made: typed } = await spareAndMade(v, ottilie, "Ottilie Keptwell");
+    await pool.query("UPDATE events SET name = 'TEST ONLY Ottilie Keptwell party', client_name = 'TEST ONLY Ottilie K' WHERE id = $1", [typed]);
+
+    await passKeeps(v, ottilie);
+    expect(await names(oldCopy)).toEqual({ name: "Event", client_name: null });
+    expect(await names(typed)).toEqual({ name: "Event", client_name: null });
+    expect(await namedAnywhere(v, "Ottilie")).toBe(0);
+  });
+
+  it("an event the join made that is a deal's or a client account's own is in use: the pass leaves its typed name", async () => {
+    const v = await venueIn(pool, "retention, made events a deal or an account owns");
+    const { personId: philippa } = await keptByAnInk(v, "Philippa Keptwell");
+    const { made: dealt } = await spareAndMade(v, philippa, "Philippa Keptwell");
+    const { made: accounted } = await spareAndMade(v, philippa, "Philippa Keptwell");
+    const someDeal = await deal(v, { title: "TEST ONLY a deal", stage: "lost" });
+    const account = await id("INSERT INTO client_accounts (venue_id, name) VALUES ($1, 'TEST ONLY an account') RETURNING id", [v.venueId]);
+    await pool.query("UPDATE events SET name = 'TEST ONLY dinner', opportunity_id = $2 WHERE id = $1", [dealt, someDeal]);
+    await pool.query("UPDATE events SET name = 'TEST ONLY lunch', client_account_id = $2 WHERE id = $1", [accounted, account]);
+
+    await passKeeps(v, philippa);
+    expect(await names(dealt)).toEqual({ name: "TEST ONLY dinner", client_name: null });
+    expect(await names(accounted)).toEqual({ name: "TEST ONLY lunch", client_name: null });
+  });
+
+  it("an event the join made whose phase something points at is in use: the pass leaves its typed name", async () => {
+    const v = await venueIn(pool, "retention, a made event's phase in use");
+    const { personId: rosalind } = await keptByAnInk(v, "Rosalind Keptwell");
+    const { made } = await spareAndMade(v, rosalind, "Rosalind Keptwell");
+    await pool.query("UPDATE events SET name = 'TEST ONLY ceilidh' WHERE id = $1", [made]);
+    await pool.query(`INSERT INTO phase_layout_snapshots (event_phase_id)
+      SELECT id FROM event_phases WHERE event_id = $1 ORDER BY id LIMIT 1`, [made]);
+    expect(await count("phase_layout_snapshots WHERE event_phase_id IN (SELECT id FROM event_phases WHERE event_id = $1)", [made])).toBe(1);
+
+    await passKeeps(v, rosalind);
+    expect(await names(made)).toEqual({ name: "TEST ONLY ceilidh", client_name: null });
+  });
+
+  it("the 24-month pass clears the client name the join copied onto events it made for the removed enquiry's deal and proposal, never their names", async () => {
+    const v = await venueIn(pool, "retention, a removed enquiry's deal and proposal events");
+    const { personId: wynne } = await keptByAnInk(v, "Wynne Keptwell");
+    // Enquiries that ask to book nothing: the join names the events by the
+    // deal and the proposal (the deal's title is her name too), their client by the enquiry.
+    const forDeal = await enquiry(v, { contactId: wynne, name: "Wynne Keptwell", eventType: "venue-enquiry", replied: true, at: longAgo });
+    const dealId = await deal(v, { title: "Wynne Keptwell", enquiryId: forDeal, at: longAgo });
+    const forProposal = await enquiry(v, { contactId: wynne, name: "Wynne Keptwell", eventType: "venue-enquiry", at: longAgo });
+    const proposalId = await proposal(v, { title: "TEST ONLY a reception", status: "sent", enquiryId: forProposal, at: longAgo });
+    await join();
+    const dealEvent = await eventOf("opportunities", dealId);
+    const proposalEvent = await eventOf("proposals", proposalId);
+    expect(await names(dealEvent)).toEqual({ name: "Wynne Keptwell", client_name: "Wynne Keptwell" });
+    expect(await names(proposalEvent)).toEqual({ name: "TEST ONLY a reception", client_name: "Wynne Keptwell" });
+
+    await passKeeps(v, wynne);
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[forDeal, forProposal]])).toBe(0);
+    expect(await names(dealEvent)).toEqual({ name: "Wynne Keptwell", client_name: null });
+    expect(await names(proposalEvent)).toEqual({ name: "TEST ONLY a reception", client_name: null });
+  });
+
+  it("the 24-month pass leaves an event the join made for an enquiry of theirs that still exists", async () => {
+    const v = await venueIn(pool, "retention, a made event of a kept enquiry");
+    const { personId: thea } = await keptByAnInk(v, "Thea Keptwell");
+    // Her other enquiry stays (a live hold of its own elsewhere); the join made its event.
+    const { spare: stays, made } = await spareAndMade(v, thea, "Thea Keptwell");
+    await booking(v, { eventId: await event(v, "TEST ONLY elsewhere", null), enquiryId: stays, kind: "hold", at: longAgo });
+    // A spare enquiry of hers points at that event, and goes.
+    const spare = await enquiry(v, { contactId: thea, name: "Thea Keptwell", at: longAgo });
+    await link(pool, "enquiries", spare, made);
+
+    await passKeeps(v, thea);
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[stays, spare]])).toBe(1);
+    expect(await names(made)).toEqual({ name: "Thea Keptwell", client_name: "Thea Keptwell" });
+  });
+
+  it("the 24-month pass leaves an event the join only joined a removed enquiry to", async () => {
+    const v = await venueIn(pool, "retention, an event the join joined");
+    const { personId: una } = await keptByAnInk(v, "Una Keptwell");
+    // Staff made and named the event; her worked enquiry's released hold sits in it, so the join joins her to it.
+    const staffs = await event(v, "Una Keptwell", "Una Keptwell");
+    const spare = await enquiry(v, { contactId: una, name: "Una Keptwell", replied: true, at: longAgo });
+    await booking(v, { eventId: staffs, enquiryId: spare, kind: "hold", status: "released", at: longAgo });
+    await join();
+    expect(await joinOf("enquiry", spare)).toEqual({ event_id: staffs, event_made: false, path: "enquiry_bookings" });
+
+    await passKeeps(v, una);
+    expect(await count("enquiries WHERE id = $1", [spare])).toBe(0);
+    expect(await names(staffs)).toEqual({ name: "Una Keptwell", client_name: "Una Keptwell" });
+  });
+
+  it("the 24-month pass leaves a same-named event the join made for an enquiry gone elsewhere, which the removed enquiry does not reach", async () => {
+    const v = await venueIn(pool, "retention, a same-named event out of reach");
+    const { personId: vita } = await keptByAnInk(v, "Vita Keptwell");
+    const { spare } = await spareAndMade(v, vita, "Vita Keptwell");
+    // An enquiry linked to nobody, of the same name, had an event made for it and went.
+    const lone = await enquiry(v, { name: "Vita Keptwell", replied: true });
+    await join();
+    const unreached = await eventOf("enquiries", lone);
+    await pool.query("DELETE FROM enquiries WHERE id = $1", [lone]);
+
+    await passKeeps(v, vita);
+    expect(await count("enquiries WHERE id = $1", [spare])).toBe(0);
+    expect(await names(unreached)).toEqual({ name: "Vita Keptwell", client_name: "Vita Keptwell" });
+  });
+
+  it("the 24-month pass compares a name written with spaces around it as the join trimmed it", async () => {
+    const v = await venueIn(pool, "retention, a padded name");
+    const { personId: pia } = await keptByAnInk(v, "Pia Keptwell");
+    const { made } = await spareAndMade(v, pia, "  Pia Keptwell \t");
+    expect(await names(made)).toEqual({ name: "Pia Keptwell", client_name: "Pia Keptwell" });
+    await planOn(v, made);
+
+    await passKeeps(v, pia);
+    expect(await names(made)).toEqual({ name: "Event", client_name: null });
   });
 
   it("the 24-month pass renames an event the join made for an enquiry of theirs that went earlier, when the enquiry it removes now points at it", async () => {
@@ -1054,6 +1218,220 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await value("SELECT title AS value FROM bookings WHERE id = $1", [held])).toBe("Held for Erased");
     expect(await value("SELECT row_to_json(b) AS value FROM (SELECT event_id, enquiry_id, status FROM bookings WHERE id = $1) b", [held]))
       .toEqual({ event_id: hisEvent, enquiry_id: his, status: "released" });
+  });
+
+  // An edit of an enquiry's name (PATCH /enquiries/:id) carries the copies the
+  // join made of it: an event made for the enquiry follows in name and client,
+  // one made for its deal or proposal in client, each column only while it
+  // still holds the old name as the join wrote it, only at the enquiry's venue
+  // and only through a made row in force.
+
+  /** A worked enquiry, and the event the join makes for it, named from it. */
+  async function madeFor(v: SpineVenue, name: string): Promise<{ readonly asked: string; readonly made: string }> {
+    const asked = await enquiry(v, { name, replied: true });
+    await join();
+    const made = await eventOf("enquiries", asked);
+    expect(await joinOf("enquiry", asked)).toEqual({ event_id: made, event_made: true, path: "new_event" });
+    expect(await names(made)).toEqual({ name, client_name: name });
+    return { asked, made };
+  }
+
+  /** The row's version: any write to the row, even of the same values, changes it. */
+  async function versionOf(eventId: string): Promise<unknown> {
+    return value("SELECT xmin::text AS value FROM events WHERE id = $1", [eventId]);
+  }
+
+  it("an edit of an enquiry's name carries the join's copy: the event made for it follows in name and client", async () => {
+    const v = await venueIn(pool, "edit, the copy follows");
+    const { asked, made } = await madeFor(v, "Agnes Oldname");
+    const edited = await edit(v, asked, { name: "Agnes Newname" });
+    expect(edited.statusCode, edited.body).toBe(200);
+    expect(edited.json<{ data: { name: string } }>().data.name).toBe("Agnes Newname");
+    expect(await names(made)).toEqual({ name: "Agnes Newname", client_name: "Agnes Newname" });
+  });
+
+  it("an edit of an enquiry's name leaves a column of its event typed since", async () => {
+    const v = await venueIn(pool, "edit, a column typed since");
+    const { asked: first, made: namedByStaff } = await madeFor(v, "Beth Oldname");
+    await pool.query("UPDATE events SET name = 'TEST ONLY harvest supper' WHERE id = $1", [namedByStaff]);
+    const { asked: second, made: clientByStaff } = await madeFor(v, "Beth Oldname");
+    await pool.query("UPDATE events SET client_name = 'TEST ONLY the guild' WHERE id = $1", [clientByStaff]);
+    expect((await edit(v, first, { name: "Beth Newname" })).statusCode).toBe(200);
+    expect((await edit(v, second, { name: "Beth Newname" })).statusCode).toBe(200);
+    expect(await names(namedByStaff)).toEqual({ name: "TEST ONLY harvest supper", client_name: "Beth Newname" });
+    expect(await names(clientByStaff)).toEqual({ name: "Beth Newname", client_name: "TEST ONLY the guild" });
+  });
+
+  it("an edit of an enquiry's name carries the client name of the events the join made for its deal and its proposal, never their names", async () => {
+    const v = await venueIn(pool, "edit, a deal's and a proposal's events");
+    // Enquiries that ask to book nothing: the events are named by the deal (its
+    // title the enquirer's name too) and by the proposal, their client by the enquiry.
+    const forDeal = await enquiry(v, { name: "Cora Oldname", eventType: "venue-enquiry", replied: true });
+    const dealId = await deal(v, { title: "Cora Oldname", enquiryId: forDeal });
+    const forProposal = await enquiry(v, { name: "Cora Oldname", eventType: "venue-enquiry" });
+    const proposalId = await proposal(v, { title: "TEST ONLY a reception", status: "sent", enquiryId: forProposal });
+    await join();
+    const dealEvent = await eventOf("opportunities", dealId);
+    const proposalEvent = await eventOf("proposals", proposalId);
+    expect(await names(dealEvent)).toEqual({ name: "Cora Oldname", client_name: "Cora Oldname" });
+    expect((await edit(v, forDeal, { name: "Cora Newname" })).statusCode).toBe(200);
+    expect((await edit(v, forProposal, { name: "Cora Newname" })).statusCode).toBe(200);
+    expect(await names(dealEvent)).toEqual({ name: "Cora Oldname", client_name: "Cora Newname" });
+    expect(await names(proposalEvent)).toEqual({ name: "TEST ONLY a reception", client_name: "Cora Newname" });
+  });
+
+  it("an edit to a name the join would not copy gives the event the join's own name and no client", async () => {
+    const v = await venueIn(pool, "edit, a name the join would not copy");
+    const { asked, made } = await madeFor(v, "Dora Oldname");
+    expect((await edit(v, asked, { name: "dora@people-links.invalid" })).statusCode).toBe(200);
+    expect(await names(made)).toEqual({ name: "Event", client_name: null });
+  });
+
+  it("an edit that does not change an enquiry's name touches none of its events", async () => {
+    const v = await venueIn(pool, "edit, the name unchanged");
+    const { asked, made } = await madeFor(v, "Edie Samename");
+    const before = await versionOf(made);
+    expect((await edit(v, asked, { name: "Edie Samename", message: "TEST ONLY a note" })).statusCode).toBe(200);
+    expect((await edit(v, asked, { email: `edie-${randomUUID()}@people-links.invalid` })).statusCode).toBe(200);
+    expect(await versionOf(made)).toBe(before);
+    expect(await names(made)).toEqual({ name: "Edie Samename", client_name: "Edie Samename" });
+  });
+
+  it("an edit of an enquiry's name touches no event of another venue, and none through a made row of another venue", async () => {
+    const v = await venueIn(pool, "edit, the venue's events only");
+    const elsewhere = await venueIn(pool, "edit, another venue");
+    // Rows the join never writes, set by hand: the first enquiry's made row
+    // names another venue's event; the second's made row is another venue's.
+    // Every event holds the old name.
+    const { asked: first } = await madeFor(v, "Fay Oldname");
+    const theirEvent = await event(elsewhere, "Fay Oldname", "Fay Oldname");
+    await pool.query("UPDATE event_link_joins SET event_id = $2 WHERE subject_kind = 'enquiry' AND subject_id = $1", [first, theirEvent]);
+    const { asked: second, made: ofSecond } = await madeFor(v, "Fay Oldname");
+    await pool.query("UPDATE event_link_joins SET venue_id = $2 WHERE subject_kind = 'enquiry' AND subject_id = $1", [second, elsewhere.venueId]);
+
+    expect((await edit(v, first, { name: "Fay Newname" })).statusCode).toBe(200);
+    expect((await edit(v, second, { name: "Fay Newname" })).statusCode).toBe(200);
+    expect(await names(theirEvent)).toEqual({ name: "Fay Oldname", client_name: "Fay Oldname" });
+    expect(await names(ofSecond)).toEqual({ name: "Fay Oldname", client_name: "Fay Oldname" });
+  });
+
+  it("an edit of an enquiry's name follows only made rows in force: not an undone one, nor one the join only joined", async () => {
+    const v = await venueIn(pool, "edit, made rows in force only");
+    const { asked: undoneFor, made: undoneEvent } = await madeFor(v, "Gwen Oldname");
+    await pool.query("UPDATE event_link_joins SET undone_at = now() WHERE subject_kind = 'enquiry' AND subject_id = $1", [undoneFor]);
+    // Staff made and named the event; the enquiry's released hold sits in it, so the join only joins it.
+    const staffs = await event(v, "Gwen Oldname", "Gwen Oldname");
+    const joinedOnly = await enquiry(v, { name: "Gwen Oldname", replied: true });
+    await booking(v, { eventId: staffs, enquiryId: joinedOnly, kind: "hold", status: "released" });
+    await join();
+    expect(await joinOf("enquiry", joinedOnly)).toEqual({ event_id: staffs, event_made: false, path: "enquiry_bookings" });
+    expect((await edit(v, undoneFor, { name: "Gwen Newname" })).statusCode).toBe(200);
+    expect((await edit(v, joinedOnly, { name: "Gwen Newname" })).statusCode).toBe(200);
+    expect(await names(undoneEvent)).toEqual({ name: "Gwen Oldname", client_name: "Gwen Oldname" });
+    expect(await names(staffs)).toEqual({ name: "Gwen Oldname", client_name: "Gwen Oldname" });
+  });
+
+  /**
+   * The edit's own writes (writeEnquiryEdit, as PATCH /enquiries/:id runs
+   * them) in a transaction held open after they are written: `held` settles
+   * once they are, and the transaction commits when `commit` is called.
+   */
+  function heldEdit(enquiryId: string, name: string): { readonly held: Promise<void>; readonly commit: () => Promise<void> } {
+    let written: (() => void) | undefined;
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => { written = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const committed = db.transaction(async (tx) => {
+      await writeEnquiryEdit(tx, enquiryId, { name, updatedAt: new Date() }, name);
+      written?.();
+      await released;
+    });
+    return {
+      held: Promise.race([held, committed.then(() => { throw new Error("The edit ended before it was held"); })]),
+      commit: async () => { release?.(); await committed; },
+    };
+  }
+
+  it("an edit holding the enquiry while the join runs: the join skips the enquiry without waiting, and its next run names the event by the new name", async () => {
+    const v = await venueIn(pool, "edit first, the join beside it");
+    const asked = await enquiry(v, { name: "Hilda Oldname", replied: true });
+    const editing = heldEdit(asked, "Hilda Newname");
+    try {
+      await editing.held;
+      const started = Date.now();
+      await join();
+      // Skipped (SKIP LOCKED), not waited for: the pool's lock limit is 20 s.
+      expect(Date.now() - started).toBeLessThan(15_000);
+      expect(await joinOf("enquiry", asked)).toBeUndefined();
+      expect(await value("SELECT event_id AS value FROM enquiries WHERE id = $1", [asked])).toBeNull();
+    } finally {
+      await editing.commit();
+    }
+    await join();
+    const made = await eventOf("enquiries", asked);
+    expect(await names(made)).toEqual({ name: "Hilda Newname", client_name: "Hilda Newname" });
+  });
+
+  it("the join holding the enquiry while an edit arrives: the edit waits for the join's commit, then the event the join made follows the new name", async () => {
+    const v = await venueIn(pool, "the join first, an edit beside it");
+    const asked = await enquiry(v, { name: "Iona Oldname", replied: true });
+    const joiner = await pool.connect();
+    let open = false;
+    try {
+      await joiner.query("BEGIN");
+      open = true;
+      await joiner.query("SELECT * FROM spine_join_old_records()");
+      const editing = edit(v, asked, { name: "Iona Newname" });
+      try {
+        await waitForLockWait(`%from "enquiries"%for no key update%`);
+      } finally {
+        await joiner.query("COMMIT");
+        open = false;
+      }
+      expect((await editing).statusCode).toBe(200);
+    } finally {
+      if (open) await joiner.query("ROLLBACK");
+      joiner.release();
+    }
+    const made = await eventOf("enquiries", asked);
+    expect(await joinOf("enquiry", asked)).toEqual({ event_id: made, event_made: true, path: "new_event" });
+    expect(await names(made)).toEqual({ name: "Iona Newname", client_name: "Iona Newname" });
+  });
+
+  it("two edits of an enquiry's name at once: the second reads the name the first wrote, under the enquiry's lock, and the event follows both", async () => {
+    const v = await venueIn(pool, "two edits at once");
+    const { asked, made } = await madeFor(v, "Jean Oldname");
+    const first = heldEdit(asked, "Jean Middlename");
+    try {
+      await first.held;
+      const second = edit(v, asked, { name: "Jean Lastname" });
+      try {
+        await waitForLockWait(`%"enquiries"%`);
+      } finally {
+        await first.commit();
+      }
+      expect((await second).statusCode).toBe(200);
+    } finally {
+      await first.commit();
+    }
+    expect(await names(made)).toEqual({ name: "Jean Lastname", client_name: "Jean Lastname" });
+  });
+
+  it("the whole way: the join names the event, staff rename the enquiry, and the 24-month pass removing it leaves the event neither name", async () => {
+    const v = await venueIn(pool, "edit, then the 24-month pass");
+    const { personId: kirsten } = await keptByAnInk(v, "Kirsten Keptwell");
+    const { spare, made } = await spareAndMade(v, kirsten, "Kirsten Oldname");
+    await planOn(v, made);
+    expect((await edit(v, spare, { name: "Kirsten Newname" })).statusCode).toBe(200);
+    expect(await names(made)).toEqual({ name: "Kirsten Newname", client_name: "Kirsten Newname" });
+    // Two years and more pass with nothing else said.
+    await pool.query("UPDATE enquiries SET updated_at = $2 WHERE id = $1", [spare, longAgo]);
+
+    await passKeeps(v, kirsten);
+    expect(await count("enquiries WHERE id = $1", [spare])).toBe(0);
+    expect(await names(made)).toEqual({ name: "Event", client_name: null });
+    expect(await namedAnywhere(v, "Oldname")).toBe(0);
+    expect(await namedAnywhere(v, "Newname")).toBe(0);
   });
 
   it("the join's own records of an erased enquiry stay as ids: the nightly join and the undo still run cleanly afterwards", async () => {
