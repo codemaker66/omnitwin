@@ -2230,3 +2230,41 @@ describe("guest list page state: a list kept by a later version of the kit", () 
     expect(await backend.get(PLAN_A)).toEqual(later);
   });
 });
+
+describe("guest list page state: the older-copy words outlast a busy answer", () => {
+  it("keeps saying the printout was of an older copy while its record waits on a busy tab, and after it lands", async () => {
+    const { backend, store } = device();
+    let saves = 0;
+    // The third save (the print's record on the other tab's list) finds another tab busy.
+    const waits: GuestListStore = {
+      ...store,
+      save: (list, loaded, opts) => {
+        saves += 1;
+        return saves === 3 ? Promise.resolve({ kind: "busy" }) : store.save(list, loaded, opts);
+      },
+    };
+    await state().open(PLAN_A, waits, clock());
+    state().pageHere();
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    const other = otherTabOn(backend);
+    const theirs = await loadedBy(other, PLAN_A);
+    expect((await other.save({ ...theirs.list, title: "Theirs", updatedAt: "2026-11-14T09:00:00.000Z" }, theirs.stamp)).kind).toBe("saved");
+
+    state().apply((list) => markPrinted(list, "2026-11-14T10:00:00.000Z"), {
+      undo: false,
+      ifOtherCopy: (kept) => printedFromOlderCopy(kept, 1, "2026-11-14T10:00:00.000Z"),
+    });
+    await state().flush();
+    expect(saves).toBe(3);
+    expect(state().list?.title).toBe("Theirs");
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+    expect(state().changeWaiting()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    await state().flush();
+    expect(state().changeWaiting()).toBe(false);
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+    state().pageGone();
+  });
+});

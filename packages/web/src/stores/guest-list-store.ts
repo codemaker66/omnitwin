@@ -374,7 +374,9 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             session.unsaved = true;
             session.ordinary = since.ordinary || waiting.ordinary;
             session.ifOther = since.ifOther ?? waiting.ifOther;
-            set({ notice: { kind: "other-tab-busy" } });
+            // The word that a printout was made from an older copy is never put away for this one:
+            // the planner still has that sheet in hand.
+            if (get().notice?.kind !== "print-of-older-copy") set({ notice: { kind: "other-tab-busy" } });
             if (pagesHere > 0) scheduleSave(session);
             return;
           }
