@@ -31,12 +31,16 @@ import {
 // the two departures below):
 //   - the enquiry's own link, when it names a live event of its venue;
 //   - else what of its own reaches a live event (readEnquiryReach): its held
-//     dates, deals and proposals (M) and its floor plan (B). M holding more
-//     than one event, or one event while B holds another, is several; M's one
-//     event is its event; else B holding more than one is several, and B's
-//     one event is its event;
+//     dates, deals and proposals (M); its floor plan, with what its proposals
+//     with no event reach (B). M holding more than one event, or one event
+//     while B holds another, is several; M's one event is its event; else B
+//     holding more than one is several, and B's one event is its event;
 //   - else, nothing reaching any event, a new event for an open enquiry;
-//     a closed one (CLOSED_ENQUIRY_STATES) gets none, as the join makes none.
+//     a closed one (CLOSED_ENQUIRY_STATES) gets none, as the join's step 1
+//     makes none. (The join's steps 2 and 3 can still give a closed enquiry
+//     an event, made for an open deal or a proposal of its own that has
+//     none; the writer leaves that to the join, so it never makes what the
+//     join would not.)
 //     (A new open deal made from a closed enquiry is the one exception: the
 //     join's step 2 makes the event for the enquiry and the deal together,
 //     and so does eventForNewDeal in services/event-links.ts, which shares
@@ -125,13 +129,15 @@ const SEVERAL: EnquiryReachDecision = { kind: "several" };
  * services/event-links.ts), always, as the join's step 2 makes one.
  */
 export function eventReached(reach: EnquiryReach): EnquiryReachDecision {
+  // Its floor plan and what its proposals with no event reach, together (the join's B with P).
+  const besides = [...new Set([...reach.plan, ...reach.proposals])];
   const [held] = reach.held;
   // The join's reaches_many_events, then its paths_disagree.
   if (reach.held.length > 1) return SEVERAL;
-  if (held !== undefined) return reach.plan.some((id) => id !== held) ? SEVERAL : { kind: "one", eventId: held };
-  const [planned] = reach.plan;
-  if (reach.plan.length > 1) return SEVERAL;
-  if (planned !== undefined) return { kind: "one", eventId: planned };
+  if (held !== undefined) return besides.some((id) => id !== held) ? SEVERAL : { kind: "one", eventId: held };
+  const [reached] = besides;
+  if (besides.length > 1) return SEVERAL;
+  if (reached !== undefined) return { kind: "one", eventId: reached };
   return { kind: "none" };
 }
 

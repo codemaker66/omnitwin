@@ -328,18 +328,32 @@ export interface EnquiryReach {
   readonly held: readonly string[];
   /** The live events its floor plan is linked to (B). */
   readonly plan: readonly string[];
+  /** The live events its undeleted proposals with no event reach (the join's
+   *  proposals_reach, read for the enquiry's proposals). */
+  readonly proposals: readonly string[];
 }
 
-const EnquiryReachRow = z.object({ held: z.array(z.string()), plan: z.array(z.string()) });
+const EnquiryReachRow = z.object({ held: z.array(z.string()), plan: z.array(z.string()), proposals: z.array(z.string()) });
 
 /**
  * What of the enquiry's own reaches a live event of its venue, read as the
  * join of old records reads it (step 1 of spine_join_old_records, the spine's
  * links migration): (A) the events its undeleted bookings sit in; (C) those its
  * undeleted deals (source_enquiry_id) and undeleted proposals (enquiry_id) are
- * joined to; (B) those its floor plan is linked to (event_configuration_links).
- * Each set distinct and in id order, as the join holds them. Plain reads,
- * under the enquiry's lock the caller already holds; no lock is taken here.
+ * joined to; (B) those its floor plan is linked to (event_configuration_links);
+ * and what its undeleted proposals with no event reach, as the join's
+ * proposals_reach reads them: a proposal's deal's live event; the live event
+ * its deposit request in force names; or its own floor plan's live events,
+ * when that plan is linked to exactly one, or to several for a proposal that
+ * must have an event (sent; with an agreement; with a deposit request in
+ * force; or a draft for a deal or an enquiry). A proposal that names only a
+ * deal is that deal's, not the enquiry's. The deposit request's event needs
+ * no venue test: the request's keys pin its proposal and its event to the
+ * request's own venue. The join holds that reading as text inside its own
+ * body, not as a function the writers could call, so this is the same SQL.
+ * Each set distinct and in id order, as the join holds them. One statement of
+ * plain reads, under the enquiry's lock the caller already holds; no lock is
+ * taken here.
  */
 export async function readEnquiryReach(
   conn: BindConn,
@@ -360,54 +374,9 @@ export async function readEnquiryReach(
         FROM event_configuration_links k JOIN events e ON e.id = k.event_id
         WHERE k.configuration_id = ${enquiry.configurationId}
           AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL
-        ORDER BY 1) AS plan
-  `);
-  const reach = EnquiryReachRow.safeParse(result.rows[0]);
-  if (!reach.success) throw new Error("The enquiry's reach returned no answer");
-  return reach.data;
-}
-
-/**
- * Whether anything of the enquiry's own reaches a live event of its venue
- * other than `eventId`, read as the join of old records reads it (step 1 of
- * spine_join_old_records, the spine's links migration): (A) an undeleted
- * booking of the enquiry sits in it; (C) an undeleted deal (source_enquiry_id)
- * or undeleted proposal (enquiry_id) of the enquiry is joined to it; (B) the
- * enquiry's floor plan is linked to it (event_configuration_links), or an
- * undeleted proposal of the enquiry with no event reaches it, as the join's
- * proposals_reach reads one: through its deal's event, through its deposit
- * request in force, or through its floor plan when the plan is linked to
- * exactly one live event; a plan linked to several reaches them all, but only
- * for a proposal that must have an event. When one does, the join would list
- * the enquiry rather than choose, so the bind does not choose for it either;
- * nor does a deal's edit that names the enquiry (services/event-links.ts).
- * Plain reads, under the enquiry's lock the caller already holds; no lock is
- * taken here.
- */
-export async function enquiryReachesAnotherEvent(
-  conn: BindConn,
-  enquiry: { readonly id: string; readonly venueId: string; readonly configurationId: string | null },
-  eventId: string,
-): Promise<boolean> {
-  const result = await conn.execute(sql`
-    SELECT EXISTS (
-      SELECT 1 FROM bookings b JOIN events e ON e.id = b.event_id
-        WHERE b.enquiry_id = ${enquiry.id} AND b.deleted_at IS NULL
-          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
-      UNION ALL
-      SELECT 1 FROM opportunities o JOIN events e ON e.id = o.event_id
-        WHERE o.source_enquiry_id = ${enquiry.id} AND o.deleted_at IS NULL
-          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
-      UNION ALL
-      SELECT 1 FROM proposals p JOIN events e ON e.id = p.event_id
-        WHERE p.enquiry_id = ${enquiry.id} AND p.deleted_at IS NULL
-          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
-      UNION ALL
-      SELECT 1 FROM event_configuration_links k JOIN events e ON e.id = k.event_id
-        WHERE k.configuration_id = ${enquiry.configurationId}
-          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
-      UNION ALL
-      SELECT 1 FROM proposals s
+        ORDER BY 1) AS plan,
+      ARRAY(SELECT DISTINCT r.event_id::text
+        FROM proposals s
         CROSS JOIN LATERAL (
           SELECT e.id AS event_id FROM opportunities o JOIN events e ON e.id = o.event_id
             WHERE o.id = s.opportunity_id AND e.venue_id = s.venue_id AND e.deleted_at IS NULL
@@ -425,13 +394,30 @@ export async function enquiryReachesAnotherEvent(
             OR EXISTS (SELECT 1 FROM proposal_deposit_requests d WHERE d.proposal_id = s.id AND d.cancelled_at IS NULL)
             OR (s.status = 'draft' AND (s.opportunity_id IS NOT NULL OR s.enquiry_id IS NOT NULL))
         ) r
-        WHERE s.enquiry_id = ${enquiry.id} AND s.venue_id = ${enquiry.venueId}
-          AND s.deleted_at IS NULL AND s.event_id IS NULL AND r.event_id <> ${eventId}
-    ) AS reaches
+        WHERE s.venue_id = ${enquiry.venueId} AND s.deleted_at IS NULL AND s.event_id IS NULL
+          AND s.enquiry_id = ${enquiry.id}
+        ORDER BY 1) AS proposals
   `);
-  const reaches = result.rows[0]?.["reaches"];
-  if (typeof reaches !== "boolean") throw new Error("The enquiry's reach returned no answer");
-  return reaches;
+  const reach = EnquiryReachRow.safeParse(result.rows[0]);
+  if (!reach.success) throw new Error("The enquiry's reach returned no answer");
+  return reach.data;
+}
+
+/**
+ * Whether anything of the enquiry's own (readEnquiryReach: its held dates,
+ * deals and proposals, its floor plan, and what its proposals with no event
+ * reach) reaches a live event of its venue other than `eventId`. When one
+ * does, the join would list the enquiry rather than choose, so the bind does
+ * not choose for it either; nor does a deal's edit that names the enquiry
+ * (services/event-links.ts).
+ */
+export async function enquiryReachesAnotherEvent(
+  conn: BindConn,
+  enquiry: { readonly id: string; readonly venueId: string; readonly configurationId: string | null },
+  eventId: string,
+): Promise<boolean> {
+  const reach = await readEnquiryReach(conn, enquiry);
+  return [...reach.held, ...reach.plan, ...reach.proposals].some((id) => id !== eventId);
 }
 
 interface SpanBooking {

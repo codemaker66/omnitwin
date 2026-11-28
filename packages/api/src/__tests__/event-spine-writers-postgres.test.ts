@@ -242,8 +242,8 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     [v.venueId, room, at("12:00", 3), at("14:00", 3), eventId, enquiryId, v.admin.id]);
   }
 
-  /** The enquiry's floor plan, linked to each of the events. */
-  async function planLinkedTo(v: SpineVenue, enquiryId: string, eventIds: readonly string[]): Promise<void> {
+  /** A floor plan of the venue, linked to each of the events. */
+  async function planOf(v: SpineVenue, eventIds: readonly string[]): Promise<string> {
     const [plan] = (await pool.query<{ id: string }>(
       "INSERT INTO configurations (space_id, venue_id, name, layout_style) VALUES ($1, $2, 'Fixture plan', 'dinner-rounds') RETURNING id",
       [v.rooms.hall, v.venueId],
@@ -253,7 +253,27 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
       await pool.query("INSERT INTO event_configuration_links (event_id, configuration_id, link_type) VALUES ($1, $2, 'source_configuration')",
         [eventId, plan.id]);
     }
-    await pool.query("UPDATE enquiries SET configuration_id = $1 WHERE id = $2", [plan.id, enquiryId]);
+    return plan.id;
+  }
+
+  /** The enquiry's floor plan, linked to each of the events. */
+  async function planLinkedTo(v: SpineVenue, enquiryId: string, eventIds: readonly string[]): Promise<void> {
+    await pool.query("UPDATE enquiries SET configuration_id = $1 WHERE id = $2", [await planOf(v, eventIds), enquiryId]);
+  }
+
+  /** A sent proposal of the enquiry with no event, whose deposit request in force names the event. */
+  async function proposalAskingDepositFor(v: SpineVenue, enquiryId: string, eventId: string): Promise<string> {
+    const proposalId = await proposalIn(pool, v.venueId, "sent", { enquiryId });
+    await pool.query(`INSERT INTO proposal_deposit_requests (venue_id, proposal_id, event_id, proposal_version, proposal_version_hash, basis,
+        quote_total_minor, amount_minor, currency)
+      VALUES ($1, $2, $3, 1, $4, 'amount', 100000, 25000, 'GBP')`, [v.venueId, proposalId, eventId, "a".repeat(64)]);
+    return proposalId;
+  }
+
+  async function proposalEvent(proposalId: string): Promise<string | null> {
+    const [row] = (await pool.query<{ event_id: string | null }>("SELECT event_id FROM proposals WHERE id = $1", [proposalId])).rows;
+    if (row === undefined) throw new Error("Missing proposal");
+    return row.event_id;
   }
 
   /** An enquiry with no link whose held dates sit in two live events. */
@@ -415,6 +435,101 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     expect(await enquiryEvent(planned)).toBe(plansEvent);
     expect(await questionsOn(twice)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
     expect(await enquiryEvent(twice)).toBeNull();
+  });
+
+  // What an enquiry's proposals with no event reach counts with its floor plan,
+  // as the join counts it: through a proposal's deal's event, its deposit
+  // request in force, or its own plan.
+
+  it("a reply on an enquiry whose dates sit in one event, while a proposal of it with no event asks a deposit for another, is recorded and makes no event; the join lists it as paths that disagree", async () => {
+    const v = await venue("reach, dates and a deposit request");
+    const enquiryId = await enquiry(v);
+    await interestIn(v, enquiryId, await datelessEvent(v.venueId, "Where the dates are"), v.rooms.saloon);
+    await proposalAskingDepositFor(v, enquiryId, await datelessEvent(v.venueId, "Where the deposit is asked for"));
+    const before = await eventCount(v.venueId);
+
+    const replied = await reportReply(v, enquiryId);
+    expect(replied.statusCode, replied.body).toBe(200);
+    expect((await enquiryRow(enquiryId)).first_response_at).not.toBeNull();
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+    expect(await eventCount(v.venueId)).toBe(before);
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "paths_disagree", resolved_at: null }]);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  it("opening as an event an enquiry whose floor plan is linked to one event, while a proposal of it with no event is sent on a plan linked to another, is refused and makes nothing; the join lists it", async () => {
+    const v = await venue("reach, a plan and a proposal's plan");
+    const enquiryId = await enquiry(v);
+    await planLinkedTo(v, enquiryId, [await datelessEvent(v.venueId, "The enquiry's plan")]);
+    await proposalIn(pool, v.venueId, "sent", { enquiryId, configurationId: await planOf(v, [await datelessEvent(v.venueId, "The proposal's plan")]) });
+    const before = await eventCount(v.venueId);
+
+    const response = await openAsEvent(v.admin, enquiryId);
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<unknown>()).toEqual(SEVERAL_EVENTS);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+    expect(await eventCount(v.venueId)).toBe(before);
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  it("an approval of an enquiry whose proposals with no event ask deposits for two events is recorded and makes no event; the join lists it", async () => {
+    const v = await venue("reach, two deposit requests");
+    const enquiryId = await enquiry(v, { state: "under_review" });
+    await proposalAskingDepositFor(v, enquiryId, await datelessEvent(v.venueId, "First asked for"));
+    await proposalAskingDepositFor(v, enquiryId, await datelessEvent(v.venueId, "Second asked for"));
+    const before = await eventCount(v.venueId);
+
+    const approval = await decide(v, enquiryId, "approved");
+    expect(approval.statusCode, approval.body).toBe(200);
+    expect(DecisionReplySchema.parse(approval.json<unknown>()).data.eventId).toBeNull();
+    expect((await enquiryRow(enquiryId)).state).toBe("approved");
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+    expect(await eventCount(v.venueId)).toBe(before);
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  it("a quote for an enquiry whose one proposal with no event reaches an event through its deal joins that event and makes none; the join then files the proposal there", async () => {
+    const v = await venue("reach, a proposal's deal");
+    const enquiryId = await enquiry(v);
+    const reached = await datelessEvent(v.venueId, "The proposal's deal's event");
+    const pastDeal = await dealIn(pool, v.venueId, "lost");
+    await link(pool, "opportunities", pastDeal, reached);
+    const proposalId = await proposalIn(pool, v.venueId, "sent", { enquiryId, opportunityId: pastDeal });
+    const before = await eventCount(v.venueId);
+
+    const quoted = await priceQuote(v, { enquiryId });
+    expect(quoted.statusCode, quoted.body).toBe(201);
+    expect(await enquiryEvent(enquiryId)).toBe(reached);
+    expect(await eventCount(v.venueId)).toBe(before);
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([]);
+    expect(await enquiryEvent(enquiryId)).toBe(reached);
+    expect(await proposalEvent(proposalId)).toBe(reached);
+  });
+
+  it("opening as an event a withdrawn enquiry whose one proposal with no event asks a deposit for an event joins that event, as the join joins it whatever its state", async () => {
+    const v = await venue("reach, closed, a deposit request");
+    const enquiryId = await enquiry(v, { state: "withdrawn" });
+    const asked = await datelessEvent(v.venueId, "Asked for");
+    await proposalAskingDepositFor(v, enquiryId, asked);
+    const before = await eventCount(v.venueId);
+
+    expect(opened(await openAsEvent(v.admin, enquiryId))).toEqual({ enquiryId, eventId: asked, created: false });
+    expect(await enquiryEvent(enquiryId)).toBe(asked);
+    expect(await eventCount(v.venueId)).toBe(before);
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([]);
+    expect(await enquiryEvent(enquiryId)).toBe(asked);
   });
 
   // ---------------------------------------------------------------------------
@@ -953,6 +1068,81 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
       expect(await enquiryEvent(rejected)).toBe(pressed.eventId);
       expect(await enquiryEvent(withdrawn)).toBe(named.eventId);
       expect(await eventCount(v.venueId)).toBe(2);
+    });
+
+    // What the enquiry's proposals with no event reach counts with its floor plan, as the join counts it.
+
+    it("a deal made from an enquiry whose dates sit in one event, while a proposal of it with no event asks a deposit for another, is made with no event; the join lists the enquiry and the deal waits", async () => {
+      const v = await venue("deal, dates and a deposit request");
+      const enquiryId = await enquiry(v);
+      await interestIn(v, enquiryId, await datelessEvent(v.venueId, "Where the dates are"), v.rooms.saloon);
+      await proposalAskingDepositFor(v, enquiryId, await datelessEvent(v.venueId, "Where the deposit is asked for"));
+      const before = await eventCount(v.venueId);
+
+      const deal = made(await fromEnquiry(v, enquiryId));
+      expect(deal.eventId).toBeNull();
+      expect(await enquiryEvent(enquiryId)).toBeNull();
+      expect(await eventCount(v.venueId)).toBe(before);
+
+      await joinOldRecords();
+      expect(await questionsOn(enquiryId)).toEqual([{ reason: "paths_disagree", resolved_at: null }]);
+      await joinLeavesAlone([[deal.id, "opportunity"]]);
+      expect(await dealEvent(deal.id)).toBeNull();
+      expect(await enquiryEvent(enquiryId)).toBeNull();
+    });
+
+    it("a deal named on an enquiry whose floor plan is linked to one event, while a proposal of it with no event is sent on a plan linked to another, is made with no event; the join lists the enquiry", async () => {
+      const v = await venue("deal, a plan and a proposal's plan");
+      const enquiryId = await enquiry(v);
+      await planLinkedTo(v, enquiryId, [await datelessEvent(v.venueId, "The enquiry's plan")]);
+      await proposalIn(pool, v.venueId, "sent", { enquiryId, configurationId: await planOf(v, [await datelessEvent(v.venueId, "The proposal's plan")]) });
+      const before = await eventCount(v.venueId);
+
+      const deal = made(await createDeal(v, { title: "Two plans", sourceEnquiryId: enquiryId }));
+      expect(deal.eventId).toBeNull();
+      expect(await enquiryEvent(enquiryId)).toBeNull();
+      expect(await eventCount(v.venueId)).toBe(before);
+
+      await joinOldRecords();
+      expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+      await joinLeavesAlone([[deal.id, "opportunity"]]);
+      expect(await dealEvent(deal.id)).toBeNull();
+    });
+
+    it("a deal made from an enquiry whose one proposal with no event is sent on a plan linked to two events is made with no event; the join lists the enquiry", async () => {
+      const v = await venue("deal, a proposal's wide plan");
+      const enquiryId = await enquiry(v);
+      const plan = await planOf(v, [await datelessEvent(v.venueId, "One room"), await datelessEvent(v.venueId, "Another room")]);
+      await proposalIn(pool, v.venueId, "sent", { enquiryId, configurationId: plan });
+      const before = await eventCount(v.venueId);
+
+      const deal = made(await fromEnquiry(v, enquiryId));
+      expect(deal.eventId).toBeNull();
+      expect(await enquiryEvent(enquiryId)).toBeNull();
+      expect(await eventCount(v.venueId)).toBe(before);
+
+      await joinOldRecords();
+      expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+      await joinLeavesAlone([[deal.id, "opportunity"]]);
+      expect(await dealEvent(deal.id)).toBeNull();
+    });
+
+    it("a deal named on an enquiry whose one past proposal with no event is on a plan linked to one event takes that event with its enquiry, and makes none; the join changes nothing for them", async () => {
+      const v = await venue("deal, a past proposal's plan");
+      const enquiryId = await enquiry(v);
+      const reached = await datelessEvent(v.venueId, "The past proposal's plan");
+      await proposalIn(pool, v.venueId, "declined", { enquiryId, configurationId: await planOf(v, [reached]) });
+      const before = await eventCount(v.venueId);
+
+      const deal = made(await createDeal(v, { title: "Back again", sourceEnquiryId: enquiryId }));
+      expect(deal.eventId).toBe(reached);
+      expect(await enquiryEvent(enquiryId)).toBe(reached);
+      expect(await eventCount(v.venueId)).toBe(before);
+
+      await joinOldRecords();
+      await joinLeavesAlone([[enquiryId, "enquiry"], [deal.id, "opportunity"]]);
+      expect(await dealEvent(deal.id)).toBe(reached);
+      expect(await enquiryEvent(enquiryId)).toBe(reached);
     });
 
     it("a deal made from a draft enquiry, or from a request that books nothing, has an event of its own and the enquiry none; the join changes nothing", async () => {
