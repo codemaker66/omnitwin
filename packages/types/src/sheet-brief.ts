@@ -274,8 +274,9 @@ const STORE_GROUP: Readonly<Record<string, string>> = {
 };
 const STORE_ORDER = ["Tables", "Chairs", "Staging and floor", "Linen and dressing", "Sound and vision", OTHER_GROUP];
 
-/** The generator's name for a table with the chairs seated at it. */
-const WITH_CHAIRS = /^(.*) with (\d+) chairs?$/u;
+/** The generator's name for a table with the chairs seated at it: "6ft Round
+ *  Table with 10 chairs" is the table's name and the chairs at each one. */
+export const WITH_CHAIRS = /^(.*) with (\d+) chairs?$/u;
 /** Chairs a sheet frozen without a plan knows only by count. */
 const SEATED_CHAIRS = "Chairs for the tables";
 

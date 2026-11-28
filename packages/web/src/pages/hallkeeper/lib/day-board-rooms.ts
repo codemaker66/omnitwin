@@ -39,20 +39,16 @@ export interface RoomDay {
   readonly tone: DayBoardTone;
 }
 
-/** Under way: past its doors and not finished. */
-function underWay(slot: DayBoardSlot): boolean {
-  return slot.state === "live" || slot.state === "clear-down" || slot.exception === "overrun";
-}
-
 export function roomDay(lane: DayBoardLane): RoomDay {
   const earlier = lane.slots.filter((slot) => slot.state === "done");
   const ahead = lane.slots.filter((slot) => slot.state !== "done");
   const lead = ahead[0] ?? null;
   const after = ahead.slice(1);
-  // A slot under way is happening now whatever comes after it in time order:
-  // it is never named "Next" or "Later".
-  const alsoNow = after.filter(underWay);
-  const toCome = after.filter((slot) => !underWay(slot));
+  // A slot under way is happening now whatever comes after it in time order,
+  // and whatever an exception lays over its state (a live talk held at
+  // risk): it is never named "Next" or "Later".
+  const alsoNow = after.filter((slot) => slot.underWay);
+  const toCome = after.filter((slot) => !slot.underWay);
   const atRisk = ahead.some((slot) => slot.state === "exception");
   return {
     room: lane.room,
@@ -116,7 +112,7 @@ export function planeStages(lanes: readonly DayBoardLane[], waiting?: number): r
   const onBookings = slots.reduce((sum, slot) => sum + (slot.attention?.unownedCount ?? 0), 0);
   const elsewhere = waiting === undefined ? 0 : Math.max(0, waiting - onBookings);
   const requests: PlaneStage = waiting === undefined
-    ? { focus: "waiting", label: "Waiting this day", count: onBookings, note: null }
+    ? { focus: "waiting", label: "Requests waiting this day", count: onBookings, note: null }
     : {
       focus: "waiting",
       label: "Requests waiting",
@@ -211,6 +207,21 @@ function requestParts(lanes: readonly DayBoardLane[], unowned: readonly UnownedR
   ];
 }
 
+/** A room with changes nobody on the floor has acknowledged yet (an event
+ *  edit, a phase or a booking moved since anyone looked), and how many. */
+export interface ChangedRoom {
+  readonly room: string;
+  readonly count: number;
+}
+
+function changedParts(rooms: readonly ChangedRoom[]): readonly SummaryPart[] {
+  const only = rooms[0];
+  if (only === undefined) return [];
+  if (rooms.length === 1) return [{ strong: only.room, tone: "copper" }, only.count > 1 ? " has changes to read." : " has a change to read."];
+  const names = rooms.length > 3 ? "" : `: ${listed(rooms.map((entry) => entry.room))}`;
+  return [{ strong: `${countWord(rooms.length)} rooms`, tone: "copper" }, ` have changes to read${names}.`];
+}
+
 /** Functions, as the plane counts them: a room can hold a live function and
  *  the next one getting ready, and both are said. */
 function activityParts(lanes: readonly DayBoardLane[]): readonly SummaryPart[] {
@@ -238,16 +249,20 @@ function sentences(clauses: readonly (readonly SummaryPart[])[]): readonly Summa
 /**
  * One sentence of what matters on the day shown, or null when nothing is
  * booked (the board says that in its own words). Today it names the rooms at
- * risk, the requests nobody has and how many rooms are live or getting
- * ready; another day says how much is booked and anything already at risk.
+ * risk, the rooms with a change to read, the requests nobody has and how
+ * many rooms are live or getting ready; another day says how much is booked,
+ * anything already at risk and any change to read.
  */
 export function boardSummary(input: {
   readonly lanes: readonly DayBoardLane[];
   readonly unowned: readonly UnownedRequest[];
   readonly today: boolean;
   readonly nowMs: number;
+  /** Rooms with a change to read, in the board's order. */
+  readonly changed?: readonly ChangedRoom[];
 }): readonly SummaryPart[] | null {
   const { lanes, unowned, today, nowMs } = input;
+  const changed = changedParts(input.changed ?? []);
   const bookings = lanes.reduce((sum, lane) => sum + lane.slots.length, 0);
   if (bookings === 0) return null;
   const risk = riskParts(lanes, today);
@@ -256,9 +271,10 @@ export function boardSummary(input: {
     return sentences([
       [{ strong: `${countWord(bookings)} ${plural(bookings, "booking", "bookings")}` }, ` across ${countWord(rooms).toLowerCase()} ${plural(rooms, "room", "rooms")}.`],
       risk,
+      changed,
     ]);
   }
-  const parts = sentences([risk, requestParts(lanes, unowned, nowMs), activityParts(lanes)]);
+  const parts = sentences([risk, changed, requestParts(lanes, unowned, nowMs), activityParts(lanes)]);
   return parts.length === 0 ? null : parts;
 }
 
