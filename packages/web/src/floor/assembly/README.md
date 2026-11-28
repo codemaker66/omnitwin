@@ -39,9 +39,17 @@ plays it also if we want to see it again." (`flag.ts`, remembered per device in
   Publishing `null` redraws store truth byte for byte.
 - `recall.ts`: when a saved layout finishes loading (or is already open when
   the planner mounts), it holds the room empty at once, so nothing is seen
-  before it is summoned. While the room is still unknown, or the hall is drawn
-  but the Assembly's code is still arriving, the hold waits (45 s at most);
-  then the Assembly has 8 s to take it over. It is let go at once in a room
+  before it is summoned. The hold waits while the room is still unknown, and
+  while the drawn hall is there but the Assembly is not yet on it (the
+  store's `onStage`, set as GrandAssembly mounts): its code still arriving, or
+  the 3D view still building the hall, which can hold a slow device's page for
+  seconds (T-742). It waits 45 s at most from the opening. The Assembly takes
+  the hold as it mounts; one that nothing takes lapses 8 s after the Assembly
+  is on its stage. A 3D view that could not start (NativeCanvas's own
+  couldn't-start card) is no stage, so a hold there lapses after 8 s too. A
+  throw caught by the planner's outer boundary, which swaps in the 2D plan
+  without telling the scene, keeps the hold to its 45 s, unseen: everything
+  that draws the hold is inside the canvas. It is let go at once in a room
   known not to be the drawn hall.
 - `GrandAssembly.tsx` (lazy, fetched where it may play), the director:
   - **Hold:** keeps the room empty at the opening view while the hall's
