@@ -33,10 +33,10 @@ import type { ChangedPiece } from "./layout-change-summary.js";
 // or a cleared floor, and it is not removed when the person asks for it to go
 // (currentHeldNoteIds, and the lines at the foot of this file that say why).
 //
-// The API does not refuse a save that leaves such a piece out (final review of
-// #388), so the planner holds that line itself, at the one place every save
-// passes: a document that has lost such a piece takes it back before it is
-// sent, and the planner says the piece stayed (heldNotePiecesToPutBack).
+// The API refuses a save that leaves such a piece out (#389,
+// HELD_PIECE_OMITTED), and the planner never sends one: at the one place every
+// save passes, a document that has lost such a piece takes it back before it
+// is sent, and the planner says the piece stayed (heldNotePiecesToPutBack).
 // ---------------------------------------------------------------------------
 
 /** The parts of the editor's state these read. */

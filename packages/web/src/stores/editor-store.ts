@@ -2280,12 +2280,12 @@ async function saveDocument(
   }
 
   // Someone who cannot see a note never destroys it (lib/guest-plan-notes). A
-  // piece left out of a save is removed, and its note with it, and the API
-  // does not refuse that. So no save goes without a piece the confirmed
-  // document says holds a note this browser is not shown, whatever wrote the
-  // working one: this is the one place every path to a save must pass. Such a
-  // piece is put back first and the person is told it stayed; only then is
-  // the document, which now has it, sent.
+  // piece left out of a save is removed, and its note with it; the API refuses
+  // such a save (HELD_PIECE_OMITTED), and none is ever sent. So no save goes
+  // without a piece the confirmed document says holds a note this browser is
+  // not shown, whatever wrote the working one: this is the one place every
+  // path to a save must pass. Such a piece is put back first and the person
+  // is told it stayed; only then is the document, which now has it, sent.
   if (putBackHeldNotePieces()) return saveDocument(isAuthenticated, keeping, transport);
 
   // The save path: the signed-in route for a layout someone owns, and for a
@@ -2322,7 +2322,14 @@ async function saveDocument(
   set({ isSaving: true, ...standingRefusal(get()) });
   try {
     const save = viaSignedIn ? configApi.authBatchSave : configApi.publicBatchSave;
-    const sending: configApi.BatchSaveOptions | undefined = !viaSignedIn && get().notesIncluded
+    // The word that this document holds every note. Off the signed-in route,
+    // for a guest plan read with them. On it, for every guest plan, since one
+    // goes that way only once read with them (viaSignedIn), and never for a
+    // layout that is not one. There it is a protocol-version marker against
+    // stale builds, not an authorization control (api/configurations.ts
+    // authBatchSave): nobody may lean on it as a guard.
+    const declaresNotes = viaSignedIn ? isPublicPreview : get().notesIncluded;
+    const sending: configApi.BatchSaveOptions | undefined = declaresNotes
       ? { ...transport, notesIncluded: true }
       : transport;
     let revision = configRevision;

@@ -146,8 +146,10 @@ describe.each(EITHER_READ)("saving a public preview read %s, signed in as someon
 });
 
 // The signed-in routes do answer these people. Their save goes that way for a
-// plan read with its notes, as the signed-in read returns it; and the public
-// way for one read without them, which only how it was read can explain.
+// plan read with its notes, as the signed-in read returns it, and says so (the
+// API settles each note of a guest plan's signed-in save that does not); and
+// the public way for one read without them, which only how it was read can
+// explain.
 describe("saving a public preview, signed in as someone the signed-in routes answer", () => {
   it.each(["admin", "manager", "staff", "hallkeeper"])("keeps the signed-in route for the venue's own %s, for a plan read with its notes", async (role) => {
     useAuthStore.getState().setUser(person(role, VENUE));
@@ -155,7 +157,7 @@ describe("saving a public preview, signed in as someone the signed-in routes ans
 
     expect(await store().saveToServer(true)).toBe(true);
 
-    expect(configApi.authBatchSave).toHaveBeenCalledWith(CONFIG, [], 1);
+    expect(configApi.authBatchSave).toHaveBeenCalledWith(CONFIG, [], 1, { notesIncluded: true });
     expect(configApi.publicBatchSave).not.toHaveBeenCalled();
   });
 
@@ -165,7 +167,7 @@ describe("saving a public preview, signed in as someone the signed-in routes ans
 
     expect(await store().saveToServer(true)).toBe(true);
 
-    expect(configApi.authBatchSave).toHaveBeenCalledWith(CONFIG, [], 1);
+    expect(configApi.authBatchSave).toHaveBeenCalledWith(CONFIG, [], 1, { notesIncluded: true });
     expect(configApi.publicBatchSave).not.toHaveBeenCalled();
   });
 
@@ -191,7 +193,8 @@ describe("saving a public preview, signed in as someone the signed-in routes ans
 });
 
 describe("saving a layout the person owns", () => {
-  // Not a guest plan: neither rule above applies to it, whatever its read said.
+  // Not a guest plan: neither rule above applies to it, whatever its read
+  // said, and its save says nothing of notes, as it never did.
   it.each(EITHER_READ)("still goes through the signed-in route, read %s", async (read) => {
     useAuthStore.getState().setUser(person("client", null));
     openPreview(read, false);
