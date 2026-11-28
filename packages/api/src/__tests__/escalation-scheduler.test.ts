@@ -1,8 +1,34 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
+import { Writable } from "node:stream";
+import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 import { inOwnScope } from "../observability/sentry.js";
-import { EscalationScheduler, FAILURE_REPORT_EVERY_MS, MAX_SLEEP_MS, MIN_SLEEP_MS, PASS_RETRY_FIRST_MS, PASS_RETRY_MAX_MS, sleepFor, soonest } from "../services/escalation-scheduler.js";
+import {
+  EMAIL_RETRY_MS,
+  EscalationScheduler,
+  FAILURE_REPORT_EVERY_MS,
+  MAX_SLEEP_MS,
+  MIN_SLEEP_MS,
+  PASS_RETRY_FIRST_MS,
+  PASS_RETRY_MAX_MS,
+  REQUEST_RETRY_FIRST_MS,
+  REQUEST_RETRY_MAX_MS,
+  emailRetryAt,
+  faultOf,
+  requestRetryAfter,
+  runSweepPasses,
+  sleepFor,
+  soonest,
+  type HeldRequest,
+} from "../services/escalation-scheduler.js";
+import { EscalationEmailFailed, EscalationEmailPassIncomplete } from "../services/requests.js";
+
+/** A database error as drizzle hands it on: its own message, with the
+ *  driver's error, carrying the SQLSTATE, as its cause. */
+function dbError(message: string, code: string): Error {
+  return new Error(`Failed query: ${message}`, { cause: Object.assign(new Error(message), { code }) });
+}
 
 // Sentry is off here, as with SENTRY_DSN unset: nothing the scheduler does may
 // load the SDK (observability/sentry.ts imports it only inside initSentry).
@@ -35,14 +61,18 @@ interface Harness {
   readonly clock: { now: number };
 }
 
+/** A wake's passes that escalated these and failed on nothing. */
+const swept = (escalated: readonly unknown[] = []): { readonly escalated: readonly unknown[]; readonly failed: readonly unknown[]; readonly emailed: readonly string[]; readonly passFailures: readonly unknown[] } =>
+  ({ escalated, failed: [], emailed: [], passFailures: [] });
+
 function harness(plans: readonly (number | null)[], runs: readonly unknown[][] = [[]]): Harness {
   const timers: FakeTimer[] = [];
   const plan = vi.fn();
   for (const wake of plans) plan.mockResolvedValueOnce(wake);
   plan.mockResolvedValue(null);
   const run = vi.fn();
-  for (const outcome of runs) run.mockResolvedValueOnce(outcome);
-  run.mockResolvedValue([]);
+  for (const escalated of runs) run.mockResolvedValueOnce(swept(escalated));
+  run.mockResolvedValue(swept());
   const onEscalated = vi.fn();
   const reported: (readonly [string, number])[] = [];
   const clock = { now: T0 };
@@ -60,6 +90,44 @@ function harness(plans: readonly (number | null)[], runs: readonly unknown[][] =
 }
 
 const settle = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
+
+/** A scheduler on a virtual clock with one timer slot (firing or clearing it
+ *  empties the slot), for the long simulations. `advance` fires every timer
+ *  due by `until`, poking every `pokeEveryMs` between, as raises do. */
+function onVirtualClock(deps: Pick<ConstructorParameters<typeof EscalationScheduler>[0], "plan" | "run" | "logger">) {
+  const clock = { now: T0 };
+  const slot: { pending: { readonly due: number; readonly callback: () => void } | null } = { pending: null };
+  const armed: number[] = [];
+  const reports: (readonly [string, string | undefined, number])[] = [];
+  const scheduler = new EscalationScheduler({
+    db,
+    onEscalated: () => undefined,
+    now: () => clock.now,
+    ...deps,
+    report: (_error, stage, requestId) => { reports.push([stage, requestId, clock.now]); },
+    setTimer: (callback, ms) => { armed.push(ms); const timer = { due: clock.now + ms, callback }; slot.pending = timer; return timer; },
+    clearTimer: (handle) => { if (slot.pending === handle) slot.pending = null; },
+  });
+  const advance = async (until: number, pokeEveryMs: number | null = null): Promise<void> => {
+    let nextPoke = pokeEveryMs === null ? Number.POSITIVE_INFINITY : clock.now + pokeEveryMs;
+    for (;;) {
+      const due = slot.pending?.due ?? Number.POSITIVE_INFINITY;
+      const next = Math.min(due, nextPoke);
+      if (next > until) { clock.now = until; return; }
+      clock.now = next;
+      if (slot.pending !== null && next === due) {
+        const { callback } = slot.pending;
+        slot.pending = null;
+        callback();
+      } else {
+        nextPoke += pokeEveryMs ?? 0;
+        scheduler.poke();
+      }
+      await settle();
+    }
+  };
+  return { clock, scheduler, armed, reports, advance };
+}
 
 describe("sleep arithmetic", () => {
   it("takes the soonest instant and ignores nothing-due", () => {
@@ -111,12 +179,12 @@ describe("the escalation scheduler", () => {
   });
 
   it("a poke during a run is covered by the plan that follows the run, without a second run", async () => {
-    let finishRun: (value: unknown[]) => void = () => undefined;
-    const run = new Promise<unknown[]>((resolve) => { finishRun = resolve; });
+    let finishRun: (value: ReturnType<typeof swept>) => void = () => undefined;
+    const run = new Promise<ReturnType<typeof swept>>((resolve) => { finishRun = resolve; });
     const h = harness([T0 + 1_000, T0 + 2_000]);
     h.run.mockReset();
     h.run.mockReturnValueOnce(run);
-    h.run.mockResolvedValue([]);
+    h.run.mockResolvedValue(swept());
     h.scheduler.start();
     await settle();
     h.timers[0]?.callback();
@@ -124,7 +192,7 @@ describe("the escalation scheduler", () => {
     h.scheduler.poke();
     h.scheduler.poke();
     expect(h.plan).toHaveBeenCalledTimes(1);
-    finishRun([]);
+    finishRun(swept());
     await settle();
     expect(h.run).toHaveBeenCalledTimes(1);
     expect(h.plan).toHaveBeenCalledTimes(2);
@@ -213,7 +281,7 @@ describe("a pass that keeps failing (T-766)", () => {
     h.run.mockReset();
     for (const outcome of outcomes) {
       if (outcome === "fails") h.run.mockRejectedValueOnce(new Error("a malformed row stops every pass"));
-      else h.run.mockResolvedValueOnce([]);
+      else h.run.mockResolvedValueOnce(swept());
     }
     return h;
   }
@@ -280,7 +348,7 @@ describe("a pass that keeps failing (T-766)", () => {
         passesAt.push(clock.now);
         if (passesAt.length === 1) return Promise.reject(new Error("the database blipped"));
         escalated = true;
-        return Promise.resolve([]);
+        return Promise.resolve({ escalated: [], failed: [], emailed: [], passFailures: [] });
       },
       report: () => undefined,
       setTimer: (callback, ms) => {
@@ -337,6 +405,334 @@ describe("a pass that keeps failing (T-766)", () => {
   });
 });
 
+describe("a wake's two passes (T-768)", () => {
+  const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+  it("an email pass that throws as a whole costs nothing the escalation pass escalated; a request a pass failed on is named, and the held requests are skipped", async () => {
+    const escalate = vi.fn();
+    escalate.mockResolvedValue({
+      escalated: [{ request: { id: "r-1" } }],
+      failed: [{ requestId: "r-2", step: "claim", dueAt: new Date(T0), error: dbError("the inbox refused r-2", "23514") }],
+    });
+    const email = vi.fn();
+    email.mockRejectedValue(new Error("the email pass's select fell over"));
+    const outcome = await runSweepPasses(db, undefined, new Map([["r-9", T0 - 1_000]]), { escalate, email });
+    expect(escalate).toHaveBeenCalledWith(db, { logger: undefined, skip: new Map([["r-9", T0 - 1_000]]) });
+    expect(outcome.escalated).toEqual([{ request: { id: "r-1" } }]);
+    expect(outcome.failed.map((failure) => [failure.requestId, failure.step, message(failure.error)])).toEqual([["r-2", "claim", "Failed query: the inbox refused r-2"]]);
+    expect(outcome.passFailures.map(message)).toEqual(["the email pass's select fell over"]);
+  });
+
+  it("an email pass that failed on some rows names each one, and an email the same wake then sent and marked is no failure (LN5)", async () => {
+    const escalate = vi.fn();
+    escalate.mockResolvedValue({ escalated: [], failed: [{ requestId: "r-3", step: "email", error: new Error("the mark blipped") }] });
+    const email = vi.fn();
+    email.mockRejectedValue(new EscalationEmailPassIncomplete(
+      [new EscalationEmailFailed("r-4", new Error("the provider threw"))],
+      [{ requestId: "r-3", venueId: "v-1", emailedAdmins: 1, marked: true }],
+    ));
+    const outcome = await runSweepPasses(db, undefined, new Map(), { escalate, email });
+    expect(outcome.failed.map((failure) => [failure.requestId, failure.step])).toEqual([["r-4", "email"]]);
+    expect(outcome.emailed).toEqual(["r-3"]);
+    expect(outcome.passFailures).toEqual([]);
+  });
+
+  it("an email the email pass tried but could not send (sendEmail answered false) is not an email that went: the failure stands and nothing is cleared (F-A)", async () => {
+    const escalate = vi.fn();
+    escalate.mockResolvedValue({ escalated: [], failed: [{ requestId: "R", step: "email", error: new Error("the mark write threw") }] });
+    const email = vi.fn();
+    // As requests-postgres.test.ts shows for a send that answered false: tried, sent to none, left unmarked.
+    email.mockResolvedValue([{ requestId: "R", venueId: "v-1", emailedAdmins: 0, marked: false }]);
+    const outcome = await runSweepPasses(db, undefined, new Map(), { escalate, email });
+    expect(outcome.failed.map((failure) => [failure.requestId, failure.step])).toEqual([["R", "email"]]);
+    expect(outcome.emailed).toEqual([]);
+  });
+
+  it("tells a request's own fault from the sweep's by SQLSTATE, through drizzle's wrapping and an email failure's (LQ1)", () => {
+    const claim = (error: unknown) => faultOf({ requestId: "r", step: "claim", dueAt: new Date(T0), error });
+    const email = (error: unknown) => faultOf({ requestId: "r", step: "email", error });
+    // Data and integrity: one request's own (a value too long, a constraint refusing that row).
+    for (const code of ["22001", "22P02", "23505", "23514"]) expect(claim(dbError("refused", code))).toBe("request");
+    // Connection, transaction state, rollback, resources, locks, cancels, internal errors: the sweep's.
+    for (const code of ["08006", "25006", "40001", "40P01", "53100", "53300", "55P03", "57014", "57P01", "XX000"]) expect(claim(dbError("refused", code))).toBe("sweep");
+    // A claim error with no SQLSTATE (the pool gave up): the sweep's.
+    expect(claim(new Error("timeout exceeded when trying to connect"))).toBe("sweep");
+    // An email failure wraps drizzle's error, which wraps the driver's.
+    expect(email(new EscalationEmailFailed("r", dbError("refused", "57014")))).toBe("sweep");
+    expect(email(new EscalationEmailFailed("r", dbError("refused", "22001")))).toBe("request");
+    // An email step's error with no SQLSTATE (its template) holds nothing and stays the request's.
+    expect(email(new EscalationEmailFailed("r", new TypeError("undefined is not a function")))).toBe("request");
+  });
+
+  it("an email step's connection fault (a Node system error with its syscall) is the sweep's; Node's own ERR_ codes stay the request's (LS2)", () => {
+    const email = (error: unknown) => faultOf({ requestId: "r", step: "email", error });
+    const systemError = (code: string, syscall: string): Error => Object.assign(new Error(`${syscall} ${code}`), { code, syscall });
+    // Under drizzle's wrapping and the email failure's: a DNS failure that may pass (getaddrinfo's EAI_AGAIN) and a reset connection.
+    expect(email(new EscalationEmailFailed("r", new Error("Failed query: select", { cause: systemError("EAI_AGAIN", "getaddrinfo") })))).toBe("sweep");
+    expect(email(new EscalationEmailFailed("r", new Error("Failed query: select", { cause: systemError("ECONNRESET", "read") })))).toBe("sweep");
+    // Node's own ERR_ codes match the pattern but carry no syscall: a bug, perhaps one row's, so the request's own.
+    expect(email(new EscalationEmailFailed("r", Object.assign(new TypeError("The argument must be of type string"), { code: "ERR_INVALID_ARG_TYPE" })))).toBe("request");
+  });
+
+  it("a claim refused by a fault of the sweep holds no request back: it is the wake's own failure (LQ1)", async () => {
+    const escalate = vi.fn();
+    escalate.mockResolvedValue({
+      escalated: [],
+      failed: [
+        { requestId: "r-5", step: "claim", dueAt: new Date(T0), error: dbError("could not extend file", "53100") },
+        { requestId: "r-6", step: "claim", dueAt: new Date(T0), error: dbError("value too long for type character varying(180)", "22001") },
+      ],
+    });
+    const email = vi.fn();
+    email.mockResolvedValue([]);
+    const outcome = await runSweepPasses(db, undefined, new Map(), { escalate, email });
+    expect(outcome.failed.map((failure) => failure.requestId)).toEqual(["r-6"]);
+    expect(outcome.passFailures.map(message)).toEqual(["Failed query: could not extend file"]);
+  });
+
+  it("a request whose claim always fails is held on a floor of its own: the other escalates on time, its tries widen to the cap, the plan sleeps past five minutes, its alarm names it, and a failed select still backs off (LN1)", async () => {
+    const clock = { now: T0 };
+    /** The one timer armed: firing or clearing it empties the slot. */
+    const slot: { pending: { readonly due: number; readonly callback: () => void } | null } = { pending: null };
+    const armed: number[] = [];
+    // A fake database: A (whose claim always fails) due at once, B half a minute later.
+    const dueAt = new Map([["A", T0], ["B", T0 + 30_000]]);
+    const escalatedAt = new Map<string, number>();
+    const triesOfA: number[] = [];
+    const reports: (readonly [string, string | undefined, number])[] = [];
+    let selectFails = false;
+    const stillDue = (held: { has: (id: string) => boolean }): [string, number][] => [...dueAt].filter(([id]) => !escalatedAt.has(id) && !held.has(id));
+    // As planNextWake: a held request counts at its own deadline.
+    const plan = (_db: Database, _nowMs: number, held: ReadonlyMap<string, HeldRequest>): Promise<number | null> =>
+      Promise.resolve(soonest([...stillDue(held).map(([, at]) => at), ...[...held.values()].map((hold) => hold.until)]));
+    const run = vi.fn();
+    run.mockImplementation((_db: Database, skip: ReadonlyMap<string, number>) => {
+      if (selectFails) return Promise.reject(new Error("the candidate select failed"));
+      const escalated: { readonly request: { readonly id: string } }[] = [];
+      const failed: { readonly requestId: string; readonly step: "claim"; readonly dueAt: Date; readonly error: Error }[] = [];
+      for (const [id, at] of stillDue(skip)) {
+        if (at > clock.now) continue;
+        if (id === "A") {
+          triesOfA.push(clock.now);
+          failed.push({ requestId: "A", step: "claim", dueAt: new Date(at), error: dbError("the inbox refused A", "23514") });
+        } else {
+          escalatedAt.set(id, clock.now);
+          escalated.push({ request: { id } });
+        }
+      }
+      return Promise.resolve({ escalated, failed, emailed: [], passFailures: [] });
+    });
+    const scheduler = new EscalationScheduler({
+      db,
+      onEscalated: () => undefined,
+      now: () => clock.now,
+      plan,
+      run,
+      report: (_error, stage, requestId) => { reports.push([stage, requestId, clock.now]); },
+      setTimer: (callback, ms) => {
+        armed.push(ms);
+        const timer = { due: clock.now + ms, callback };
+        slot.pending = timer;
+        return timer;
+      },
+      clearTimer: (handle) => { if (slot.pending === handle) slot.pending = null; },
+    });
+    const fireUntil = async (until: number): Promise<void> => {
+      while (slot.pending !== null && slot.pending.due <= until) {
+        const { due, callback } = slot.pending;
+        slot.pending = null;
+        clock.now = due;
+        callback();
+        await settle();
+      }
+    };
+    scheduler.start();
+    await settle();
+    await fireUntil(T0 + 4 * 3_600_000);
+
+    // The other request escalates on time, as if A were not there.
+    expect(escalatedAt.get("B")).toBe(T0 + 30_000);
+    // A is tried at its own deadlines, each twice as far as the last, up to the cap.
+    const gaps = triesOfA.slice(1).map((at, index) => at - (triesOfA[index] ?? 0));
+    expect(gaps).toEqual(gaps.map((_gap, index) => requestRetryAfter(index + 1)));
+    expect(gaps.at(-1)).toBe(REQUEST_RETRY_MAX_MS);
+    // With nothing else due, the plan sleeps past the database's five idle minutes.
+    expect(Math.max(...armed)).toBeGreaterThan(5 * 60_000);
+    // A's alarm names it, when its streak starts and then at most hourly; the sweep itself never failed.
+    expect(reports.every(([stage, requestId]) => stage === "claim" && requestId === "A")).toBe(true);
+    // Its first try is a beat after it fell due (MIN_SLEEP_MS), and the alarm goes with it.
+    expect(triesOfA[0]).toBe(T0 + MIN_SLEEP_MS);
+    expect(reports[0]?.[2]).toBe(triesOfA[0]);
+    expect(reports.slice(1).every(([, , at], index) => at - (reports[index]?.[2] ?? 0) >= FAILURE_REPORT_EVERY_MS)).toBe(true);
+    expect(reports.length).toBeGreaterThanOrEqual(2);
+
+    // A failed candidate select still takes the sweep's own back-off (T-766).
+    selectFails = true;
+    dueAt.set("C", clock.now);
+    scheduler.poke();
+    await settle();
+    await fireUntil(clock.now + MIN_SLEEP_MS);
+    expect(reports.at(-1)?.slice(0, 2)).toEqual(["pass", undefined]);
+    expect(armed.at(-1)).toBe(PASS_RETRY_FIRST_MS);
+  });
+
+  it("a fault of the sweep that refuses every claim for half an hour holds nobody back: after it, every request escalates within the pass back-off, and Sentry hears one pass report (LQ1)", async () => {
+    const FAULT_ENDS = T0 + 30 * 60_000;
+    // Twenty requests falling due over the fault's first ten minutes.
+    const dueAt = new Map(Array.from({ length: 20 }, (_unused, index) => [`r-${String(index)}`, T0 + index * 30_000] as const));
+    const escalatedAt = new Map<string, number>();
+    const sim = onVirtualClock({
+      plan: (_db, _nowMs, held) => Promise.resolve(soonest([
+        ...[...dueAt].filter(([id, at]) => !escalatedAt.has(id) && held.get(id)?.dueAt !== at).map(([, at]) => at),
+        ...[...held.values()].map((hold) => hold.until),
+      ])),
+      // The real runSweepPasses, over passes on a fake database where writes are refused until the fault ends.
+      run: (_db, skip) => runSweepPasses(db, undefined, skip, { escalate, email: () => Promise.resolve([]) }),
+    });
+    const escalate = vi.fn();
+    escalate.mockImplementation((_passDb: Database, deps: { readonly skip?: ReadonlyMap<string, number> }) => {
+      const escalated: { readonly request: { readonly id: string } }[] = [];
+      const failed: { readonly requestId: string; readonly step: "claim"; readonly dueAt: Date; readonly error: Error }[] = [];
+      for (const [id, at] of dueAt) {
+        if (escalatedAt.has(id) || at > sim.clock.now || deps.skip?.get(id) === at) continue;
+        if (sim.clock.now < FAULT_ENDS) {
+          failed.push({ requestId: id, step: "claim", dueAt: new Date(at), error: dbError("could not extend file: the project size limit has been exceeded", "53100") });
+        } else {
+          escalatedAt.set(id, sim.clock.now);
+          escalated.push({ request: { id } });
+        }
+      }
+      return Promise.resolve({ escalated, failed });
+    });
+    sim.scheduler.start();
+    await settle();
+    await sim.advance(T0 + 2 * 3_600_000);
+
+    expect(escalatedAt.size).toBe(20);
+    // Every request escalates within the sweep's own back-off of the fault's end; none rode an hour-long floor.
+    expect(Math.max(...escalatedAt.values())).toBeLessThanOrEqual(FAULT_ENDS + PASS_RETRY_MAX_MS + MIN_SLEEP_MS);
+    // One report, for the sweep, naming no request.
+    expect(sim.reports.map(([stage, requestId]) => [stage, requestId])).toEqual([["pass", undefined]]);
+  });
+
+  it("a held request that moves (taken, then handed over) falls due anew at its relief deadline, and a failure there starts a fresh streak (LQ2)", async () => {
+    // A's claim fails through a fault of its own, wherever it is due.
+    const due = { at: T0 };
+    const tries: number[] = [];
+    const skips: (readonly [string, number])[][] = [];
+    const sim = onVirtualClock({
+      // As planNextWake: a held request is left out only while it is still due at the instant it failed at.
+      plan: (_db, _nowMs, held) => Promise.resolve(soonest([
+        held.get("A")?.dueAt === due.at ? null : due.at,
+        ...[...held.values()].map((hold) => hold.until),
+      ])),
+      run: (_db, skip) => {
+        skips.push([...skip]);
+        if (due.at > sim.clock.now || skip.get("A") === due.at) return Promise.resolve({ escalated: [], failed: [], emailed: [], passFailures: [] });
+        tries.push(sim.clock.now);
+        return Promise.resolve({ escalated: [], failed: [{ requestId: "A", step: "claim" as const, dueAt: new Date(due.at), error: dbError("the inbox refused A", "23514") }], emailed: [], passFailures: [] });
+      },
+    });
+    sim.scheduler.start();
+    await settle();
+    // Eight tries at its window, 5 s apart and doubling: its floor is now 640 s long.
+    await sim.advance(T0 + MIN_SLEEP_MS + 5_000 * (2 ** 7 - 1));
+    expect(tries).toHaveLength(8);
+    const floorEnds = (tries.at(-1) ?? 0) + requestRetryAfter(8);
+
+    // A hallkeeper takes it and hands it over a second later; the relief has 60 s, long before the floor ends.
+    await sim.advance(sim.clock.now + 1_000);
+    due.at = sim.clock.now + 60_000;
+    expect(due.at).toBeLessThan(floorEnds);
+    sim.scheduler.poke();
+    await settle();
+    await sim.advance(due.at);
+    // Tried at its relief deadline, not when the old floor ends. The pass was
+    // still told of the hold, with the instant it was kept to, which no longer matches.
+    expect(tries.at(-1)).toBe(due.at);
+    expect(skips.at(-1)).toEqual([["A", T0]]);
+    // A failure there is a fresh streak, held to its new instant: the next and
+    // only try is the first floor's distance away. (A hold left on the old
+    // instant would match nothing and retry at every beat.)
+    const reliefDue = due.at;
+    await sim.advance(reliefDue + REQUEST_RETRY_FIRST_MS);
+    expect(tries.filter((at) => at >= reliefDue)).toEqual([reliefDue, reliefDue + REQUEST_RETRY_FIRST_MS]);
+    expect(skips.at(-1)).toEqual([]);
+  });
+
+  it("an email that keeps failing is tried every EMAIL_RETRY_MS, however often raises and handovers plan again (F-B)", async () => {
+    const tries: number[] = [];
+    const sim = onVirtualClock({
+      // As planNextWake for one email waiting outside quiet hours, through the real emailRetryAt.
+      plan: (_db, nowMs, _held, emailPassAtMs) => Promise.resolve(emailRetryAt(nowMs, emailPassAtMs)),
+      run: () => {
+        tries.push(sim.clock.now);
+        return Promise.resolve({ escalated: [], failed: [{ requestId: "R", step: "email" as const, error: new Error("the room read failed") }], emailed: [], passFailures: [] });
+      },
+    });
+    sim.scheduler.start();
+    await settle();
+    // A raise or a handover every ten minutes, for four hours.
+    await sim.advance(T0 + 4 * 3_600_000, 10 * 60_000);
+    expect(tries).toHaveLength(16);
+    expect(tries.map((at, index) => at - (index === 0 ? T0 : tries[index - 1] ?? 0))).toEqual(tries.map(() => EMAIL_RETRY_MS));
+    // Its alarm names it, at the start and then at most hourly.
+    expect(sim.reports.every(([stage, requestId]) => stage === "email" && requestId === "R")).toBe(true);
+    expect(sim.reports.slice(1).every(([, , at], index) => at - (sim.reports[index]?.[2] ?? 0) >= FAILURE_REPORT_EVERY_MS)).toBe(true);
+  });
+
+  it("an email pass that outlasts EMAIL_RETRY_MS (a provider failing slowly) is next tried EMAIL_RETRY_MS after it ended, not a beat later (LS1)", async () => {
+    // Every send waits on the provider: each run takes twenty minutes.
+    const RUN_MS = 20 * 60_000;
+    const runs: { readonly start: number; readonly end: number }[] = [];
+    const sim = onVirtualClock({
+      plan: (_db, nowMs, _held, emailPassAtMs) => Promise.resolve(emailRetryAt(nowMs, emailPassAtMs)),
+      run: () => {
+        const start = sim.clock.now;
+        sim.clock.now += RUN_MS;
+        runs.push({ start, end: sim.clock.now });
+        return Promise.resolve({ escalated: [], failed: [{ requestId: "R", step: "email" as const, error: new Error("the provider timed out") }], emailed: [], passFailures: [] });
+      },
+    });
+    sim.scheduler.start();
+    await settle();
+    await sim.advance(T0 + 3 * 3_600_000);
+    expect(runs.length).toBeGreaterThanOrEqual(4);
+    // Each run starts EMAIL_RETRY_MS after the last one ended: the database sleeps between them.
+    expect(runs.slice(1).map((run, index) => run.start - (runs[index]?.end ?? 0))).toEqual(runs.slice(1).map(() => EMAIL_RETRY_MS));
+  });
+
+  it("a request's email failing twice in one wake counts once, and is logged as failed, not held; a failed claim is logged as held, with its due instant (LQ6)", async () => {
+    const lines: string[] = [];
+    const logs = Fastify({ logger: { level: "info", stream: new Writable({ write(chunk: Buffer, _encoding, done) { lines.push(chunk.toString("utf8")); done(); } }) } });
+    try {
+      const sim = onVirtualClock({
+        logger: logs.log,
+        plan: vi.fn().mockResolvedValueOnce(T0 + 1_000).mockResolvedValue(null),
+        run: () => Promise.resolve({
+          escalated: [],
+          failed: [
+            { requestId: "R", step: "email" as const, error: new Error("the escalation pass's email step threw") },
+            { requestId: "R", step: "email" as const, error: new Error("the email pass threw too") },
+            { requestId: "H", step: "claim" as const, dueAt: new Date(T0 - 1_000), error: dbError("the inbox refused H", "23514") },
+          ],
+          emailed: [],
+          passFailures: [],
+        }),
+      });
+      sim.scheduler.start();
+      await settle();
+      await sim.advance(T0 + 1_000);
+      const events = lines.map((line) => JSON.parse(line) as { readonly event?: string; readonly requestId?: string; readonly failures?: number; readonly dueAt?: string });
+      expect(events.filter((line) => line.event === "escalation.request_failed").map((line) => [line.requestId, line.failures])).toEqual([["R", 1]]);
+      expect(events.filter((line) => line.event === "escalation.request_held").map((line) => [line.requestId, line.failures, line.dueAt])).toEqual([["H", 1, new Date(T0 - 1_000).toISOString()]]);
+      expect(sim.reports.map(([stage, requestId]) => [stage, requestId])).toEqual([["email", "R"], ["claim", "H"]]);
+    } finally {
+      await logs.close();
+    }
+  });
+});
+
 describe("the escalation scheduler with Sentry off", () => {
   it("runs a whole wake without loading the SDK, and inOwnScope runs the work as it is", async () => {
     const store = new AsyncLocalStorage<string>();
@@ -373,7 +769,7 @@ describe("the escalation scheduler's own context", () => {
     const run = vi.fn();
     run.mockImplementation(() => {
       seen.push(["pass", requestContext.getStore()]);
-      return Promise.resolve([{ request: { id: "r-1" } }]);
+      return Promise.resolve(swept([{ request: { id: "r-1" } }]));
     });
     const scheduler = new EscalationScheduler({
       db,
