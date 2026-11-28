@@ -304,6 +304,74 @@ event.
 - A payment notice or an acceptance writes its own rows and never needs the event, because nothing about them
   is stored on it.
 
+> **Amended 22 November 2026, after the build of stage 1, part one (#436): the full lock order.** The Diary's
+> design ([section 6.2](2026-11-14-the-diary-holds-the-book-design.md), approved and on master) states a fuller
+> order around the spine's, and asks in its section 16 for this section to carry it. The words above stand as
+> decided; this is the one order, combined. Each rule names where the code keeps it today, on master and in
+> #436: file and function, not line (paths under `packages/api/src/`). "Not built yet" means nothing on master
+> or in #436 takes that row.
+>
+> | Order | The row, and how it is taken | Where the code keeps it today |
+> |---|---|---|
+> | 1 | A person (`contacts`). A People Book merge takes the venue's merge lock, then the people `FOR UPDATE`; a deal's writer takes its person `FOR KEY SHARE` | `services/people-merge.ts`, `applyPersonMerge`: the venue's advisory lock, then both people through `lockPerson` (`services/people-records.ts`), lower id first; `mergeLocked` then writes their enquiries before their deals. `routes/opportunities.ts`, `holdContact`: the person before any deal row |
+> | 2 | An import batch's row | Not built yet (the Diary, T-703) |
+> | 3 | A decision (`decisions`), `FOR UPDATE` | `services/decisions.ts`: `decideDecision` holds the decision, then locks the one booking it moves `FOR UPDATE`, then calls `updateBookingCore` (`services/booking-mutations.ts`), which takes that booking again, its room `FOR KEY SHARE` and its event (row 8). `withdrawDecision` takes the decision alone |
+> | 4 | Bookings, `FOR UPDATE`: a ladder in id order, or many rows sorted by room and start | `services/booking-mutations.ts`: `transitionBookingCore` (the room's live holds in id order, then the booking itself through `loadAccessibleBooking`); `updateBookingLocked` (the booking through `loadAccessibleBooking`) |
+> | 5 | A combination's row, `FOR SHARE`, in the claims trigger as each booking is written | Not built yet (the Diary) |
+> | 6 | A term's row | Not built yet (the Diary) |
+> | 7 | The proposal, then the enquiry, then the deal | Below |
+> | 8 | The event, last, `FOR NO KEY UPDATE` | `services/event-binding.ts`: `syncEventStatus` (and `syncEventStatuses`, in id order), `movePhasesWithBooking` |
+>
+> - **A decision before bookings (row 3).** Deciding a prepared booking move holds the decision before it locks
+>   the booking, and no path locks a booking and then a decision. A decision moves only a booking's times, never
+>   its event, so it reaches no proposal, enquiry or deal: in #436 `updateBookingLocked` calls
+>   `followBookingToEvent` only when a booking changes event, and on master not at all. No code takes a decision
+>   together with a person or an import batch, so its place against rows 1 and 2 is the table's order, not yet a
+>   rule the code keeps.
+> - **The proposal, the enquiry, the deal (row 7).** Sending a proposal holds it `FOR UPDATE` (`holdProposal`, in
+>   `routes/proposals.ts`, `POST /:id/transition`) and then stamps its enquiry's first reply
+>   (`stampSendAsFirstReply`). Saving a version holds the proposal and then may write its deal's value
+>   (`POST /:id/versions`). A deposit request is written under its proposal's lock, with the event the proposal
+>   holds as read under it (`routes/deposits.ts`, `POST /:id/deposit`). The join of old records locks a proposal
+>   before its enquiry and its deposit request, and a deal's enquiry before the deal.
+> - **New code takes an enquiry only `FOR NO KEY UPDATE`, never `FOR UPDATE`:** `bindBookingToEvent` and
+>   `followBookingToEvent` (`services/event-binding.ts`), and the join (`FOR NO KEY UPDATE SKIP LOCKED`). Every
+>   row with a key to an enquiry holds a key share on it, which `FOR UPDATE` would wait for. One older lock still
+>   takes `FOR UPDATE`, the first-reply lock (`lockFirstResponse`, `services/enquiry-funnel.ts`); part two of
+>   stage 1 moves it to `FOR NO KEY UPDATE`.
+> - **New code takes an event only `FOR NO KEY UPDATE`.** The join takes an event it joins `FOR KEY SHARE SKIP
+>   LOCKED`. In the application, the one `FOR UPDATE` on an event is the edit of the event itself
+>   (`updateEventCore`, `services/event-mutations.ts`), which takes the event alone and only reads bookings, as
+>   above. **The one exception is the spine's undo** (`spine_undo_joins()`, in the `*_event_spine_links`
+>   migration): it takes an event it will delete `FOR UPDATE SKIP LOCKED`, after that event's records, and then
+>   the event's phases the same way. It never waits for a row lock: an event or phase it cannot have at once is
+>   kept, with its joins, for a later run.
+> - **In a create, the enquiry is locked before the booking it inserts.** `POST /from-enquiry`
+>   (`routes/bookings.ts`) and `insertBoundBookings` (`services/event-binding.ts`) call `bindBookingToEvent`, which
+>   locks the enquiry, before the booking's insert; the event follows (`syncEventStatus`). That is the reverse of
+>   bookings before the enquiry, and safe: the new booking's row is nobody else's until the create commits, so no
+>   other writer can hold it while waiting for the enquiry. **In an update and a transition, bookings come
+>   first:** `updateBookingLocked` locks the booking, then `followBookingToEvent` the enquiry;
+>   `transitionBookingCore` locks its ladder and the booking, then `bindBookingToEvent` the enquiry.
+> - **Rooms stand outside the order,** as the Diary's 6.2 says, taken `FOR KEY SHARE` by `lockLiveRoom`
+>   (`services/room-liveness.ts`): before the booking in a create (`createBookingCore`, `POST /from-enquiry`), after
+>   it in an update (`updateBookingLocked`) and a transition (`transitionBookingCore`). A room's delete takes the
+>   room `FOR UPDATE` and then only counts (`routes/spaces.ts`, `DELETE /:id`).
+> - **The join of old records never waits for a row lock.** `spine_join_old_records()` (in the
+>   `*_event_spine_links` migration) asks for every row lock `SKIP LOCKED` and leaves what it cannot have to its
+>   next run. Its header comment names the only two places it can wait: a deal's update that meets a writer's
+>   uncommitted open deal on the same event (at most 100 ms), and the key shares its foreign keys take on venue
+>   rows, which only a venue row held `FOR UPDATE` makes wait. So it cannot be half of a ring, and every later
+>   writer keeps two rules: never hold a `venues` row `FOR UPDATE` while waiting for a booking, an enquiry, a deal
+>   or a proposal; never take an event `FOR UPDATE` after putting an open deal on it.
+> - **A person first** is the stage 1 plan's rule ([its Global Constraints](../plans/2026-11-14-the-spine-links.md)),
+>   taken from the People Book's merge; the words above do not name a person. Against bookings and everything
+>   after them it stands, as row 1 shows. **The place of a person's row relative to an import batch's row is to
+>   be settled with the Diary's build.** No code takes both today: there is no import batch on master or in
+>   #436. The Diary's design writes people in transactions of their own, before its booking steps, in the People
+>   Book's lock order (its section 4.4, step 1); its order in 6.2, which puts the batch's row first, names no
+>   person, and it does not say whether those people transactions also take the batch's row.
+
 ### 5.5 Merge and split
 
 Events will now be made earlier, so two enquiries about the same occasion will sometimes become two events. Merge
@@ -408,6 +476,23 @@ treats 0 as "not stated", never as a fact. Piece C shows them.
   (`api/src/services/people-merge.ts`). This design adds no table that links a person to an event, so that merge
   needs no change.
 
+> **Amended 26 November 2026, after the release review of stage 1, part one (#436): erasure follows the links.**
+> This amends the bullet above on erasing a person; its words stand as decided, but its last sentence no longer
+> holds for erasure. The join of old records makes events and names them, and their client, from the record they
+> were made for (an enquiry's name, a deal's or a proposal's title), so a person's name could outlive their
+> erasure on an event that nothing else ties to them. #436 therefore changes the People Book's erasure
+> (`around()` in `api/src/services/people-erasure.ts`) and the 24-month pass (`lapsedPeople` in
+> `api/src/services/people-retention.ts`): both follow the three links, `enquiries.event_id`,
+> `opportunities.event_id` and `proposals.event_id`, from the person's own enquiries, deals and proposals (and
+> from a deal near them), whether the join or a writer made the link. A linked event is the person's own unless a
+> record of another live person is tied to it (their enquiry, deal or proposal linked to it, a booking of their
+> enquiry in it, or it is their deal's); then it is treated as an event near them, by the erasure module's own
+> rule for a deal another live person leads. Own or near, the event is kept and loses only the erased person's
+> names. Erasure and the pass read the links with one expression (`tiedToAnotherPerson`), so they agree. Until
+> stage 6 retires `events.opportunity_id`, erasure still reads it too, and that read goes in the same change.
+> Whoever adds a new way to tie a record to an event teaches erasure and the 24-month pass the same day. The
+> note #436 adds, `docs/engineering/the-spine.md`, describes it as built.
+
 ## 6. The rule in the database, and the check that proves it
 
 The definition of which records must have an event is in section 5.1. There is one.
@@ -451,6 +536,16 @@ The definition of which records must have an event is in section 5.1. There is o
   in its pre-release step: a fault in the data must never be able to block the release that fixes it. (My call.)
 - Until the list of joins to check is empty, production's count will not be zero. Each run states the number,
   and it must fall, never rise. The second migration cannot run before it reaches zero.
+
+> **Amended 22 November 2026, after the build of stage 1, part one (#436): where the production check runs.**
+> As built, it runs every night in a workflow of its own (`.github/workflows/event-rules.yml`, "Event rules"),
+> which joins and then reads, and by hand from that workflow: only from master, and reading only unless the
+> person running it asks it to join. A join by hand against production is the founder's call. It does not run
+> in the deploy workflow, and there is no run after each release: the host releases on its own clock, so a job
+> in the deploy workflow could not run after the release. A run by hand after a release takes its place. Nor
+> is it a job beside the clean-up in `cleanup.yml`. It still reports, turns red and blocks nothing. This also
+> amends section 7's sentence that the deploy workflow runs the join before it counts: only the nightly run
+> joins, and a run by hand joins only when asked. Nothing a person at the venue sees changes.
 
 ## 7. The backfill, the migration and the rollback
 
@@ -657,6 +752,12 @@ deposit request without its event, and a test fails if one client can see anothe
 - The event's unused deal pointer is retired in favour of the deal pointing at the event.
 - Merge is built now; split is designed now and built with the event page.
 - The production check runs in the deploy workflow and the nightly workflow until the job list exists.
+
+> **Amended 22 November 2026, after the build of stage 1, part one (#436):** the last call above was built
+> differently. The production check runs every night in a workflow of its own, and by hand (from master; reading
+> only unless asked to join). It does not run in the deploy workflow or after each release, because the host
+> releases on its own clock and a job there could not run after the release. Section 6 carries the amendment.
+> Nothing a person at the venue sees changes.
 
 ## 14. Left to the builder
 

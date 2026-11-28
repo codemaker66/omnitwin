@@ -55,9 +55,63 @@ new list; its status notes stay in October's table (design 5.6). Tasks 2 and 3 w
 correction, so the build applies it to both as one fix: the copy, the list of reasons in SQL and in Drizzle, and
 the two suites' counts.
 
+**Amended 22 November 2026, after the build of part one (#436).** Part one was built as eight tasks. Where it
+departs from the tasks below:
+
+- **Task 11 was built in part one**, not part two: a deposit request takes its proposal's event, under the
+  proposal's lock. Without it a request made after its proposal was joined would never get an event, and the
+  count could not reach zero. Part two is Tasks 8, 9, 10, 12 and 13.
+- **Task 7 as built.** There is no job in `deploy.yml` and no job beside the clean-up in `cleanup.yml`: the
+  nightly check is a workflow of its own, `.github/workflows/event-rules.yml`. No after-release job: the host
+  releases on its own clock, so a job in the deploy workflow could not run after the release (the design's
+  sections 6 and 13 carry the amendment). Run by hand, the check only reads unless asked to join, and it runs
+  only from master. A join by hand against production is the founder's call.
+- **Task 6 as built.** `followBookingToEvent` moves an enquiry's link only when no other live booking of the
+  enquiry (active and not deleted) is left in the old event; the Interfaces block's word was "undeleted". And
+  the bind writes an enquiry's link only when nothing else of the enquiry's own (its bookings, deals, proposals
+  or floor plan) reaches a different live event; otherwise the link is left and the nightly join lists the
+  enquiry for a person. The booking itself is bound as before.
+- **Task 5 as built.** A deposit request in force is counted in its own right, whatever became of its proposal:
+  a deleted proposal does not hide it from `depositRequestsWithoutEvent`, `disagreeingLinks` or
+  `linksToClosedEvents`.
+- **Task 3 as built.** The join departs from the task's text below, so that text is not its contract; the join's
+  section of the engineering note that #436 adds (`docs/engineering/the-spine.md`) describes it as built. Step 1
+  places an enquiry by its bookings, deals and proposals together, not by its held dates alone. Steps 1 to 3
+  repeat while a round joins anything, in up to four rounds, so an enquiry is settled from all of its records
+  together; a chain that needs more is finished by a later run. Events are made last: for a proposal only after
+  every proposal that reaches an existing event has been joined, and one that would have an event made for it
+  and its enquiry waits while a sibling proposal of that enquiry, with no event, reaches one or would be listed.
+  A deal waits for its enquiry when something of the enquiry's own reaches an event. Every row lock is `SKIP
+  LOCKED`; a deal's update that meets a writer's uncommitted open deal on the same event waits at most 100 ms,
+  and the deal is then listed or left to the next run. A draft proposal made from a floor plan alone, with no
+  deal or enquiry, is not joined until it is sent; and a proposal that need not have an event, whose plan
+  reaches several events, is neither joined nor listed.
+- **Each new database suite has a database of its own,** in place of the Global Constraints' shared platform
+  database with a venue for each test: it makes and drops a throwaway database on the platform test cluster,
+  and is named in the platform gate's list (`PLATFORM_POSTGRES_TEST_FILES`). None writes to the shared test
+  database.
+- **Task 14 gains two steps.** Step 5's read is now the Event rules workflow run by hand from master with its
+  join box unticked. That read prints one line of status, counts, reasons and migration tags, never a row or a
+  name, because its log is public. The first new step is therefore the founder's own read, made with his yes
+  and kept out of any log: it counts the events the join made that are named `Event` (those found through
+  `event_link_joins` where `event_made` is true). The join names a made event by the enquiry, deal or proposal it was made for, and
+  `Event` only when that is blank or holds an `@`, so expect none. Names never go into the workflow or its log.
+  The second new step: the next database slot stays closed until the workflow's read has passed.
+
 **Not in this plan.** Stages 2 to 6 above. Anything a client sees. Any write to `events.client_account_id` or
 `events.opportunity_id`. Pull request #247 (erase a person) and the People Book's merge, which stay with their
 owners.
+
+**Amended 26 November 2026, after the release review of stage 1, part one (#436).** The sentence above no longer
+holds for erasure; the People Book's merge still stays with its owner. The join of old records (Task 3) makes
+events and names them from the record they were made for, so #436 changes the People Book's erasure (`around()`
+in `packages/api/src/services/people-erasure.ts`) and the 24-month pass (`lapsedPeople` in
+`packages/api/src/services/people-retention.ts`) to follow the three links, `enquiries.event_id`,
+`opportunities.event_id` and `proposals.event_id`, from the person's own records. A linked event is the person's
+own unless a record of another live person is tied to it; then it is treated as an event near them, by the
+erasure module's own rule (`tiedToAnotherPerson`, one expression for both). Whoever adds a new way to tie a record
+to an event teaches erasure and the 24-month pass the same day. The note #436 adds,
+`docs/engineering/the-spine.md`, describes it as built (the design's section 5.8 carries the amendment).
 
 ## Global Constraints
 
