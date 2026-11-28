@@ -17,15 +17,17 @@ import {
 // so the nightly join of old records no longer has new deals to join.
 //
 // eventForNewDeal decides as step 2 of the join (spine_join_old_records, the
-// spine's links migration, its deal loop) decides an open deal with no event
-// (ruling R28), in the join's order:
+// spine's links migration, its deal loop) decides an open deal with no event,
+// in the join's order:
 //   - its enquiry (of the deal's venue) is joined to a live event: that
 //     event, unless an open deal is already on it (the join lists the deal
 //     as a second open deal; the writer refuses, EVENT_HAS_OPEN_DEAL);
 //   - its enquiry has no link and may become an event (enquiryMayBecomeEvent:
 //     not a draft, asks to book): the enquiry is decided first, as the join
-//     makes the deal wait for its enquiry's step 1 (eventReached, on the
-//     reach readEnquiryReach reads). One event reached: the enquiry joins it
+//     makes the deal wait for its enquiry's step 1 (eventReached, on what
+//     readEnquiryReach reads: its held dates, deals and proposals, its floor
+//     plan, and what its proposals with no event reach). One event reached:
+//     the enquiry joins it
 //     and the deal takes it (with the same open-deal check). Several, or
 //     paths that disagree: the deal is still made, with NO event, the
 //     enquiry's link stays empty, and the join lists the enquiry for a
@@ -81,7 +83,7 @@ import {
 // The edit (PATCH /opportunities/:id) never moves a deal's event. A deal
 // that names a new enquiry gives it its event when the enquiry may become
 // one and has none, unless something else of its own reaches a different
-// live event (ruling R19): then its link is left empty for the join's list
+// live event: then its link is left empty for the join's list
 // (enquiryFollowsDeal).
 // ---------------------------------------------------------------------------
 
@@ -299,8 +301,8 @@ export async function eventForNewDeal(conn: BindConn, deal: NewDeal): Promise<De
  * A deal's edit named this enquiry (locked by lockDealEnquiry before the
  * deal's row was written). When the enquiry may become an event and has no
  * link, it takes the deal's live event, because a child of it now has one;
- * unless something else of its own reaches a different live event (ruling
- * R19), when the link is left empty for the join's list. The deal's event is
+ * unless something else of its own reaches a different live event, when the
+ * link is left empty for the join's list. The deal's event is
  * never moved. Call after the deal's row is written, so its reach counts the
  * deal.
  */

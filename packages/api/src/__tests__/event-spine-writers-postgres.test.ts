@@ -40,19 +40,19 @@ import {
 // approval, a viewing, a price), or when its team opens it as an event on
 // purpose (POST /enquiries/:id/event).
 //
-// The writer decides as step 1 of the join of old records decides (ruling
-// R25), apart from two departures its service header names (an enquiry
-// already on the join's list, a link to a deleted event): the enquiry's own
-// link to a live event; else the one live
-// event its held dates, deals and proposals reach; else the one its floor
-// plan reaches; else a new event, for an open enquiry. It never chooses among
+// The writer decides as step 1 of the join of old records decides, apart
+// from two departures its service header names (an enquiry already on the
+// join's list, a link to a deleted event): the enquiry's own link to a live
+// event; else the one live event its held dates, deals and proposals reach;
+// else the one its floor plan and its proposals with no event reach; else a
+// new event, for an open enquiry. It never chooses among
 // several events and never makes one while something of the enquiry's own
 // reaches one: the link stays empty and the join lists the enquiry for a
 // person. The join is the outside reference, so the cases that turn on it run
 // the act, then the join, and assert both.
 //
-// A deal takes its event in the transaction that makes it (ruling R28): as
-// the join's step 2 decides a deal, its enquiry's event; else, when its
+// A deal takes its event in the transaction that makes it: as the join's
+// step 2 decides a deal, its enquiry's event; else, when its
 // enquiry may become one, the one event the enquiry's records reach, or none
 // while they reach several (the deal is still made), or one made for the
 // enquiry and the deal together; else, for a draft, a request or no
@@ -309,8 +309,8 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
   }
 
   // ---------------------------------------------------------------------------
-  // Ruling R25: the writer decides as the join decides, never choosing among
-  // events. Each case runs the act, then the join.
+  // The writer decides as the join decides, never choosing among events.
+  // Each case runs the act, then the join.
 
   it("a reply on an enquiry whose bookings sit in two events is recorded and makes no event; the join lists it", async () => {
     const v = await venue("two events, a reply");
@@ -948,7 +948,7 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
   });
 
   // ---------------------------------------------------------------------------
-  // A deal takes its event when it is made (ruling R28): POST /crm/from-enquiry
+  // A deal takes its event when it is made: POST /crm/from-enquiry
   // and POST /opportunities decide as the join's step 2 decides a deal, and the
   // edit (PATCH /opportunities/:id) gives a newly named enquiry the deal's event.
 
@@ -1003,7 +1003,7 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
       }
     }
 
-    // Ruling R28 first: the writer decides as the join's step 2.
+    // First, the writer decides as the join's step 2.
 
     it("a deal made from an enquiry whose bookings sit in two events is still made, with no event, and makes none; the join lists the enquiry and the deal waits", async () => {
       const v = await venue("deal, two events");
