@@ -23,7 +23,7 @@ import { acceptedVersion, depositAvailability, proposalDepositViews, requestInte
 import { proposalClient } from "../services/proposal-client.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
 import { proposalDeskPath } from "../services/client-answer-notice.js";
-import { loadProposalEventContext, resolveProposalShareToken } from "./proposals.js";
+import { resolveProposalShareToken } from "./proposals.js";
 
 // ---------------------------------------------------------------------------
 // Deposits (Plan 19 L5; goal 06 S6), in Stripe TEST MODE.
@@ -148,9 +148,6 @@ export async function proposalDepositRoutes(
     if (!amount.ok) return reply.status(422).send({ error: REFUSAL_WORDS[amount.refusal], code: `DEPOSIT_${amount.refusal.toUpperCase()}` });
     const quote = accepted.quote;
     if (quote === null) return reply.status(422).send({ error: REFUSAL_WORDS.no_quote, code: "DEPOSIT_NO_QUOTE" });
-    // The event it is for, when the proposal's layout belongs to one.
-    const event = await loadProposalEventContext(db, proposal);
-
     const outcome = await db.transaction(async (tx) => {
       // Held, and read again: a proposal moved on since (archived, say) or
       // given another accepted version is not asked to pay.
@@ -166,7 +163,10 @@ export async function proposalDepositRoutes(
         const [row] = await tx.insert(proposalDepositRequests).values({
           venueId: proposal.venueId,
           proposalId: proposal.id,
-          eventId: event?.eventId ?? null,
+          // The event the proposal holds, read under its lock, never its
+          // plan's: a request is never on another event from its proposal.
+          // A proposal not yet joined gives none; the join fills both.
+          eventId: held.eventId,
           proposalVersion: accepted.version,
           proposalVersionHash: accepted.sourceHash,
           basis: body.data.basis,

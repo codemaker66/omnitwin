@@ -1,0 +1,103 @@
+# =============================================================================
+# VENVIEWER — Event rules (the spine's links, T-704)
+# =============================================================================
+# Every night, and by hand (right after a release, say). The nightly run joins
+# the proposals, deals and enquiries made since the last run to their events
+# (the join of old records, spine_join_old_records); a run by hand joins only
+# when asked (below). Each run then reads the bind's two counts and the
+# spine's nine and prints one line of JSON, with the database's migration
+# state (docs/engineering/the-spine.md).
+#
+# It reports and turns red; it blocks nothing. No other workflow waits on it,
+# and Railway releases by itself. A red run is expected while a question is
+# open on the list of joins to check.
+#
+# Run it from master: the job runs only on master's code, so a run started
+# from another branch does nothing. A run by hand reads only unless its join
+# box is ticked (the input defaults to false); the schedule joins every night,
+# whatever that default. A join by hand against production is the founder's
+# call.
+#
+# The --join flag goes when the rule is tightened (stage 6); this then only
+# reads.
+#
+# To stop the nightly write in an emergency, disable THIS workflow (Actions →
+# Event rules → Disable workflow; it stops nothing else).
+#
+# The log is public with the repository: the line carries counts, reasons and
+# migration tags only, and a failure is named by its error's name and SQLSTATE,
+# never by its message or the connection string.
+#
+# Requires the DATABASE_URL secret in the repository settings, the one the
+# Scheduled Cleanup reads. No environment, so no approval holds it.
+# =============================================================================
+
+name: Event rules (reports only; blocks nothing)
+
+on:
+  # Once a night at 01:23 UTC, off the hour. GitHub may start a scheduled run
+  # hours late (into the venue's working morning), so what protects the
+  # working day is the join's short limits (5 s for a lock, 60 s in all, and
+  # it never waits for a row it can skip), not the hour.
+  schedule:
+    - cron: "23 1 * * *"
+  workflow_dispatch:
+    inputs:
+      join:
+        description: "Join new records to their events before reading (unticked: read only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two joins at once would be safe (each skips what the other holds) but
+  # would split one night's work across two reports.
+  group: event-rules-join
+  cancel-in-progress: false
+
+jobs:
+  event-rules:
+    name: Event rules (reports only; blocks nothing)
+    # Master's code only, by hand as on the schedule (which runs on master).
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types (required by api)
+        run: pnpm --filter @omnitwin/types build
+
+      # The schedule always joins: inputs.join is empty on a schedule, and the
+      # first test (not a run by hand) is already true. A run by hand joins
+      # only when its join box is ticked.
+      - name: Join new records and read the event rules
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.join }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm --filter @omnitwin/api exec tsx src/scripts/check-booking-event-bind.ts --join
+
+      - name: Read the event rules (no join)
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.join }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm --filter @omnitwin/api exec tsx src/scripts/check-booking-event-bind.ts
