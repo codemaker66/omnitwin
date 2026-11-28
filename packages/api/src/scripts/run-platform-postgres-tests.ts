@@ -33,6 +33,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/event-spine-bind-postgres.test.ts",
   // ...and the enquiry's own writer: an enquiry gets its event when someone first works it, deciding as the join decides.
   "src/__tests__/event-spine-writers-postgres.test.ts",
+  // ...and the writers beside the join, on every combination of what an enquiry reaches: never a step the join would not take.
+  "src/__tests__/event-spine-reach-parity-postgres.test.ts",
   // ...and the count: records without their event, nine numbers that must read zero.
   "src/__tests__/event-spine-invariant-postgres.test.ts",
   // ...and the operator's read the nightly run and a run by hand make: the join, both counts, one line of JSON.
