@@ -24,6 +24,7 @@ const CHANGE_ID = "00000000-0000-4000-8000-000000004006";
 const NOTIFICATION_ID = "00000000-0000-4000-8000-000000004009";
 const PROPOSAL_TOKEN = "t469-accessibility-proposal";
 const SUPPLIER_TOKEN = "t469-accessibility-supplier";
+const GUEST_LIST_PLAN_ID = "00000000-0000-4000-8000-000000004070";
 const HASH = "b".repeat(64);
 
 // Fresh fixtures per case; a failure must not skip other routes or viewports.
@@ -334,6 +335,93 @@ async function mockSupplierUnavailableRoutes(page: Page): Promise<void> {
   });
 }
 
+async function mockGuestListPlanRoutes(page: Page): Promise<void> {
+  // The guest list's one request: the read of the plan, to count the room's tables.
+  await page.route(`${API}/public/configurations/${GUEST_LIST_PLAN_ID}`, (route) => {
+    void route.fulfill({
+      json: {
+        data: {
+          id: GUEST_LIST_PLAN_ID,
+          venueId: VENUE_ID,
+          spaceId: "00000000-0000-4000-8000-000000004002",
+          userId: null,
+          name: "Grand Hall dinner",
+          isPublicPreview: true,
+          revision: 1,
+          objects: [],
+        },
+      },
+    });
+  });
+}
+
+// The kit's own storage, as lib/idb-cache.ts and lib/guest-list/store.ts keep it: database
+// "venviewer-guest-lists" at version 1, object store "lists" with out-of-line keys, the plan's id as the key, and
+// the list wrapped as { storedAt, value }.
+const GUEST_LIST_DB = "venviewer-guest-lists";
+const GUEST_LIST_STORE = "lists";
+const DAY_MS = 86_400_000;
+
+function guestListId(n: number): string {
+  return `00000000-0000-4000-8000-${String(4100 + n).padStart(12, "0")}`;
+}
+
+/** Invented guests: ten seated at two of three tables, two still to seat, printed once and changed since. */
+function seatedGuestList(now: Date): Record<string, unknown> {
+  const names = [
+    "Ailsa Fraser", "Chidi Okafor", "Morag Kerr", "Ewan Shaw", "Iona Campbell", "Fergus Nowak",
+    "Catriona Haddad", "Lachlan Murray", "Eilidh Baird", "Duncan Reid", "Brodie Lennox", "Isla Darroch",
+  ];
+  const tables = [
+    { id: guestListId(1), number: 1, name: "Top table", seats: 10 },
+    { id: guestListId(2), number: 2, name: "", seats: 10 },
+    { id: guestListId(3), number: 3, name: "", seats: 8 },
+  ];
+  const guests = names.map((name, at) => {
+    const tableId = at < 6 ? guestListId(1) : at < 10 ? guestListId(2) : null;
+    const seat = at < 6 ? at + 1 : at < 10 ? at - 5 : null;
+    return { id: guestListId(100 + at), name, party: at < 2 ? "Fraser and Okafor" : "", tableId, seat };
+  });
+  return {
+    version: 1,
+    planId: GUEST_LIST_PLAN_ID,
+    title: "Fraser and Okafor wedding",
+    eventDate: new Date(now.getTime() + 60 * DAY_MS).toISOString().slice(0, 10),
+    sortBy: "last-word",
+    guests,
+    tables,
+    paperVersion: 1,
+    changedSincePrint: true,
+    printedAt: new Date(now.getTime() - DAY_MS).toISOString(),
+    updatedAt: now.toISOString(),
+  };
+}
+
+/** Puts a seated list into the page's own storage before the app runs, as a planner's browser would hold it. */
+async function seedSeatedGuestList(page: Page): Promise<void> {
+  const now = new Date();
+  await page.addInitScript(({ dbName, storeName, key, record }) => {
+    const request = indexedDB.open(dbName, 1);
+    request.onupgradeneeded = () => { request.result.createObjectStore(storeName); };
+    request.onsuccess = () => {
+      const db = request.result;
+      const write = db.transaction(storeName, "readwrite");
+      write.objectStore(storeName).put(record, key);
+      write.oncomplete = () => { db.close(); };
+    };
+  }, {
+    dbName: GUEST_LIST_DB,
+    storeName: GUEST_LIST_STORE,
+    key: GUEST_LIST_PLAN_ID,
+    record: { storedAt: now.toISOString(), value: seatedGuestList(now) },
+  });
+}
+
+async function mockSeatedGuestListRoutes(page: Page): Promise<void> {
+  await mockGuestListPlanRoutes(page);
+  await seedSeatedGuestList(page);
+}
+
 function mockNoRoutes(_page: Page): Promise<void> {
   return Promise.resolve();
 }
@@ -462,6 +550,35 @@ const routeSpecs: readonly RouteSpec[] = [
     readyText: "There is no page at this address",
     readyRole: "heading",
     mockRoutes: mockNoRoutes,
+  },
+  {
+    // The planner's kit (stage 1a): a plan's guest list, kept only on this
+    // device and answering only behind its switch. Audited as a planner first
+    // meets it: an empty list, with the paste box open.
+    routeName: "the planner's guest list",
+    contrastTarget: "client",
+    path: `/plan/${GUEST_LIST_PLAN_ID}/guests?kit=on`,
+    readyText: "There are no guests on this list yet.",
+    mockRoutes: mockGuestListPlanRoutes,
+  },
+  {
+    // The same page holding a seated list, put in the page's own storage
+    // before it opens: the counts, the tables, two guests still to seat and a
+    // print that is out of date.
+    routeName: "the planner's guest list, seated",
+    contrastTarget: "client",
+    path: `/plan/${GUEST_LIST_PLAN_ID}/guests?kit=on`,
+    readyText: "10 of 12 guests have a seat.",
+    mockRoutes: mockSeatedGuestListRoutes,
+  },
+  {
+    // The paper for that list: the table plan sheet, with the tools above it
+    // saying how many guests have no seat. It asks nothing of the server.
+    routeName: "the planner's paper, a seated list's table plan",
+    contrastTarget: "client",
+    path: `/plan/${GUEST_LIST_PLAN_ID}/guests/paper?kit=on&sheet=table-plan`,
+    readyText: "2 guests have no seat, so they are not on it",
+    mockRoutes: seedSeatedGuestList,
   },
 ];
 

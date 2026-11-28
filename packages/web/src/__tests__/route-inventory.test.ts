@@ -4,6 +4,7 @@ import { WEB_VITAL_PAGES } from "@omnitwin/types";
 import { matchPath } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { ROUTE_DOCUMENTS, routeDocumentFile } from "../lib/route-documents.js";
+import { NEVER_REPORTED_PAGES } from "../observability/web-vitals.js";
 import {
   NOT_FOUND_BODY,
   NOT_FOUND_CALL_LABEL,
@@ -314,10 +315,14 @@ describe("the edge's 404 page", () => {
 // which the API holds every report to, so no address, code or name can be
 // stored as a page. The list is the router's production patterns, an
 // optional segment without its "?" (as the reporter reads it), and "/*" for
-// any other page: a new route fails here until the list has it.
+// any other page: a new route fails here until the list has it. The pages
+// that never report (NEVER_REPORTED_PAGES, the planner's kit) are left out.
 describe("the pages a web vitals report may name", () => {
   it("are the router's production routes, and /* for any other", () => {
     const patterns = ROUTER_PATHS.map((path) => path.replace(/\?(?=\/|$)/gu, ""));
-    expect([...WEB_VITAL_PAGES].sort()).toEqual([...new Set([...patterns, "/*"])].sort());
+    const reported = patterns.filter((pattern) => !NEVER_REPORTED_PAGES.includes(pattern));
+    expect([...WEB_VITAL_PAGES].sort()).toEqual([...new Set([...reported, "/*"])].sort());
+    // The pages that never report are real routes, so that list cannot go stale.
+    for (const page of NEVER_REPORTED_PAGES) expect(patterns, page).toContain(page);
   });
 });

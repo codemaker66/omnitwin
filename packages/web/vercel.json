@@ -570,6 +570,22 @@
       "destination": "/index.html"
     },
     {
+      "source": "/plan/:code/guests",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/plan/:code/guests/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/plan/:code/guests/paper",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/plan/:code/guests/paper/",
+      "destination": "/index.html"
+    },
+    {
       "source": "/account/allergy-notes",
       "destination": "/index.html"
     },

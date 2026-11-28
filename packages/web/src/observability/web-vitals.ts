@@ -64,11 +64,16 @@ export function shouldReportWebVitals(rate: number, browser: ReportingBrowser, r
 const UNREPORTABLE_PAGE = "/*";
 
 /**
- * The route pattern a page load landed on, from the router's matched routes'
- * paths, outermost first: "/venues/:venueSlug/twin". An optional parameter
- * keeps its name; a pattern outside the list of pages reads as "/*".
+ * Pages that never report. The planner's kit keeps a guest list only on the
+ * planner's own device, and its pages promise that none of it is sent to
+ * Venviewer; they make no request of their own but the read of the plan, so
+ * a load that lands on one, or moves to one, reports no vitals at all.
  */
-export function routePattern(paths: readonly (string | undefined)[]): string {
+export const NEVER_REPORTED_PAGES: readonly string[] = ["/plan/:code/guests", "/plan/:code/guests/paper"];
+
+/** The router's own pattern for the matched routes' paths, outermost first,
+ *  an optional parameter keeping its name. */
+function joinedPattern(paths: readonly (string | undefined)[]): string {
   let pattern = "";
   for (const raw of paths) {
     if (raw === undefined || raw === "") continue;
@@ -76,7 +81,21 @@ export function routePattern(paths: readonly (string | undefined)[]): string {
     pattern = path.startsWith("/") ? path : `${pattern.replace(/\/+$/u, "")}/${path}`;
   }
   const trimmed = pattern.replace(/\/+$/u, "");
-  const page = trimmed === "" ? "/" : trimmed;
+  return trimmed === "" ? "/" : trimmed;
+}
+
+/** Whether the matched routes are a page that never reports (NEVER_REPORTED_PAGES). */
+function isNeverReported(paths: readonly (string | undefined)[]): boolean {
+  return NEVER_REPORTED_PAGES.includes(joinedPattern(paths));
+}
+
+/**
+ * The route pattern a page load landed on, from the router's matched routes'
+ * paths, outermost first: "/venues/:venueSlug/twin". An optional parameter
+ * keeps its name; a pattern outside the list of pages reads as "/*".
+ */
+export function routePattern(paths: readonly (string | undefined)[]): string {
+  const page = joinedPattern(paths);
   return isWebVitalPage(page) ? page : UNREPORTABLE_PAGE;
 }
 
@@ -111,6 +130,9 @@ export interface WebVitalsReporter {
   readonly leave: () => void;
   /** Sends what is held, once, and holds nothing after. */
   readonly flush: () => void;
+  /** The visitor moved to a page that never reports (NEVER_REPORTED_PAGES):
+   *  what is held is dropped, and nothing is held or sent after. */
+  readonly silence: () => void;
 }
 
 /**
@@ -126,9 +148,10 @@ export function createWebVitalsReporter(landingPage: string, device: WebVitalDev
   const sent = new Set<string>();
   let page = landingPage;
   let left = false;
+  let silenced = false;
   return {
     add: (metric) => {
-      if (!isReported(metric.name) || sent.has(metric.id)) return;
+      if (silenced || !isReported(metric.name) || sent.has(metric.id)) return;
       if (left && metric.name !== "TTFB") return;
       // Restored, prerendered and discarded-then-restored loads are not
       // measured (UNMEASURED_LOADS; #309's round-4 reviews).
@@ -143,8 +166,12 @@ export function createWebVitalsReporter(landingPage: string, device: WebVitalDev
     },
     relabel: (target) => { page = target; },
     leave: () => { left = true; },
+    silence: () => {
+      silenced = true;
+      held.clear();
+    },
     flush: () => {
-      if (held.size === 0) return;
+      if (silenced || held.size === 0) return;
       const entries = [...held.values()];
       held.clear();
       for (const entry of entries) sent.add(entry.id);
@@ -165,11 +192,25 @@ export function createWebVitalsReporter(landingPage: string, device: WebVitalDev
  * replace) before the visitor has touched or typed anything moves the label
  * to its target, since the source was never seen; any other move to another
  * route ends the landing page's vitals. A move that keeps the route's
- * pattern (another room's walk, a search parameter) is the same page.
+ * pattern (another room's walk, a search parameter) is the same page. A move
+ * to a page that never reports, a redirect included, silences the reporter.
  */
 export function followLandingPage(landing: LandingRoute, reporter: WebVitalsReporter): void {
   let page = routePattern(landing.paths);
+  const silence = (): void => {
+    reporter.silence();
+    landing.stop();
+  };
+  if (isNeverReported(landing.paths)) {
+    silence();
+    return;
+  }
   landing.follow((change) => {
+    // Checked before the redirect's relabel: a page that never reports is never a label.
+    if (isNeverReported(change.paths)) {
+      silence();
+      return;
+    }
     const next = routePattern(change.paths);
     if (next === page) return;
     if (change.replace && !change.interacted) {
@@ -212,6 +253,12 @@ export interface StartWebVitalsOptions {
 
 /** Starts measuring this page load if it reports at all. Returns whether it does. */
 export async function startWebVitals(options: StartWebVitalsOptions): Promise<boolean> {
+  // A load that lands on a page that never reports (NEVER_REPORTED_PAGES) is
+  // neither sampled nor measured, and the library is never loaded for it.
+  if (isNeverReported(options.landing.paths)) {
+    options.landing.stop();
+    return false;
+  }
   const signals = navigator as Navigator & ReportingBrowser;
   const browser: ReportingBrowser = {
     webdriver: signals.webdriver,

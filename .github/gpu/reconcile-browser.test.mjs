@@ -60,11 +60,11 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full432 union requires427 CPU and all5 GPU with original54 skips and4 executed expected failures', () => {
+test('full448 union requires443 CPU and all5 GPU with original54 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 432, cpu: 427, gpu: 5, ordinaryPasses: 374,
+  assert.deepEqual(result.totals, { inventory: 448, cpu: 443, gpu: 5, ordinaryPasses: 390,
     expectedFailures: 4, originalSkips: 54, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
@@ -74,9 +74,9 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 427);
+  assert.equal(result.totals.cpu, 443);
   assert.equal(result.totals.gpu, 0);
-  assert.equal(result.totals.ordinaryPasses, 369);
+  assert.equal(result.totals.ordinaryPasses, 385);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
 });
 rejected('outside the GPU scope a missing CPU case still fails', (input) => {
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 58);
+  assert.equal(baseline.inventoryAdmissions.length, 60);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -1542,3 +1542,85 @@ for (const id of heldNoteCases) {
     spec.tests[0].status = 'skipped';
   }, /policy changed/);
 }
+
+// The planner's kit, stage 1a (PR #472, T-719): a guest list kept on the
+// planner's own device. Seven journey cases in their own spec, and nine cases
+// the route accessibility audit gains for the kit's pages, in two admissions
+// placed after the held-notes admission, #388 having merged first.
+const guestListJourneyCases = [
+  'bbd1071729c1c81f8dd4-07dc197fcfa6b3fff895',
+  'bbd1071729c1c81f8dd4-091679297164c175b894',
+  'bbd1071729c1c81f8dd4-6334e3e858922fd41578',
+  'bbd1071729c1c81f8dd4-63b4ca9d5d706979190e',
+  'bbd1071729c1c81f8dd4-6ebe2b97d878547b4c26',
+  'bbd1071729c1c81f8dd4-953780f01564727da078',
+  'bbd1071729c1c81f8dd4-b8cf704dec6652a982cf',
+];
+test('the guest list journey admission adds seven ordinary cases', () => {
+  const admission = baseline.inventoryAdmissions[58];
+  assert.equal(admission.date, '2026-11-25');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/guest-list-journey.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'passed');
+  assert.deepEqual(admission.caseIds, guestListJourneyCases);
+  for (const id of guestListJourneyCases) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'guest-list-journey.spec.ts');
+    assert.deepEqual(row?.suitePath, ['guest-list-journey.spec.ts', 'the guest list journey']);
+    assert.equal(row?.project, 'chromium');
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+  assert.equal(baseline.cases.filter((entry) => entry.file === 'guest-list-journey.spec.ts').length, 7);
+  assert.equal(baseline.cases.filter((entry) => entry.expectedStatus === 'passed').length,
+    BROWSER_POLICY.total - BROWSER_POLICY.skipped - BROWSER_POLICY.expectedFailures);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('a guest list journey case cannot quietly become a skip', (input) => {
+  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === guestListJourneyCases[5]);
+  spec.tests[0].expectedStatus = 'skipped';
+  spec.tests[0].results[0].status = 'skipped';
+  spec.tests[0].status = 'skipped';
+}, /policy changed/);
+
+const guestListAuditCases = [
+  'c44af26be19d92edde78-005a21cf4c5bb6031439',
+  'c44af26be19d92edde78-00d942d4ff8252df6ab7',
+  'c44af26be19d92edde78-23e204cf091af128b973',
+  'c44af26be19d92edde78-41b6c07a2e70d0e615dd',
+  'c44af26be19d92edde78-4bc9c7a4b31db2516008',
+  'c44af26be19d92edde78-5aa6a258dd47c0e03659',
+  'c44af26be19d92edde78-6e1b0329abf09cd3bfb0',
+  'c44af26be19d92edde78-79f2259a52bcb0e73c98',
+  'c44af26be19d92edde78-95363ac17aa5254189df',
+];
+const GUEST_LIST_AUDIT_TITLE = /^the planner's (?:guest list|guest list, seated|paper, a seated list's table plan) has named controls, landmarks, reduced motion, contrast, and focus-visible at (?:desktop|tablet|mobile)$/u;
+test('the guest list route audit admission adds nine ordinary cases to the audit, three routes at three widths', () => {
+  const admission = baseline.inventoryAdmissions[59];
+  assert.equal(admission.date, '2026-11-25');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/accessibility-route-audit.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'passed');
+  assert.deepEqual(admission.caseIds, guestListAuditCases);
+  const titles = new Set();
+  for (const id of guestListAuditCases) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'accessibility-route-audit.spec.ts');
+    assert.deepEqual(row?.suitePath, ['accessibility-route-audit.spec.ts']);
+    assert.equal(row?.project, 'chromium');
+    assert.equal(row?.expectedStatus, 'passed');
+    assert.match(row?.title, GUEST_LIST_AUDIT_TITLE);
+    titles.add(row?.title);
+  }
+  assert.equal(titles.size, 9);
+  assert.equal(baseline.cases.filter((entry) => entry.file === 'accessibility-route-audit.spec.ts').length, 42);
+  assert.equal(baseline.cases.filter((entry) => entry.expectedStatus === 'passed').length,
+    BROWSER_POLICY.total - BROWSER_POLICY.skipped - BROWSER_POLICY.expectedFailures);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('a guest list audit case cannot go missing from the listed suite', (input) => {
+  specs(input.inventory).find((row) => row.id === guestListAuditCases[0]).id = `${'0'.repeat(20)}-${'0'.repeat(20)}`;
+}, /missing or extra/);

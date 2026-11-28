@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 432 cases. Four hosted CPU shards execute
-427 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 448 cases. Four hosted CPU shards execute
+443 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -226,6 +226,25 @@ to 432 and the CPU partition from 422 to 427. On 22 November 2026 the spec reads
 the new chrome's line in its receipt and its Keep mine case goes on to a reload
 that puts a table back; no identity changed, and the admission's source commit
 and hashes were taken again from that spec.
+
+On 25 November 2026 the planner's kit, stage 1a (PR #472, T-719) is admitted
+with sixteen ordinary cases, in two admissions placed after the held-notes
+admission above, #388 having merged first (the kit was first admitted on its
+branch on 22 November with fifteen, against 427). Seven are the guest list's
+journey with the API intercepted before transport: a planner pastes 180 names,
+takes the room's 18 tables, seats everyone and reaches the print dialog within
+10 clicks and 3 typed fields, with every request and WebSocket recorded and a
+canary name in none of them; the list is still there after a reload; the three
+list sheets carry their version on every printed page and place cards on none,
+read from Chromium's own PDF, with every name printed and each card's name
+inside its card; two cases prove the socket check and the footer check notice
+what they are there to catch; and at three laptop window sizes the wheel over
+the list reaches its last guest (`guest-list-journey.spec.ts`). Nine are the
+route accessibility audit's new routes, each at desktop, tablet and mobile: the
+guest list with no guests, the same list seated, and the paper's table plan
+(`accessibility-route-audit.spec.ts`, whose 33 earlier cases keep their
+identities); this changes the inventory from 432 to 448 and the CPU partition
+from 427 to 443.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
