@@ -33,6 +33,7 @@ const ADDED_AFTER_DELETE_WORDS = "This list was changed in another tab after it 
 const PRINT_OF_OLDER_COPY_WORDS = "That printout was made from an older copy of this list, which was changed in another tab. Do not use that printout: print it again.";
 const REMOVED_BY_RULE_WORDS ="This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
 const OTHER_TAB_BUSY_WORDS = "Another tab is busy with this list, so your last change is not kept yet. It will be kept as soon as that tab has finished.";
+const PRINT_HELD_WORDS = "Another tab is busy with this list, so nothing was printed. Press Print again in a moment.";
 const SHEET_LINKS = [
   ["Table plan", "table-plan"],
   ["Guests by table", "by-table"],
@@ -1614,5 +1615,149 @@ describe("the guest paper page: another tab is busy with the list", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The Print button never opens the dialog while what it has just saved is not
+// kept because another tab is busy: the sheet would leave with a number that
+// is not on the device. It says so, is free to be pressed again, and the next
+// press prints once.
+// ---------------------------------------------------------------------------
+
+describe("the guest paper page: the Print button holds its print while another tab is busy", () => {
+  /** A device whose saves answer busy while told to: another tab holds the list's lock past the bound. */
+  function sometimesBusy(real: GuestListStore): { readonly store: GuestListStore; readonly kept: number[]; readonly setBusy: (now: boolean) => void } {
+    let busy = false;
+    /** The paper version of each save the device kept, in order. */
+    const kept: number[] = [];
+    const store: GuestListStore = {
+      ...real,
+      save: async (list, loaded, opts) => {
+        if (busy) return { kind: "busy" };
+        const answer = await real.save(list, loaded, opts);
+        if (answer.kind === "saved") kept.push(list.paperVersion);
+        return answer;
+      },
+    };
+    return { store, kept, setBusy: (now) => { busy = now; } };
+  }
+
+  it("opens no dialog while its print's record waits on a busy tab, says so and is free again; pressed again, it prints once under the number the device holds", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-15T10:00:00.000Z"));
+    const backend = memoryBackend();
+    const { store, kept, setBusy } = sometimesBusy(await storeHolding(list180(), backend));
+    // What is on the paper as the dialog opens, and the versions the device had kept by then.
+    let versionAtPrint = "";
+    let keptAtPrint: readonly number[] = [];
+    printSpy.mockImplementation(() => {
+      versionAtPrint = text(document.querySelector(".gp-running"));
+      keptAtPrint = [...kept];
+    });
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+
+    setBusy(true);
+    const button = within(tools()).getByRole("button", { name: "Print" });
+    fireEvent.click(button);
+    const words = await within(tools()).findByText(PRINT_HELD_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("print-held");
+    await waitFor(() => { expect(button.getAttribute("aria-busy")).toBe("false"); });
+    expect(printSpy).not.toHaveBeenCalled();
+    // The record of that print is on the page only: the device still holds the list as never printed.
+    const before = await memoryStore(backend).open(PLAN_ID);
+    expect(before.kind === "ready" ? before.list.paperVersion : null).toBe(0);
+    expect(within(tools()).queryByText(OTHER_TAB_BUSY_WORDS)).toBeNull();
+
+    // The other tab finishes. Pressed again, the button prints once.
+    setBusy(false);
+    fireEvent.click(button);
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+    await waitFor(() => { expect(button.getAttribute("aria-busy")).toBe("false"); });
+    expect(printSpy).toHaveBeenCalledTimes(1);
+    // The sheet in the dialog is version 1, and the device held version 1 before the dialog opened.
+    expect(versionAtPrint).toBe("Version 1 · printed 15 November 2026");
+    expect(keptAtPrint).toContain(1);
+    const after = await memoryStore(backend).open(PLAN_ID);
+    expect(after.kind === "ready" ? [after.list.paperVersion, after.list.changedSincePrint] : null).toEqual([1, false]);
+    expect(within(tools()).queryByText(PRINT_HELD_WORDS)).toBeNull();
+    expect(state().notice).toBeNull();
+  });
+
+  it("records no print when a change already waiting here cannot be kept because another tab is busy", async () => {
+    const backend = memoryBackend();
+    const { store, setBusy } = sometimesBusy(await storeHolding(list180(), backend));
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+
+    setBusy(true);
+    // A change made a moment ago (on the list page, whose state this page shares), still waiting to be kept.
+    act(() => {
+      state().apply((list) => ({ ...list, title: "Ours", changedSincePrint: true }));
+    });
+    const button = within(tools()).getByRole("button", { name: "Print" });
+    fireEvent.click(button);
+    const words = await within(tools()).findByText(PRINT_HELD_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("print-held");
+    await waitFor(() => { expect(button.getAttribute("aria-busy")).toBe("false"); });
+
+    expect(printSpy).not.toHaveBeenCalled();
+    // Nothing was recorded: the page's paper version has not moved.
+    expect(currentList().paperVersion).toBe(0);
+    expect(currentList().printedAt).toBeNull();
+    expect(text(tools().querySelector(".gp-tools__version"))).toBe("Not yet printed");
+  });
+
+  it("opens no dialog on an empty sheet when the save of its print's record finds the list deleted in another tab", async () => {
+    const backend = memoryBackend();
+    const real = await storeHolding(list180(), backend);
+    let armed = false;
+    const store: GuestListStore = {
+      ...real,
+      // Another tab deletes the list after the Print button's read of the device, just before the print's record is saved.
+      save: async (list, loaded, opts) => {
+        if (armed) {
+          armed = false;
+          await memoryStore(backend).erase(PLAN_ID);
+        }
+        return real.save(list, loaded, opts);
+      },
+    };
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+
+    armed = true;
+    const button = within(tools()).getByRole("button", { name: "Print" });
+    fireEvent.click(button);
+    const words = await within(tools()).findByText(REMOVED_ELSEWHERE_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("removed-elsewhere");
+    await waitFor(() => { expect(button.getAttribute("aria-busy")).toBe("false"); });
+    expect(armed).toBe(false);
+    expect(printSpy).not.toHaveBeenCalled();
+    // Nothing is stored again.
+    expect((await memoryStore(backend).open(PLAN_ID)).kind).toBe("new");
+  });
+
+  it("a device that refuses to keep the list still prints from the button, as before", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-15T10:00:00.000Z"));
+    const real = await storeHolding(list180());
+    const store: GuestListStore = { ...real, save: () => Promise.resolve({ kind: "not-kept" }) };
+    let version = "";
+    printSpy.mockImplementation(() => {
+      version = text(document.querySelector(".gp-running"));
+    });
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+
+    const button = within(tools()).getByRole("button", { name: "Print" });
+    fireEvent.click(button);
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+    await waitFor(() => { expect(button.getAttribute("aria-busy")).toBe("false"); });
+    expect(version).toBe("Version 1 · printed 15 November 2026");
+    expect(within(tools()).queryByText(PRINT_HELD_WORDS)).toBeNull();
+    // The page says the list is not being kept, as it did before.
+    expect(within(tools()).getByText(/^This browser is not keeping the list\./).getAttribute("role")).toBe("alert");
   });
 });

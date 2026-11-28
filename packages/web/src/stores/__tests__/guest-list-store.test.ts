@@ -2268,3 +2268,175 @@ describe("guest list page state: the older-copy words outlast a busy answer", ()
     state().pageGone();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The Print button asks, before it opens the dialog, whether what it has just
+// saved is still waiting because another tab is busy with the list. While it
+// is, no sheet goes out: its number would not be on the device.
+// ---------------------------------------------------------------------------
+
+describe("guest list page state: a print is held while a change waits on a busy tab", () => {
+  type Answer = "busy" | "not-kept" | "as-kept";
+
+  /** A device whose saves answer as told: another tab holds the lock past the bound, the device refuses, or the save is kept. */
+  function answering(store: GuestListStore): { readonly waits: GuestListStore; readonly say: (answer: Answer) => void } {
+    let answer: Answer = "as-kept";
+    const waits: GuestListStore = {
+      ...store,
+      save: (list, loaded, opts) => (answer === "as-kept" ? store.save(list, loaded, opts) : Promise.resolve({ kind: answer })),
+    };
+    return { waits, say: (next) => { answer = next; } };
+  }
+
+  /** A plan open on a kit page, with one guest kept. */
+  async function openedWith(waits: GuestListStore): Promise<void> {
+    await state().open(PLAN_A, waits, clock());
+    state().pageHere();
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+  }
+
+  it("does not hold a print with nothing waiting, and says nothing", async () => {
+    const { store } = device();
+    const { waits } = answering(store);
+    await openedWith(waits);
+
+    expect(state().holdPrint()).toBe(false);
+    expect(state().notice).toBeNull();
+  });
+
+  it("does not hold a print on a device that refuses to keep the list, and says nothing more", async () => {
+    const { store } = device();
+    const { waits, say } = answering(store);
+    await openedWith(waits);
+
+    say("not-kept");
+    state().apply(titled("Not kept"));
+    await state().flush();
+    expect(state().kept).toBe(false);
+    expect(state().changeWaiting()).toBe(true);
+    expect(state().holdPrint()).toBe(false);
+    expect(state().notice).toBeNull();
+  });
+
+  it("holds a print after a busy answer, and says nothing was printed", async () => {
+    const { backend, store } = device();
+    const { waits, say } = answering(store);
+    await openedWith(waits);
+
+    say("busy");
+    state().apply(titled("Waiting"));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "other-tab-busy" });
+    expect(state().holdPrint()).toBe(true);
+    expect(state().notice).toEqual({ kind: "print-held" });
+    expect(storedTitle(await reopened(backend, PLAN_A))).not.toBe("Waiting");
+  });
+
+  it("goes by the last answer, not by the words on the page: closing them does not let the print go", async () => {
+    const { store } = device();
+    const { waits, say } = answering(store);
+    await openedWith(waits);
+
+    say("busy");
+    state().apply(titled("Waiting"));
+    await state().flush();
+    state().dismissNotice();
+    expect(state().notice).toBeNull();
+    expect(state().holdPrint()).toBe(true);
+    expect(state().notice).toEqual({ kind: "print-held" });
+  });
+
+  it("a later busy retry leaves the print-held words showing, and so does the save that lands", async () => {
+    const { backend, store } = device();
+    const { waits, say } = answering(store);
+    await openedWith(waits);
+
+    say("busy");
+    state().apply(titled("Waiting"));
+    await state().flush();
+    expect(state().holdPrint()).toBe(true);
+
+    // Tried again while the other tab is still at work: the words are not put away for the plainer ones.
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    await state().flush();
+    expect(state().changeWaiting()).toBe(true);
+    expect(state().notice).toEqual({ kind: "print-held" });
+    expect(state().holdPrint()).toBe(true);
+
+    // The other tab finishes and the change is kept. The words still say what to do: press Print again.
+    say("as-kept");
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    await state().flush();
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Waiting");
+    expect(state().changeWaiting()).toBe(false);
+    expect(state().notice).toEqual({ kind: "print-held" });
+    // Nothing waits now, so the next press prints.
+    expect(state().holdPrint()).toBe(false);
+    expect(state().notice).toEqual({ kind: "print-held" });
+  });
+
+  it("no longer holds once a later try is refused by the device instead: such a device goes on printing", async () => {
+    const { store } = device();
+    const { waits, say } = answering(store);
+    await openedWith(waits);
+
+    say("busy");
+    state().apply(titled("Waiting"));
+    await state().flush();
+    expect(state().holdPrint()).toBe(true);
+
+    say("not-kept");
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    await state().flush();
+    expect(state().kept).toBe(false);
+    expect(state().changeWaiting()).toBe(true);
+    expect(state().holdPrint()).toBe(false);
+  });
+
+  it("no longer holds once the list is deleted here: nothing is waiting then", async () => {
+    const { store } = device();
+    const { waits, say } = answering(store);
+    await openedWith(waits);
+
+    say("busy");
+    state().apply(titled("Waiting"));
+    await state().flush();
+    expect(state().holdPrint()).toBe(true);
+
+    expect(await state().eraseList()).toBe(true);
+    expect(state().changeWaiting()).toBe(false);
+    expect(state().holdPrint()).toBe(false);
+    expect(state().notice).toBeNull();
+  });
+
+  it("never puts the older-copy words away for the print-held words, and still holds the print", async () => {
+    const { backend, store } = device();
+    let saves = 0;
+    // The third save (the print's record on the other tab's list) finds another tab busy.
+    const waits: GuestListStore = {
+      ...store,
+      save: (list, loaded, opts) => {
+        saves += 1;
+        return saves === 3 ? Promise.resolve({ kind: "busy" }) : store.save(list, loaded, opts);
+      },
+    };
+    await openedWith(waits);
+    const other = otherTabOn(backend);
+    const theirs = await loadedBy(other, PLAN_A);
+    expect((await other.save({ ...theirs.list, title: "Theirs", updatedAt: "2026-11-14T09:00:00.000Z" }, theirs.stamp)).kind).toBe("saved");
+
+    state().apply((list) => markPrinted(list, "2026-11-14T10:00:00.000Z"), {
+      undo: false,
+      ifOtherCopy: (kept) => printedFromOlderCopy(kept, 1, "2026-11-14T10:00:00.000Z"),
+    });
+    await state().flush();
+    expect(saves).toBe(3);
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+    expect(state().changeWaiting()).toBe(true);
+
+    expect(state().holdPrint()).toBe(true);
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+    state().pageGone();
+  });
+});

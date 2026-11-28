@@ -320,6 +320,8 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
 
   const run = async (): Promise<void> => {
     try {
+      // The word that an earlier press was held is put away: this press answers it.
+      if (useGuestListStore.getState().notice?.kind === "print-held") useGuestListStore.getState().dismissNotice();
       await fontsLoaded();
       if (!stillHere()) return;
       const takenUp = useGuestListStore.getState().takeUps;
@@ -328,16 +330,29 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
       // with it before this print takes its number.
       await useGuestListStore.getState().flush();
       if (!stillHere()) return;
+      // That save found the list gone (deleted in another tab, or removed under the rule). There
+      // is nothing to print, and the page says so; recording a print would store an empty list
+      // again.
+      if (foundGone(takenUp)) return;
+      // That save found another tab busy with the list, so the change is still not kept. The
+      // button stops here, with nothing recorded, and the page says nothing was printed.
+      if (useGuestListStore.getState().holdPrint()) return;
       // A print is of the newest list kept on this device: another tab's change is taken up first.
       await useGuestListStore.getState().refresh();
       if (!stillHere()) return;
-      // That save or that read found the list gone (deleted in another tab, or removed under the
-      // rule). There is nothing to print, and the page says so; recording a print would store an
-      // empty list again.
+      // That read found the list gone, as the save before it might have.
       if (foundGone(takenUp)) return;
       recordPrint();
       await useGuestListStore.getState().flush();
       if (!stillHere()) return;
+      // The save of that record found the list gone (another tab's delete can land while this
+      // save waits for the lock that tab holds): no dialog opens on an empty sheet.
+      if (foundGone(takenUp)) return;
+      // Or it found another tab busy, so the sheet's number is not on the device. No dialog opens:
+      // a sheet that left now could share its number with a later one. The page says nothing was
+      // printed and the button is free; pressed again once that tab has finished, it keeps the
+      // record and prints once, under the same number when the list has not changed since.
+      if (useGuestListStore.getState().holdPrint()) return;
       // Nothing has been printed yet, and the save of that record may have met another tab's copy.
       // Either it gave way (another tab saved in the moment between the read and the save): the
       // page now shows their list, with the print recorded on it as made from an older copy.
@@ -345,13 +360,17 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
       // their copy with a change that was still waiting here, and their print record came with
       // it: their sheet has the number just recorded, or a larger one. Either way the page's list
       // now says it has changed since its print, so the print is recorded once more, on the list
-      // the page shows, under the next number. Whatever that second save finds, the dialog opens
-      // on the list now on the page, and no later sheet is given its number.
+      // the page shows, under the next number. Unless that second save finds the list gone or
+      // another tab busy, the dialog opens on the list now on the page, whatever else it finds,
+      // and no later sheet is given its number.
       if (gaveWay() || changedSincePrint()) {
         if (gaveWay()) useGuestListStore.getState().dismissNotice();
         recordPrint();
         await useGuestListStore.getState().flush();
         if (!stillHere()) return;
+        // As after the first record: no dialog over a list found gone, or while the record waits on a busy tab.
+        if (foundGone(takenUp)) return;
+        if (useGuestListStore.getState().holdPrint()) return;
         if (gaveWay()) useGuestListStore.getState().dismissNotice();
       }
       ours.current = true;

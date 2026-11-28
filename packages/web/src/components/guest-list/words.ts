@@ -127,6 +127,12 @@ export const NOT_DELETED = "This list could not be deleted from this browser jus
 export const OTHER_TAB_BUSY =
   "Another tab is busy with this list, so your last change is not kept yet. It will be kept as soon as that tab has finished.";
 
+/**
+ * The Print button stopped before the dialog: what it had just saved is not kept yet, because
+ * another tab is busy with this list. No sheet went out; the next press prints.
+ */
+export const PRINT_HELD = "Another tab is busy with this list, so nothing was printed. Press Print again in a moment.";
+
 /** The page left this list with a change waiting while another tab was busy with it: that change was dropped. */
 export const LAST_CHANGE_NOT_KEPT =
   "The last change made to this list before you left it was not kept: another tab was busy with the list.";
@@ -150,6 +156,8 @@ export function noticeWords(notice: Exclude<KitNotice, null>): string {
       return NOT_DELETED;
     case "other-tab-busy":
       return OTHER_TAB_BUSY;
+    case "print-held":
+      return PRINT_HELD;
     case "last-change-not-kept":
       return LAST_CHANGE_NOT_KEPT;
   }

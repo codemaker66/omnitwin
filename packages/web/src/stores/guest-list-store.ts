@@ -45,6 +45,8 @@ export type KitNotice =
   | { readonly kind: "not-deleted" }
   /** Another tab is at work on the list: a change here is not kept yet, and is being tried again. */
   | { readonly kind: "other-tab-busy" }
+  /** The Print button stopped before the dialog, as what it had just saved is not kept yet while another tab is busy: nothing was printed. */
+  | { readonly kind: "print-held" }
   /** The page left this plan with a change waiting while another tab was busy with the list: that change was not kept. */
   | { readonly kind: "last-change-not-kept" };
 
@@ -119,6 +121,16 @@ export interface GuestListState {
    */
   changeWaiting(): boolean;
   /**
+   * For the Print button, before it opens the dialog: whether a change is
+   * still waiting because the last try to keep it found another tab busy with
+   * the list. While it is, a sheet would leave with a number that is not on
+   * the device, so the button stops; this then also says that nothing was
+   * printed (but never in place of the word that a printout was made from an
+   * older copy). False, and nothing said, in every other case, a device that
+   * refuses to keep the list included: there the button prints as it did.
+   */
+  holdPrint(): boolean;
+  /**
    * Takes up another tab's changes. When nothing here is unsaved and no save
    * is running, reads the device again and takes the stored list if it is not
    * the copy last opened or saved here, whichever way the two clocks point;
@@ -175,6 +187,13 @@ interface Session {
   ordinary: boolean;
   /** The latest waiting change that gives way to another tab's copy: what it means on their list. */
   ifOther: ((theirs: GuestList) => GuestList) | null;
+  /**
+   * The last try to keep what is waiting found another tab busy with the list.
+   * Set by that answer, on the page's own session only; cleared as the next
+   * try starts, and wherever nothing is waiting any more. It is not read from
+   * the notice, which the planner can close.
+   */
+  waitingOnBusyTab: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   running: Promise<void> | null;
   /** While erasing, nothing is saved. */
@@ -273,6 +292,7 @@ function nothingWaiting(session: Session): void {
   session.unsaved = false;
   session.ordinary = false;
   session.ifOther = null;
+  session.waitingOnBusyTab = false;
 }
 
 function clearTimer(session: Session): void {
@@ -349,6 +369,8 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           session.unsaved = false;
           session.ordinary = false;
           session.ifOther = null;
+          // A try starts here: what the try before it found no longer stands.
+          session.waitingOnBusyTab = false;
           if (list === null) return;
           const answer = await saveSafely(session.store, list, session.loaded, { yieldToOther: givesWay !== null });
           const since = waitingNow(session);
@@ -374,9 +396,13 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             session.unsaved = true;
             session.ordinary = since.ordinary || waiting.ordinary;
             session.ifOther = since.ifOther ?? waiting.ifOther;
+            // Remembered for the Print button, which opens no dialog while this stands.
+            session.waitingOnBusyTab = true;
             // The word that a printout was made from an older copy is never put away for this one:
-            // the planner still has that sheet in hand.
-            if (get().notice?.kind !== "print-of-older-copy") set({ notice: { kind: "other-tab-busy" } });
+            // the planner still has that sheet in hand. Nor is the word that a print was held: it
+            // says the same of the other tab, and what to do about the print.
+            const showing = get().notice?.kind;
+            if (showing !== "print-of-older-copy" && showing !== "print-held") set({ notice: { kind: "other-tab-busy" } });
             if (pagesHere > 0) scheduleSave(session);
             return;
           }
@@ -434,7 +460,8 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           session.sweptHere = false;
           if (isCurrent(session)) {
             set({ kept: true });
-            // The change that was waiting on another tab is kept now.
+            // The change that was waiting on another tab is kept now. The word that a print was
+            // held is left showing: it still says what to do, and the Print button puts it away.
             if (get().notice?.kind === "other-tab-busy") set({ notice: null });
             // This save went over a copy another tab had kept, and the page says so. The word that
             // a printout was made from an older copy is never put away for it: it still holds, and
@@ -517,6 +544,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           unsaved: false,
           ordinary: false,
           ifOther: null,
+          waitingOnBusyTab: false,
           timer: null,
           running: null,
           erasing: false,
@@ -718,6 +746,15 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         if (retiring !== null) return true;
         const session = current;
         return session !== null && (session.unsaved || session.running !== null);
+      },
+
+      holdPrint() {
+        const session = current;
+        if (session === null || !session.unsaved || !session.waitingOnBusyTab) return false;
+        // Said in place of whatever is showing, but for the word that a printout was made from an
+        // older copy: that one is never put away for another.
+        if (get().notice?.kind !== "print-of-older-copy") set({ notice: { kind: "print-held" } });
+        return true;
       },
 
       async refresh(mount) {
