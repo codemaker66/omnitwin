@@ -282,14 +282,16 @@ puts back expired claims (passing over any whose row another transaction holds),
 and runs one due job at a time until none is due, writes the next run of each repeating
 kind, and sets one timer for the earlier of the next due job (or claim about to run out)
 and the next boundary. A claim that has already run out and still stands when the pass
-plans (its row was held) is planned 60 seconds ahead (`STANDING_CLAIM_RECHECK_SECONDS`
-in `store.ts`), not at once, so a held row does not wake every server four times a
-second. The boundary is the next whole multiple of `JOBS_MAX_SLEEP_MINUTES` since the
-epoch: with 60, the top of the hour. The worker does not poll. It asks the database when
-its timer fires, when it starts, and when this process pokes it; pokes that arrive during
-a pass fold into one more pass. Every pass begins in the async context the worker was
-built in, so a poke made inside a request lends that request's context to nothing the
-pass does: not its handlers, its alerts or its next timer.
+plans is planned 60 seconds ahead (`STANDING_CLAIM_RECHECK_SECONDS` in `store.ts`), not
+at once: one the pass's recovery passed over because another transaction held its row,
+or one that ran out after that recovery ran. So a held row does not wake every server
+four times a second. The boundary is the next whole multiple of
+`JOBS_MAX_SLEEP_MINUTES` since the epoch: with 60, the top of the hour. The worker does
+not poll. It asks the database when its timer fires, when it starts, and when this
+process pokes it; pokes that arrive during a pass fold into one more pass. Every pass
+begins in the async context the worker was built in, so a poke made inside a request
+lends that request's context to nothing the pass does: not its handlers, its alerts or
+its next timer.
 
 Every call the worker makes on the database (putting claims back, a claim, recording a
 result or a hand-back, `afterPass`, the plan) runs in a transaction of its own
