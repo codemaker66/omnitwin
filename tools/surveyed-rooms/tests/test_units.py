@@ -1289,6 +1289,197 @@ class CompareBuilds(unittest.TestCase):
             self.assertEqual(got["differ"], ["wall-w-1.npz: in one build only", "wall-w-0.npz: rgb"])
 
 
+class PatchSeams(unittest.TestCase):
+    """measure/walls/patch_seams.py: what its replay of the atlas step's patches counts (replay), and where it takes
+    a patch's feathered edges to be (bands), on made-up walls a metre long and a metre high at 100 texels a metre,
+    flat at their own planes, with a feather of 5 texels. "w" is the wall patched: a thing stands before it over
+    rows 30 to 49 and columns 40 to 59 (v 0.5 to 0.7, u 0.4 to 0.6). "clean" has nothing before it, to copy from. For
+    the fill's counts the same rows and columns are instead a place no station coloured, with nothing standing there."""
+    PPM, TOP, F = 100.0, 1.0, 5
+    A = ("w", 1.0, 0.2, 0.8, 0.0, 0.6, "copy", ("clean", 0.2, False))      # rows 40 to 99, columns 20 to 79: its top band crosses the thing
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util  # noqa: PLC0415
+        walls = os.path.join(ROOMS, "measure", "walls")
+        blas = {k: os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")}
+        before = sys.modules.get("wallviews")
+        spec = importlib.util.spec_from_file_location("wallviews", os.path.join(walls, "wallviews.py"))
+        sys.modules["wallviews"] = importlib.util.module_from_spec(spec)   # patch_seams imports it by name, as it does beside it
+        try:
+            spec.loader.exec_module(sys.modules["wallviews"])
+            spec = importlib.util.spec_from_file_location("patch_seams", os.path.join(walls, "patch_seams.py"))
+            cls.ps = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(cls.ps)                             # reads no argument and no file: that is all main()'s
+        finally:
+            if before is None:
+                sys.modules.pop("wallviews", None)
+            else:
+                sys.modules["wallviews"] = before
+        for k, v in blas.items():                                       # wallviews asks for one BLAS thread for its own runs: not this process's
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+    def seams(self, thing, *patches, **walls):
+        """replay's rows for `patches` with the thing `thing` metres before "w", and wall by wall how many texels
+        still show a thing's photograph."""
+        w = np.zeros((100, 100), np.float32)
+        w[30:50, 40:60] = thing
+        raw = dict(w=w, clean=np.zeros((100, 100), np.float32), **walls)
+        rows, left, _ = self.ps.replay(raw, list(patches), self.PPM, self.TOP, self.F, atlas.patch)
+        return rows, {i: int((t > self.ps.SHOWS).sum()) for i, t in left.items()}
+
+    @staticmethod
+    def counts(row):
+        return {edge: (e["beneath"], e["shows"]) for edge, e in row["edges"].items()}
+
+    def fills(self, *patches, blank_on=("w",), walls=()):
+        """replay's rows for `patches` on flat walls with nothing before them, where no station coloured rows 30 to
+        49 and columns 40 to 59 of each wall of `blank_on`, and wall by wall how many texels under a patch still
+        show fill."""
+        raw = {i: np.zeros((100, 100), np.float32) for i in ("w", "clean", *walls)}
+        blank = {i: np.zeros((100, 100), bool) for i in raw}
+        for i in blank_on:
+            blank[i][30:50, 40:60] = True
+        rows, left, spilt = self.ps.replay(raw, list(patches), self.PPM, self.TOP, self.F, atlas.patch, blank=blank)
+        self.assertEqual({i: int((t > self.ps.SHOWS).sum()) for i, t in left.items()}, {i: 0 for i in raw})     # fill is no thing
+        return rows, {i: int((t > self.ps.SHOWS).sum()) for i, t in spilt.items()}
+
+    @staticmethod
+    def fill_counts(row):
+        return {edge: (e["unseen"], e["fill_shows"]) for edge, e in row["edges"].items()}
+
+    def test_the_bands_are_where_the_atlas_step_feathers(self):
+        # the atlas step's own weights, read as replay reads them (ones laid over zeros), are under 1 on the bands and nowhere else
+        zeros, ones = np.zeros((100, 100, 1), np.float32), np.ones((100, 100, 1), np.float32)
+        cases = (((0.2, 0.7, 0.2, 0.6), {"top", "left", "right", "bottom"}), ((0.0, 0.5, 0.2, 0.6), {"top", "right", "bottom"}),
+                 ((0.5, 1.0, 0.2, 0.6), {"top", "left", "bottom"}), ((0.2, 0.7, 0.0, 0.6), {"top", "left", "right"}),
+                 ((0.0, 1.0, 0.0, 0.5), {"top"}))
+        for (u0, u1, v0, v1), edges in cases:
+            r0, r1, c0, c1 = int(round((1 - v1) * 100)), int(round((1 - v0) * 100)), int(round(u0 * 100)), int(round(u1 * 100))
+            weight = atlas.patch(zeros.copy(), u0, u1, v0, v1, "copy", (None, u0, False), 1.0, self.F, self.PPM, self.TOP,
+                                 source=ones)[r0:r1, c0:c1, 0]
+            cut = self.ps.bands(u0, u1, v0, 1.0, r1 - r0, c1 - c0, self.F)
+            self.assertEqual(set(cut), edges, (u0, u1, v0, v1))
+            banded = np.zeros(weight.shape, bool)
+            for sel in cut.values():
+                banded[sel] = True
+            self.assertTrue(np.array_equal(banded, weight < 1), (u0, u1, v0, v1))
+            self.assertTrue((weight[~banded] == 1).all() and weight.min() == 0)
+
+    def test_a_thing_under_a_seam_shows(self):
+        rows, showing = self.seams(0.30, self.A)
+        top = rows[0]["edges"]["top"]
+        self.assertEqual((top["texels"], top["beneath"], top["most_m"], top["shows"], top["most_share"]), (300, 100, 0.3, 100, 1.0))
+        self.assertEqual(top["at"], dict(u=[0.405, 0.595], v=[0.555, 0.595]))
+        self.assertEqual(self.counts(rows[0]), dict(top=(100, 100), left=(0, 0), right=(0, 0)))       # on the floor: no bottom edge
+        self.assertNotIn("at", rows[0]["edges"]["left"])
+        self.assertEqual(showing, dict(w=100, clean=0))
+
+    def test_what_is_not_a_thing_does_not_count(self):
+        # moved back to the wall (as a `behind` edit leaves it), within the margin, and an opening
+        for thing in (0.0, 0.05, self.ps.NOTHING):
+            rows, showing = self.seams(thing, self.A)
+            self.assertEqual(self.counts(rows[0]), dict(top=(0, 0), left=(0, 0), right=(0, 0)), thing)
+            self.assertEqual(showing, dict(w=0, clean=0), thing)
+        # nor a thing wholly inside a patch, which the likeness covers at its whole weight
+        inside = ("w", 1.0, 0.2, 0.8, 0.0, 0.8, "copy", ("clean", 0.2, False))        # rows 20 to 99: its top band ends above the thing
+        rows, showing = self.seams(0.30, inside)
+        self.assertEqual(self.counts(rows[0]), dict(top=(0, 0), left=(0, 0), right=(0, 0)))
+        self.assertEqual(showing, dict(w=0, clean=0))
+        # nor anything beneath a likeness that is itself of an opening: there is nothing to measure it from
+        gap = np.full((100, 100), self.ps.NOTHING, np.float32)
+        rows, showing = self.seams(0.30, ("w", 1.0, 0.2, 0.8, 0.0, 0.6, "copy", ("gap", 0.2, False)), gap=gap)
+        self.assertEqual(self.counts(rows[0]), dict(top=(0, 0), left=(0, 0), right=(0, 0)))
+        self.assertEqual(showing, dict(w=0, clean=0, gap=0))
+
+    def test_a_later_patch_over_a_seam_takes_it_off(self):
+        over = ("w", 1.0, 0.3, 0.7, 0.4, 0.8, "copy", ("clean", 0.3, False))          # rows 20 to 59, columns 30 to 69: the thing whole, inside its bands
+        rows, showing = self.seams(0.30, self.A, over)
+        self.assertEqual(self.counts(rows[0])["top"], (100, 0))                       # beneath it when it was laid; not showing in the end
+        self.assertEqual(self.counts(rows[1]), dict(top=(0, 0), left=(0, 0), right=(0, 0), bottom=(0, 0)))
+        self.assertEqual(showing, dict(w=0, clean=0))
+        # laid the other way round, the first patch's likeness beneath the second's seam is not a thing
+        rows, showing = self.seams(0.30, over, self.A)
+        self.assertEqual(self.counts(rows[1]), dict(top=(0, 0), left=(0, 0), right=(0, 0)))
+        self.assertEqual(showing, dict(w=0, clean=0))
+
+    def test_a_patch_that_only_feathers_across_leaves_its_share(self):
+        # the same patch twice: the photograph beneath keeps (1 - weight) squared: 1, 0.64, 0.36, 0.16 and 0.04 down the band
+        rows, showing = self.seams(0.30, self.A, self.A)
+        self.assertEqual([self.counts(row)["top"] for row in rows], [(100, 80), (60, 80)])    # the second finds it at over half on three rows
+        self.assertEqual(showing, dict(w=80, clean=0))
+
+    def test_a_copy_brings_what_its_source_shows(self):
+        onward = ("x", 1.0, 0.2, 0.8, 0.0, 0.8, "copy", ("w", 0.2, False))            # the patched part of "w", seam and all, laid on "x"
+        rows, showing = self.seams(0.30, self.A, onward, x=np.zeros((100, 100), np.float32))
+        self.assertEqual(self.counts(rows[1]), dict(top=(0, 0), left=(0, 0), right=(0, 0)))   # inside the copy, not on its seams
+        self.assertEqual(showing, dict(w=100, clean=0, x=100))
+        # a clean likeness laid over that part of "x" afterwards takes it off again
+        over = ("x", 1.0, 0.3, 0.7, 0.4, 0.8, "copy", ("clean", 0.3, False))
+        rows, showing = self.seams(0.30, self.A, onward, over, x=np.zeros((100, 100), np.float32))
+        self.assertEqual(showing, dict(w=100, clean=0, x=0))
+
+    def test_a_copied_likeness_stands_where_its_source_was_patched_to(self):
+        # "x" has the same thing. The likeness copied from "w" after its patch stands at the wall there, so the thing
+        # on "x" is before it; read from "w" as scanned, the likeness would stand where the thing does and hide it.
+        x = np.zeros((100, 100), np.float32)
+        x[30:50, 40:60] = 0.30
+        rows, showing = self.seams(0.30, self.A, ("x", 1.0, 0.2, 0.8, 0.0, 0.6, "copy", ("w", 0.2, False)), x=x)
+        self.assertEqual(self.counts(rows[1])["top"], (100, 100))
+        self.assertEqual(showing, dict(w=100, clean=0, x=100))
+
+    def test_a_mirrored_likeness_is_measured_from_where_it_stood(self):
+        rows, showing = self.seams(0.30, ("w", 1.0, 0.5, 0.9, 0.0, 0.6, "mirror", 0.45))      # columns 50 to 89, drawn from the clean columns 39 to 0
+        self.assertEqual(self.counts(rows[0]), dict(top=(50, 50), left=(50, 50), right=(0, 0)))
+        self.assertEqual(showing, dict(w=75, clean=0))                                        # the two bands share their corner
+        # drawn from the thing's own other half, the likeness stands where the thing does: the measure is from the
+        # likeness, and it finds nothing (the module's docstring says so)
+        rows, showing = self.seams(0.30, ("w", 1.0, 0.5, 0.9, 0.0, 0.6, "mirror", 0.5))
+        self.assertEqual(showing, dict(w=0, clean=0))
+
+    def test_a_place_no_station_coloured_under_a_seam_shows_its_fill(self):
+        rows, showing = self.fills(self.A)
+        self.assertEqual(self.fill_counts(rows[0]), dict(top=(100, 100), left=(0, 0), right=(0, 0)))
+        self.assertEqual(self.counts(rows[0]), dict(top=(0, 0), left=(0, 0), right=(0, 0)))           # and it is not counted as a thing
+        self.assertEqual(showing, dict(w=100, clean=0))                 # the rows of the place above the patch are not under a patch
+        # without the photographs' word on which texels are coloured, the fill is not counted at all
+        flat = dict(w=np.zeros((100, 100), np.float32), clean=np.zeros((100, 100), np.float32))
+        rows, _, spilt = self.ps.replay(flat, [self.A], self.PPM, self.TOP, self.F, atlas.patch)
+        self.assertIsNone(spilt)
+        self.assertEqual(set(rows[0]["edges"]["top"]), {"texels", "beneath", "most_m", "shows", "most_share"})
+
+    def test_a_later_patch_over_the_fill_takes_it_off(self):
+        over = ("w", 1.0, 0.3, 0.7, 0.4, 0.8, "copy", ("clean", 0.3, False))          # rows 20 to 59, columns 30 to 69: the place whole, inside its bands
+        rows, showing = self.fills(self.A, over)
+        self.assertEqual(self.fill_counts(rows[0])["top"], (100, 0))                   # beneath the seam when it was laid; covered in the end
+        self.assertEqual(showing, dict(w=0, clean=0))
+        # laid the other way round, what lies beneath the second patch's seam is the first's likeness, not fill
+        rows, showing = self.fills(over, self.A)
+        self.assertEqual(self.fill_counts(rows[1]), dict(top=(0, 0), left=(0, 0), right=(0, 0)))
+        self.assertEqual(showing, dict(w=0, clean=0))
+        # and a patch that only feathers across it leaves the fill its share, as it leaves a thing's
+        rows, showing = self.fills(self.A, self.A)
+        self.assertEqual([self.fill_counts(row)["top"] for row in rows], [(100, 80), (60, 80)])
+        self.assertEqual(showing, dict(w=80, clean=0))
+
+    def test_a_likeness_brings_the_fill_of_its_source(self):
+        # "x" is coloured throughout. It takes its likeness from the part of "w" that holds the place no station
+        # coloured, which no patch covers: the fill arrives inside the patch, at its whole weight.
+        onward = ("x", 1.0, 0.2, 0.8, 0.0, 0.8, "copy", ("w", 0.2, False))
+        rows, showing = self.fills(onward, walls=("x",))
+        self.assertEqual(self.fill_counts(rows[0]), dict(top=(0, 0), left=(0, 0), right=(0, 0)))       # not on its seams
+        self.assertEqual(showing, dict(w=0, clean=0, x=400))            # "w" has no patch: its own fill is not a patch's
+        # a coloured likeness laid over that part of "x" afterwards takes it off again
+        over = ("x", 1.0, 0.3, 0.7, 0.4, 0.8, "copy", ("clean", 0.3, False))
+        rows, showing = self.fills(onward, over, walls=("x",))
+        self.assertEqual(showing, dict(w=0, clean=0, x=0))
+        # a mirrored likeness drawn from the place brings it too: columns 60 to 89 from 59 to 30, so the place lands
+        # on columns 60 to 79, the first of them at no weight and the next four under the patch's left seam
+        rows, showing = self.fills(("w", 1.0, 0.6, 0.9, 0.0, 0.8, "mirror", 0.6))
+        self.assertEqual(self.fill_counts(rows[0]), dict(top=(0, 0), left=(0, 80), right=(0, 0)))
+        self.assertEqual(showing, dict(w=380, clean=0))
+
+
 class Windows(unittest.TestCase):
     def test_tops_match_window_relief(self):
         wr = legacy.window_relief()

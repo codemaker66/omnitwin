@@ -227,7 +227,7 @@
         "name": "Front wall (lobby to the Grand Hall)",
         "kind": "solid",
         "height": 5.515,
-        "note": "E57 Y = 1.470 (panelling; plaster 1.448, pedestal 1.510). Carries the lobby door and the store door; a carved sideboard stands against it (E57 X -3.32..-1.00)."
+        "note": "E57 Y = 1.470 (panelling; plaster 1.448, pedestal 1.510). Carries the lobby door and the store door; a carved sideboard stands against it (E57 X -3.32..-1.00 as first read off the mesh; in this wall's elevation it shows from u 2.69, where the lobby door's open leaf ends, to u 4.70)."
       },
       {
         "id": "window-front-end",
@@ -2249,31 +2249,173 @@
   "concealedLights": [],
   "edits": [
     {
-      "type": "recess",
+      "type": "patch",
       "wall": "front",
       "u": [
-        {
-          "opening": "door-lobby",
-          "offset": -0.55
-        },
-        {
-          "opening": "door-lobby",
-          "offset": 0.55
-        }
+        0.855,
+        2.09
       ],
       "v": [
         0.0,
         2.45
       ],
-      "depth": 0.3,
-      "leafPlane": 0.05,
+      "mode": "mirror",
+      "about": 3.469,
       "applies": [
+        "photo",
         "relief"
       ],
-      "note": "PROPOSED. The lobby door stood open: a plain recess, its closed leaf modelled by the web (as the Grand Hall's main door). Leaf plane not measured."
+      "note": "The lobby door stood open in the scan, and through it the elevation holds the lobby beyond and nothing at all. Its opening (u 0.855 to 1.992 between the jambs, read off the relief) takes the picture and the relief of the store door's leaf, this wall's other door, closed, mirrored about the point midway between the two (u 3.469: the store door's leaf runs from u 4.93 to 6.10), so the knob falls on the side the open leaf's does. The store door's small brass plate arrives mirrored. The patch runs on past the jamb to u 2.09, under the architrave's own patch (the next edit, applied after this one). A patch's photograph is feathered over its seams (survey.atlas.featherTexels, 5 cm here), and while this one ended at the jamb (until 20 November) the lobby seen through the open door, pale against the dark leaf, showed through the last centimetres of the shut door's edge. That seam now lies on patched wood. A patch is feathered inward, so its outer 5 cm show what lies beneath it: where the open leaf stood (this patch's top from u 1.98, the architrave's top and its right seam) that was the leaf's own picture until 24 November. The leaf is now moved back whole (the first `behind` edit below), and the architrave's likeness covers what is left of it there (the two edits after this one). The relief is copied without a feather, and the architrave's patch replaces it from u 1.99 as before. Replaces the plain recess proposed on 18 October (its closed leaf was to be modelled by the web)."
     },
     {
-      "type": "recess",
+      "type": "patch",
+      "wall": "front",
+      "u": [
+        1.99,
+        2.24
+      ],
+      "v": [
+        0.0,
+        2.45
+      ],
+      "mode": "mirror",
+      "about": 1.42,
+      "applies": [
+        "photo",
+        "relief"
+      ],
+      "note": "The lobby door's open leaf, hinged on this jamb, stood before the door's own architrave (in the elevation the leaf runs from u 1.98 to 2.67, 0.05 to 1.0 m before the wall). The architrave takes the picture and the relief of the door's other architrave (u 0.60 to 0.85), mirrored about the middle of the door case (u 1.42: its outer edges are at u 0.60 and 2.24, read off the relief beside the door and above the leaf). Until 18 November the patch ran on to u 2.489 and put the corner's panelling over the first lettered board, which begins at u 2.26: see the board's `behind` edit. The leaf stood before this patch's top and right seams too, and 4 cm higher than the patch (to about v 2.49): the first `behind` edit below moves it back whole, and the next two edits run this likeness on in the photograph, above the door's head and under the sideboard's patch."
+    },
+    {
+      "type": "patch",
+      "wall": "front",
+      "u": [
+        1.99,
+        2.21
+      ],
+      "v": [
+        2.35,
+        2.75
+      ],
+      "mode": "mirror",
+      "about": 1.42,
+      "applies": [
+        "photo"
+      ],
+      "note": "The door case's upper right corner, in the photograph only: the architrave's likeness run on above the door's head, to the top of the door case (v 2.70) and 5 cm past it. Two things were wrong there in the build of 25 November. The part of the leaf's top edge that stands less than 6 cm before the door case is not moved by the `behind` edit (from the hinge to u 2.12, v 2.45 to 2.49), and its picture showed as a pale sliver over a dark ledge. And above the leaf, to about v 2.56, the door case is photographed as a plain block with hard edges, where the door's other corner shows its mouldings and their mitre: for a station that faces the wall, the leaf's top edge hid the door case just above it. The likeness is that other corner (u 0.63 to 0.85), mirrored about the middle of the door case as the architrave is. It begins 10 cm below the door's head, on the architrave's own patch, and its feathered top lies on the frieze above the door case. It ends at u 2.21, 3 cm short of the architrave's patch: the door case's outer edge on this side is a flat strip against the lettered board (u 2.21 to 2.26), which the stations saw and the other corner has not (there the edge slopes back to a recessed panel). The relief is left as scanned: above the head it is the door case itself, which stands 2 to 3 cm further out than the mirrored architrave below it, and what is left of the leaf's edge on it is at most 3 cm before the door case's own face."
+    },
+    {
+      "type": "patch",
+      "wall": "front",
+      "u": [
+        2.14,
+        2.34
+      ],
+      "v": [
+        0.0,
+        1.18
+      ],
+      "mode": "mirror",
+      "about": 1.42,
+      "applies": [
+        "photo"
+      ],
+      "note": "Below the dado rail, in the photograph only: the architrave's likeness run on 10 cm past the architrave, under the sideboard's patch, which begins at u 2.24 and, being copied from another wall, is applied after this wall's own patches. Both are feathered inward over 5 cm, so where they met the wall beneath showed between them, at its whole weight on the line itself. Beneath, since the leaf is moved back, is wall that no station saw (it was behind the leaf), which the atlas fills from whatever lies round it: in the build of 25 November a pale blotch and a dark stripe showed along that line. Mirrored about the middle of the door case as the architrave is, so it lays the architrave's outer part again and, past it, the dado just left of the door case (u 0.50 to 0.60); of that dado only the 5 cm under the sideboard patch's feathered edge are seen. The relief is copied without a feather, and its two patches meet at u 2.24 as before."
+    },
+    {
+      "type": "behind",
+      "wall": "front",
+      "u": [
+        1.94,
+        2.68
+      ],
+      "v": [
+        0.0,
+        2.5
+      ],
+      "like": "left",
+      "note": "The lobby door's open leaf, whole. In the elevation it stands before the wall from its hinge (u 1.98) to its free edge (u 2.68), 0.05 to 1.0 m out, from the floor to about v 2.49, 4 cm above the door's head. Every texel of it more than 6 cm before the door case is moved back to the door case's depth: each row takes the depth of the strip just left of the rectangle (u 1.84 to 1.94), which above the head (v 2.45) is the door's lintel; beside the open doorway that strip is the opening, and those rows take the lintel's lowest row's. Until 24 November only the part before the first board was moved (the next edit). The leaf's top edge then stood above the architrave's patch, a wedge up to 0.3 m proud in the relief with a dark ledge in the photograph, and the feathered seams of the three patches round it lay on the leaf's own picture. What is left of the leaf is what stands less than 6 cm before the door case: its first centimetres by the hinge (to u 2.04), under the two door patches, and above the head a wedge of its top edge (to u 2.12), which the photograph's patch for the door case's corner covers. Of the wall behind the leaf, what a station saw past it is photographed (the lettered board, the dado rail, the architrave's outer edge above the rail). The rest, most of it below the rail, no station saw: it has no photograph, the atlas fills it from its surroundings, and the patches cover it at their whole weight. Listed before the board's edit because, where two `behind` rectangles overlap, a texel takes the depth of the later one that moves it."
+    },
+    {
+      "type": "behind",
+      "wall": "front",
+      "u": [
+        2.24,
+        2.68
+      ],
+      "v": [
+        1.13,
+        2.5
+      ],
+      "like": "right",
+      "note": "The lobby door's open leaf also stood before the first lettered board, which begins at u 2.26: from the dado rail to the leaf's top the elevation holds the leaf, 0.4 to 1.0 m before the wall, where the board is. Those texels are moved back to the board, each row to the depth of the same board just beyond the leaf (u 2.68 to 2.78), so that the board's lettering is photographed from the stations that saw it past the leaf. The rectangle runs to v 2.5, above the leaf's top (to 2.47 until 24 November, which left its top row). It stops at v 1.13 because below that the strip beside the leaf is the sideboard: there the edit before this one moves the leaf back, and the sideboard's patch covers its place."
+    },
+    {
+      "type": "patch",
+      "wall": "rear",
+      "u": [
+        0.0,
+        1.65
+      ],
+      "v": [
+        0.0,
+        1.06
+      ],
+      "mode": "mirror",
+      "about": 3.5505,
+      "applies": [
+        "photo",
+        "relief"
+      ],
+      "note": "Movable: a piano stood in the rear corner by the fireplace wall. On this wall it stands 0.3 to 0.6 m before the dado from the corner to u 1.65, to 1.01 m above the floor. The patch ends 5 cm above the piano (v 1.06; 1.05 until 24 November): a patch is feathered inward over 5 cm, and the piano's top edge showed faintly through the seam. Mirrored from the wall's other end about the wall's centre (its length 7.101 m)."
+    },
+    {
+      "type": "patch",
+      "wall": "front",
+      "u": [
+        2.24,
+        4.8
+      ],
+      "v": [
+        0.0,
+        1.18
+      ],
+      "mode": "copy",
+      "from": {
+        "wall": "rear",
+        "u": 2.27
+      },
+      "applies": [
+        "photo",
+        "relief"
+      ],
+      "note": "Movable: a carved sideboard stood against this wall between its two doors (in the elevation from u 2.69, where the open leaf ends, to u 4.70; its body 0.8 m off the wall to about 0.95 m above the floor, an upstand 0.36 m off the wall above that, to 1.125 m at its highest), and the lobby door's open leaf before its end (from u 2.24, where the door's architrave ends). No station sees the dado behind them. The patch runs to v 1.18, 5 cm above the sideboard's top (to 1.12 until 24 November, below the sideboard's top row): a patch is feathered inward over 5 cm, and the sideboard's top edge showed through the seam along its whole length. Its top seam now lies on the dado rail, which the stations saw above the sideboard and past the leaf. Its left seam, beside the door, lies on the architrave's likeness run on under it (the photograph-only patch above): no station saw the wall there. The rear wall's dado stands in for it, taken to be of the same panelling, from the middle of that wall (u 2.27 to 4.83): where the panels fall behind the sideboard is not known."
+    },
+    {
+      "type": "patch",
+      "wall": "fireplace-rear-end",
+      "u": [
+        0.15,
+        2.19
+      ],
+      "v": [
+        0.0,
+        1.2
+      ],
+      "mode": "copy",
+      "from": {
+        "wall": "fireplace-front-end",
+        "u": 0.008,
+        "mirror": true
+      },
+      "applies": [
+        "photo",
+        "relief"
+      ],
+      "note": "Movable: the piano (see the rear wall's patch) stood before this wall's door and panelling, to 1.19 m above the floor. The fireplace wall's other end is this wall's mirror twin (its door's centre 0.950 m from the room's corner, this one's 0.951 m), so its lower part is taken, mirrored."
+    },
+    {
+      "type": "patch",
       "wall": "window-front-end",
       "u": [
         {
@@ -2289,31 +2431,17 @@
         0.0,
         2.45
       ],
-      "depth": 0.3,
-      "leafPlane": 0.05,
-      "applies": [
-        "relief"
-      ],
-      "note": "PROPOSED. The passage door stood open. Leaf plane not measured."
-    },
-    {
-      "type": "patch",
-      "wall": "front",
-      "u": [
-        1.999,
-        2.489
-      ],
-      "v": [
-        0.0,
-        2.45
-      ],
-      "mode": "mirror",
-      "about": 1.434,
+      "mode": "copy",
+      "from": {
+        "wall": "window-rear-end",
+        "u": 0.431,
+        "mirror": true
+      },
       "applies": [
         "photo",
         "relief"
       ],
-      "note": "PROPOSED. The lobby door's open leaf stands in front of the panelling at E57 X -1.27..-0.57 (u 1.999..2.699); mirrored about the door's centre (u 1.434). The target is u 1.999..2.489 (X -0.57..-1.06), so its source is E57 X 0.56..1.05 (u 0.379..0.869): beyond that the source wall has a slot (X 1.14..1.22, 1.8..2.6 m) and, below 1.0 m, a 9 cm set-back (X 1.06..1.26) that the hidden target does not. Corrected 18 Oct (T-662 stage 2): the earlier target u 2.211..2.7 mirrored onto X 0.77..1.26, which holds the slot and the set-back. The remaining strip u 2.489..2.699 (X -1.06..-1.27) needs another source (the room's XGRIDS frames). The source holds a corner loudspeaker above 1.6 m: patch that first or split v."
+      "note": "The passage door stood open in the scan (its leaf ajar in the passage), and the elevation holds nothing in its opening. It takes the picture and the relief of the stair door, closed, in the window wall's other end, mirrored: that end is this one's mirror twin, and its door is 1.09 m wide to this one's 1.12 m. Replaces the plain recess proposed on 18 October."
     }
   ],
   "occluders": [

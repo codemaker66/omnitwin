@@ -24,6 +24,7 @@ Scratch: SURVEYED_ROOMS_TEST_SCRATCH (default: the system temp folder).
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1125,6 +1126,523 @@ class MarginLeavesAWallUnlabelled(unittest.TestCase):
         with self.assertRaises(AssertionError) as again:            # the photographs stop at it too, saying the same
             step(work, "wall-photo", "south", depth=PROUD_DEPTH)
         self.assertIn(f"and {given} of this wall's texels were seen only in such views", str(again.exception))
+
+
+# --- B26: the wall behind what stood before it --------------------------------------------------------------------
+
+LEAF = dict(u=(2.5, 3.1), v=(0.6, 2.2), d=0.5)    # a board 0.5 m before the south wall (6 m), as the elevation and the depth maps hold it
+LEAF_STATIONS = (("scan_100", 2.8, 1.6), ("scan_101", 0.8, 1.0), ("scan_102", 4.8, 1.0))   # id, u along the wall, metres off it
+LEAF_DADO = dict(top=1.0, d=0.05)                 # below `top` the wall itself stands `d` before its face, its whole length
+LEAF_DEPTH = 256                                  # cubemap texels
+LEAF_BOARD = np.array([0.03, 0.02, 0.015])        # the board's picture: darker than anything on the wall
+
+
+def wall_pattern(u, v):
+    """The wall's own picture (linear RGB): slow bands along it and up it, nowhere near as dark as the board."""
+    return np.stack([0.30 + 0.12 * np.sin(2 * np.pi * u / 0.37), 0.28 + 0.12 * np.sin(2 * np.pi * v / 0.29), 0.22 + 0.0 * u], axis=-1)
+
+
+class Behind(unittest.TestCase):
+    """A board stands half a metre before a patterned wall, as the lobby door's open leaf stands before the Saloon's
+    first lettered board. The elevation holds the board, so there the wall's photograph is the board's and its
+    relief a lump half a metre proud; a patch can cover a dado with another dado, but not lettering with lettering.
+    With a `behind` edit the corners step moves the region's texels back to where the wall is (each row's depth from
+    the strip of wall just beyond the region, or one depth for all), and the wall is then photographed from the two
+    stations that see past the board, while the one that faces the board no longer counts there."""
+
+    @classmethod
+    def build(cls, name, edit, through=True):
+        work = os.path.join(T4, name)
+        cfg = config(RECT, ["east", "south", "west", "north"], edits=[edit] if edit else [])
+        cfg["stations"] = [{"id": sid, "role": "room"} for sid, _, _ in LEAF_STATIONS]
+        room = write_room(work, cfg)
+        wall = room.wmap["south"]
+        (cX, cY), (uX, uY), (nX, nY) = wall["cornerE57"], wall["uE57"], wall["normalE57"]
+        corner, along, normal = np.array([cX, cY, 0.0]), np.array([uX, uY, 0.0]), np.array([nX, nY, 0.0])
+
+        def e57(u, off, z):
+            return corner + u * along + off * normal + np.array([0.0, 0.0, z])
+
+        def cuboid(us, vs, d0, d1):
+            pts = np.array([e57(u, d, v) for u in us for v in vs for d in (d0, d1)])
+            return pts.min(axis=0), pts.max(axis=0)
+
+        board = cuboid(LEAF["u"], LEAF["v"], LEAF["d"] - 0.04, LEAF["d"])
+        dado = cuboid((0.0, wall["length"]), (0.0, LEAF_DADO["top"]), -0.5, LEAF_DADO["d"])
+
+        def relief(U, V):
+            own = np.where(V < LEAF_DADO["top"], LEAF_DADO["d"], 0.0)
+            on_board = (U >= LEAF["u"][0]) & (U <= LEAF["u"][1]) & (V >= LEAF["v"][0]) & (V <= LEAF["v"][1])
+            return np.where(on_board, LEAF["d"], own), np.ones(U.shape, bool)
+
+        U = V = None
+        for w in room.walls:
+            out = write_wall(room, work, w, relief if w is wall else flat)
+            if w is wall:
+                U, V, _ = out
+        stations = [dict(id=sid, t=list(e57(u, off, 1.5)), gain=1.0) for sid, u, off in LEAF_STATIONS]
+        box = (CENTRE[0] - 2.0, CENTRE[0] + 2.0, CENTRE[1] - 3.0, CENTRE[1] + 3.0, 0.0, 3.0)
+        data = os.path.join(work, "data")
+        synth.write_manifest(data, stations)
+        synth.write_depth_maps(data, stations, LEAF_DEPTH, lambda o, d: np.minimum(
+            np.minimum(synth.box_distance(o, d, box), slab_distance(o, d, *dado)), slab_distance(o, d, *board)))
+
+        def colour(s, dirs):
+            o = np.asarray(s["t"], float)
+            t = np.minimum(synth.box_distance(o, dirs, box), slab_distance(o, dirs, *dado))
+            rel = o + dirs * t[..., None] - corner
+            on_wall = rel @ normal < LEAF_DADO["d"] + 1e-6            # the south wall's face or its dado, not the rest of the room
+            scene = np.where(on_wall[..., None], wall_pattern(rel @ along, rel[..., 2]), np.array([0.45, 0.45, 0.45]))
+            return np.where((slab_distance(o, dirs, *board) < t)[..., None], LEAF_BOARD, scene)
+
+        synth.write_panoramas(data, stations, 2048, 1024, colour)
+        log = step(work, "corners").stdout
+        (v,) = room.tiles(wall)
+        w, h = v["pixels"]
+        fixed = np.fromfile(os.path.join(work, "out-walls", f"{v['name']}.fixed.f32"), np.float32).reshape(h, w, 4)[::-1]
+        out = dict(room=room, U=U, V=V, log=log, depth=(fixed[..., 0] - cX) * nX + (fixed[..., 1] - cY) * nY,
+                   along=(fixed[..., 0] - cX) * uX + (fixed[..., 1] - cY) * uY, up=fixed[..., 2])
+        if through:
+            step(work, "labels", "south", depth=LEAF_DEPTH)
+            step(work, "wall-photo", "south", depth=LEAF_DEPTH)
+            npz = np.load(os.path.join(work, "proj", f"{v['name']}.npz"))
+            labels = np.load(os.path.join(work, "proj", "labels-south.npz"))
+            out.update(rgb=npz["rgb"], coloured=npz["weight"] > 0, station=np.array([str(s) for s in labels["stations"]]),
+                       texel_label=labels["texel_label"])
+        return out
+
+    @classmethod
+    def setUpClass(cls):
+        region = dict(type="behind", wall="south", u=list(LEAF["u"]), v=list(LEAF["v"]))
+        cls.region = region
+        cls.closed = cls.build("behind-closed", None)
+        cls.open = cls.build("behind-open", dict(region, like="right", note="a board before the wall"))
+        cls.constant = cls.build("behind-depth", dict(region, depth=0.0), through=False)
+        U, V = cls.closed["U"], cls.closed["V"]
+        cls.on_board = (U >= LEAF["u"][0]) & (U <= LEAF["u"][1]) & (V >= LEAF["v"][0]) & (V <= LEAF["v"][1])
+        # well inside the region: clear of its edges, and of the dado's ledge, by 5 cm
+        cls.inside = ((U > LEAF["u"][0] + 0.05) & (U < LEAF["u"][1] - 0.05) & (V > LEAF["v"][0] + 0.05) & (V < LEAF["v"][1] - 0.05)
+                      & (np.abs(V - LEAF_DADO["top"]) > 0.05))
+        cls.own = np.where(V < LEAF_DADO["top"], LEAF_DADO["d"], 0.0)
+
+    def test_1_gate(self):
+        self.assertNotIn("B26", {r["gate"] for r in self.closed["room"].ledger()})
+        rows = [(r["where"], r["note"]) for r in self.open["room"].ledger() if r["gate"] == "B26"]
+        self.assertEqual(rows, [("wall south", "u 2.500..3.100, v 0.6..2.2, each row's depth from the wall beyond its right")])
+        rows = [(r["where"], r["note"]) for r in self.constant["room"].ledger() if r["gate"] == "B26"]
+        self.assertEqual(rows, [("wall south", "u 2.500..3.100, v 0.6..2.2, at 0 m before the face")])
+        gh = Room(os.path.join(ROOMS, "grand-hall.room.json"), ROOMS)
+        self.assertNotIn("B26", {r["gate"] for r in gh.ledger()})
+
+    def test_2_without_the_edit_the_wall_wears_the_board(self):
+        c = self.closed
+        self.assertTrue(np.allclose(c["depth"][self.on_board], LEAF["d"], atol=1e-5))            # the lump, half a metre proud
+        lum = c["rgb"] @ np.array([0.2126, 0.7152, 0.0722])
+        self.assertGreater(float(c["coloured"][self.inside].mean()), 0.99)
+        self.assertLess(float(lum[self.inside].max()), 0.06, "the fault did not occur: the test proves nothing")
+
+    def test_3_the_corners_step_puts_the_wall_back_row_by_row(self):
+        o, c = self.open, self.closed
+        self.assertLess(float(np.abs(o["depth"] - self.own)[self.on_board].max()), 1e-5)          # each row at its own depth: dado and face
+        outside = ~self.on_board
+        self.assertTrue(np.array_equal(o["depth"][outside], c["depth"][outside]))                 # nothing else moved
+        for key in ("along", "up"):                                                               # same place along the wall and up it
+            self.assertLess(float(np.abs(o[key] - c[key]).max()), 1e-5, key)
+        self.assertRegex(o["log"], r"south behind u 2\.500\.\.3\.100 v 0\.6\.\.2\.2: moved back \d+ texels")
+        moved = int(re.search(r"south behind .*moved back (\d+) texels", o["log"]).group(1))
+        self.assertEqual(moved, int(self.on_board.sum()))
+        self.assertLess(float(np.abs(self.constant["depth"][self.on_board]).max()), 1e-5)         # one depth for all: the face
+        self.assertTrue(np.array_equal(self.constant["depth"][outside], c["depth"][outside]))
+
+    def test_4_the_wall_behind_is_photographed_from_the_stations_that_see_past(self):
+        o = self.open
+        want = wall_pattern(o["U"], o["V"])
+        self.assertGreater(float(o["coloured"][self.inside].mean()), 0.99)
+        error = np.abs(o["rgb"] - want)[self.inside & o["coloured"]]
+        self.assertLess(float(error.mean()), 0.02, "the wall's own bands are not what was photographed")
+        self.assertLess(float(np.percentile(error, 99)), 0.06)
+        lum = o["rgb"] @ np.array([0.2126, 0.7152, 0.0722])
+        self.assertGreater(float(lum[self.inside & o["coloured"]].min()), 0.10)                    # nothing of the board is left
+        used = set(o["station"][np.unique(o["texel_label"][self.inside & (o["texel_label"] >= 0)])])
+        self.assertTrue(used and used <= {"scan_101", "scan_102"}, used)                          # never the one that faces the board
+        # and the wall beside the region is as it was
+        beside = ~self.on_board & self.closed["coloured"] & o["coloured"] & (np.abs(o["U"] - 2.8) > 0.6)
+        self.assertLess(float(np.abs(o["rgb"] - self.closed["rgb"])[beside].mean()), 0.01)
+
+
+class BehindChecks(unittest.TestCase):
+    """check_room on `behind` edits (no build): one of `like` and `depth` (the schema's oneOf), a strip inside the
+    wall, a depth where the wall can be drawn, a rectangle that holds a texel, and a wall the corners step visits."""
+
+    def errors(self, change=None, **fields):
+        """check_room's errors for the T4 room with Behind's edit (the board's rectangle on the south wall, like
+        right), its fields changed (None drops one) and then `change` applied to the whole config."""
+        import check_room  # noqa: PLC0415
+        edit = dict(type="behind", wall="south", u=list(LEAF["u"]), v=list(LEAF["v"]), like="right")
+        for key, value in fields.items():
+            if value is None:
+                edit.pop(key, None)
+            else:
+                edit[key] = value
+        cfg = config(RECT, ["east", "south", "west", "north"], edits=[edit])
+        if change:
+            change(cfg)
+        return "\n".join(check_room.check(cfg, roomlib.load(os.path.join(ROOMS, "room.schema.json")), None).errors)
+
+    def test_1_one_depth_and_a_strip_inside_the_wall(self):
+        self.assertEqual(self.errors(), "")
+        self.assertEqual(self.errors(like=None, depth=0.02), "")
+        both, neither = self.errors(depth=0.0), self.errors(like=None)
+        self.assertIn("schema $.edits[0]", both)
+        self.assertIn("must match exactly one of oneOf (2 branches match)", both)
+        self.assertIn("schema $.edits[0]", neither)
+        self.assertIn("must match exactly one of oneOf (missing like; missing depth)", neither)
+        self.assertIn("the strip of wall beyond its right", self.errors(u=[5.5, 5.95]))          # 5 cm of wall left: the strip is 10
+        self.assertIn("the strip of wall beyond its left", self.errors(like="left", u=[0.05, 0.6]))
+        self.assertIn("schema", self.errors(like="above"))
+
+    def test_2_a_depth_where_the_wall_can_be_drawn(self):
+        """depth is metres before the face, inside survey.relief.depthRange (here -0.8..0.5), or without a relief
+        inside what the wall views see (eyeInset - far .. eyeInset - near: -0.8..1.2)."""
+        for depth in (0.0, 0.02, 0.15, -0.02, -0.8, 0.5):
+            self.assertEqual(self.errors(like=None, depth=depth), "", depth)
+        for depth in (0.51, -0.81, 40, -5):
+            said = self.errors(like=None, depth=depth)
+            self.assertIn(f"depth {depth} m before the face (negative: behind it) is outside survey.relief.depthRange, -0.8..0.5 m", said)
+
+        def no_relief(cfg):
+            cfg["survey"].pop("relief")
+            cfg["survey"]["outputs"].pop("relief")
+
+        self.assertEqual(self.errors(no_relief, like=None, depth=1.0), "")
+        self.assertIn("is outside what the wall views see, -0.8..1.2 m", self.errors(no_relief, like=None, depth=1.3))
+
+    def test_3_a_rectangle_that_holds_a_texel(self):
+        """The wall views' texels are 1 cm here: a rectangle narrower or shorter than that may hold no texel centre."""
+        self.assertIn("is smaller than one texel of the wall views (10 mm a side)", self.errors(v=[1.001, 1.004]))
+        self.assertIn("is smaller than one texel of the wall views (10 mm a side)", self.errors(u=[2.5, 2.505]))
+        self.assertEqual(self.errors(u=[2.5, 2.51]), "")
+        self.assertEqual(self.errors(v=[1.0, 1.01], like=None, depth=0.0), "")
+
+    def test_4_a_wall_the_corners_step_visits(self):
+        """An edit on a wall the elevation order leaves out, or on an open one, would be listed and never applied."""
+        def order(cfg):
+            cfg["survey"]["wallViews"]["order"] = ["east", "south", "west"]
+
+        self.assertEqual(self.errors(order), "")
+        self.assertIn("wall north has no elevation (survey.wallViews.order leaves it out, or it is open)",
+                      self.errors(order, wall="north"))
+
+        def opened(cfg):
+            cfg["walls"]["segments"][3]["kind"] = "open"
+
+        self.assertIn("wall north has no elevation", self.errors(opened, wall="north"))
+
+
+# --- B26 in the corners step alone: which texels move, and to what depth --------------------------------------------
+# The walls' position tiles are written directly and only the corners step runs (seconds): no depth maps, no labels.
+
+BEHIND_RECT = dict(u=[2.4, 3.2], v=[0.5, 2.3])          # the edit's rectangle on the south wall: wider and taller than the board
+BEHIND_BOARD = dict(u=(2.5, 3.1), v=(0.6, 2.2), d=0.5)  # what stood before the wall
+BEHIND_RIGHT = (3.2, 3.3, 0.02)     # the 10 cm of wall just beyond the rectangle's right: 2 cm before the face, the face past it
+BEHIND_LEFT = (2.3, 2.4, -0.01)     # the 10 cm just beyond its left: 1 cm behind the face
+BEHIND_KEEP = dict(u=(2.41, 2.47), d=0.06)   # a moulding 4 cm before its rows' depth (0.02), in the board's rows: wall, it stays
+BEHIND_MOVE = dict(u=(3.13, 3.19), d=0.10)   # one 8 cm before it: it moves
+BEHIND_LUMP = dict(u=(2.6, 2.8), v=(1.0, 1.5), d=0.3)   # on the north wall, inside the rectangle's u and v: no edit names it
+BEHIND_DOOR = dict(id="door", wall="south", kind="door", headShape="square", centre=3.7, width=1.0, sill=0, head=2.0,
+                   glazing="none", stateInScan="open")  # its face, u 3.2..4.2, holds the right strip's lower rows
+BEHIND_BAY = dict(id="bay", wall="north", kind="window", headShape="square", centre=3.7, width=1.0, sill=1.0, head=1.6,
+                  glazing="none", dressing="none", stateInScan="closed")
+# An open door's leaf turned back against the wall beside its doorway, and a board the leaf partly hid: a leaf edit
+# `like` left, whose strip lies in the doorway below its head, from the floor; then a board edit `like` right over it.
+BEHIND_DOOR_WEST = dict(id="door-w", wall="west", kind="door", headShape="square", centre=1.3, width=1.0, sill=0, head=2.0,
+                        glazing="none", stateInScan="open")     # its face, u 0.8..1.8, holds the leaf edit's strip below 2.0
+BEHIND_LEAF_EDIT = dict(type="behind", wall="west", u=[1.8, 2.8], v=[0.0, 2.5], like="left")
+BEHIND_BOARD_EDIT = dict(type="behind", wall="west", u=[2.5, 3.0], v=[1.0, 2.0], like="right")
+
+
+def box(U, V, us, vs=(-1.0, 9.0)):
+    return (U > us[0]) & (U < us[1]) & (V > vs[0]) & (V < vs[1])
+
+
+def behind_south(U, V, lump=None):
+    """The south wall for the corners-only cases (metres before its face). The strips just beyond the rectangle
+    differ left and right, and the right one differs from the wall past it, so the side and the width of the strip
+    both change the depth a row takes (a metre-wide strip on the right holds 90 cm of face). In the board's rows
+    two mouldings flank the board: one 4 cm before the depth its rows take (it is the wall and stays), one 8 cm."""
+    d = np.zeros(U.shape)
+    for u0, u1, depth in (BEHIND_LEFT, BEHIND_RIGHT):
+        d[box(U, V, (u0, u1))] = depth
+    rows = BEHIND_BOARD["v"]
+    d[box(U, V, BEHIND_KEEP["u"], rows)] = BEHIND_KEEP["d"]
+    d[box(U, V, BEHIND_MOVE["u"], rows)] = BEHIND_MOVE["d"]
+    d[box(U, V, BEHIND_BOARD["u"], rows)] = BEHIND_BOARD["d"]
+    if lump:
+        d[box(U, V, lump["u"], lump["v"])] = lump["d"]
+    return d, np.ones(U.shape, bool)
+
+
+def behind_north(U, V):
+    d = np.zeros(U.shape)
+    d[box(U, V, BEHIND_LUMP["u"], BEHIND_LUMP["v"])] = BEHIND_LUMP["d"]
+    return d, np.ones(U.shape, bool)
+
+
+def behind_doorway(U, V):
+    """The south wall beside BEHIND_DOOR: its face (u 3.2..4.2, up to 2.0) shows the passage 0.6 m behind the wall;
+    above its head the strip right of u 3.2 is 2 cm before the face; a leaf stands before the wall left of the door,
+    from below the floor's line in the elevation (its bottom 5 cm) to 2.2 m."""
+    d = np.zeros(U.shape)
+    d[box(U, V, (3.2, 3.3), (2.0, 9.0))] = 0.02
+    d[box(U, V, (3.2, 4.2), (0.0, 2.0))] = -0.6
+    d[box(U, V, (2.5, 3.1), (-1.0, 2.2))] = 0.5
+    return d, np.ones(U.shape, bool)
+
+
+def behind_leaf(U, V):
+    """The west wall beside BEHIND_DOOR_WEST: its face (u 0.8..1.8, up to 2.0) shows the passage 0.6 m behind the wall;
+    above its head the strip left of u 1.8 is 3 cm before the face; the strip right of u 3.0 is 1 cm before it, its
+    whole height; the leaf stands 0.5 m before the wall at u 1.9..2.7, from below the floor's line to 2.3 m."""
+    d = np.zeros(U.shape)
+    d[box(U, V, (1.7, 1.8), (2.0, 9.0))] = 0.03
+    d[box(U, V, (0.8, 1.8), (0.0, 2.0))] = -0.6
+    d[box(U, V, (3.0, 3.1))] = 0.01
+    d[box(U, V, (1.9, 2.7), (-1.0, 2.3))] = 0.5
+    return d, np.ones(U.shape, bool)
+
+
+def behind_window(U, V):
+    """The north wall beside BEHIND_BAY: its face (u 3.2..4.2, v 1.0..1.6) shows the outside 0.5 m behind the wall;
+    the strip right of u 3.2 is the face below it and 6 cm before the face above it; a board stands before the
+    wall left of the window."""
+    d = np.zeros(U.shape)
+    d[box(U, V, (3.2, 3.3), (1.6, 9.0))] = 0.06
+    d[box(U, V, (3.2, 4.2), (1.0, 1.6))] = -0.5
+    d[box(U, V, (2.5, 3.1), (0.8, 1.8))] = 0.5
+    return d, np.ones(U.shape, bool)
+
+
+def corners_only(name, edits, reliefs, openings=()):
+    """Writes the T4 room with these edits and openings, each wall's position tiles from reliefs[wall id] (a plain
+    face where none is given), and runs the corners step. Returns the room, the step's log and, per wall, the
+    positions written and the corrected positions (both with rows from the top)."""
+    work = os.path.join(T4, name)
+    room = write_room(work, config(RECT, ["east", "south", "west", "north"], openings, edits))
+    walls = {}
+    for w in room.walls:
+        U, V, P = write_wall(room, work, w, reliefs.get(w["id"], flat))
+        walls[w["id"]] = dict(U=U, V=V, P=P)
+    log = step(work, "corners").stdout
+    for w in room.walls:
+        tiles = sorted(room.tiles(w), key=lambda v: v["tile"])
+        walls[w["id"]]["fixed"] = np.concatenate(
+            [np.fromfile(os.path.join(work, "out-walls", f"{v['name']}.fixed.f32"), np.float32)
+             .reshape(v["pixels"][1], v["pixels"][0], 4)[::-1] for v in tiles], 1)
+    return dict(room=room, log=log, walls=walls, cfg=room.cfg)
+
+
+def depth_before(room, wall_id, points):
+    """Metres before the wall's face (along its normal, which points into the room) of E57 points."""
+    w = room.wmap[wall_id]
+    rel = points[..., :2].astype(np.float64) - np.array(w["cornerE57"])
+    return rel @ np.array(w["normalE57"], float)
+
+
+class BehindCorners(unittest.TestCase):
+    """What the corners step moves for a `behind` edit and where it puts it, on walls whose position tiles are
+    written directly. The rectangle is wider and taller than the board in it, and holds two mouldings beside the
+    board: only texels more than 6 cm before their row's depth move (the board, and the moulding 8 cm before), and
+    the one 4 cm before stays. The rows take their depth from the strip of wall on the named side, 10 cm wide; or
+    one given depth, before the face. The edit moves nothing on any other wall, though the north wall holds a lump
+    inside the same u and v range. Two edits on one wall each read the wall as scanned. An edit that can move
+    nothing stops the build and says why."""
+
+    @classmethod
+    def setUpClass(cls):
+        rect = dict(type="behind", wall="south", u=list(BEHIND_RECT["u"]), v=list(BEHIND_RECT["v"]))
+        reliefs = dict(south=behind_south, north=behind_north)
+        cls.like = corners_only("behind-like", [dict(rect, like="right")], reliefs)
+        cls.depth = corners_only("behind-depth-plus", [dict(rect, depth=0.02)], reliefs)
+        # A second edit over the board's upper right corner and above the rectangle, where a lump stands proud.
+        cls.second = dict(u=[2.9, 3.6], v=[1.5, 2.6], depth=0.05)
+        cls.lump2 = dict(u=(3.35, 3.55), v=(2.35, 2.55), d=0.3)
+        cls.two = corners_only("behind-two", [dict(rect, like="right"), dict(type="behind", wall="south", **cls.second)],
+                               dict(south=lambda U, V: behind_south(U, V, cls.lump2)))
+
+    def south(self, build):
+        s = build["walls"]["south"]
+        return s["U"], s["V"], s["P"], s["fixed"], depth_before(build["room"], "south", s["fixed"])
+
+    def moved_back(self, build, wall):
+        return [int(n) for n in re.findall(rf"^{wall} behind .*: moved back (\d+) texels", build["log"], re.M)]
+
+    def test_1_only_what_stands_more_than_6cm_before_its_rows_depth_moves(self):
+        U, V, P, fixed, _ = self.south(self.like)
+        board = box(U, V, BEHIND_BOARD["u"], BEHIND_BOARD["v"])
+        goes = box(U, V, BEHIND_MOVE["u"], BEHIND_BOARD["v"])
+        keep = box(U, V, BEHIND_KEEP["u"], BEHIND_BOARD["v"])
+        moved = np.any(fixed != P, axis=-1)
+        self.assertTrue(np.array_equal(fixed[keep], P[keep]), "the moulding 4 cm before its rows' depth was moved")
+        self.assertTrue(np.array_equal(moved, board | goes),
+                        f"moved {int(moved.sum())} texels, the board and the moulding 8 cm before hold {int((board | goes).sum())}")
+        self.assertEqual(self.moved_back(self.like, "south"), [int((board | goes).sum())])
+
+    def test_2_each_row_takes_the_depth_of_the_10cm_strip_on_the_named_side(self):
+        U, V, P, fixed, depth = self.south(self.like)
+        moved = box(U, V, BEHIND_BOARD["u"], BEHIND_BOARD["v"]) | box(U, V, BEHIND_MOVE["u"], BEHIND_BOARD["v"])
+        # the right strip's 2 cm; the left strip would give -1 cm, a strip a metre wide on the right the face's 0
+        self.assertLess(float(np.abs(depth[moved] - BEHIND_RIGHT[2]).max()), 1e-5)
+        self.assertTrue(np.array_equal(fixed[moved][:, 2], P[moved][:, 2]))                   # same height
+        along = (fixed[..., :2].astype(np.float64) - np.array(self.like["room"].wmap["south"]["cornerE57"])) \
+            @ np.array(self.like["room"].wmap["south"]["uE57"], float)
+        self.assertLess(float(np.abs(along[moved] - U[moved]).max()), 1e-5)                   # and the same place along it
+
+    def test_3_a_given_depth_is_before_the_face(self):
+        """depth 0.02 puts the rows 2 cm before the face, into the room (0.0 would not show the sign)."""
+        wall = self.depth["room"].wmap["south"]
+        into = (np.array(CENTRE) - np.array(wall["cornerE57"])) @ np.array(wall["normalE57"], float)
+        self.assertGreater(into, 0, "the wall's normal does not point into the room: the test proves nothing")
+        U, V, P, fixed, depth = self.south(self.depth)
+        moved = box(U, V, BEHIND_BOARD["u"], BEHIND_BOARD["v"]) | box(U, V, BEHIND_MOVE["u"], BEHIND_BOARD["v"])
+        self.assertLess(float(np.abs(depth[moved] - 0.02).max()), 1e-5)
+        self.assertTrue(np.array_equal(np.any(fixed != P, axis=-1), moved))                  # and the 6 cm counts from it
+        self.assertEqual(self.moved_back(self.depth, "south"), [int(moved.sum())])
+
+    def test_4_no_other_wall_moves(self):
+        """The north wall holds a lump 0.3 m proud inside the rectangle's u and v range: the edit names the south wall."""
+        north = self.like["walls"]["north"]
+        lump = box(north["U"], north["V"], BEHIND_LUMP["u"], BEHIND_LUMP["v"])
+        self.assertGreater(float(depth_before(self.like["room"], "north", north["P"])[lump].min()), 0.29)
+        for build in (self.like, self.depth, self.two):
+            for wid, w in build["walls"].items():
+                if wid != "south":
+                    self.assertTrue(np.array_equal(w["fixed"], w["P"]), f"{wid}: its .fixed.f32 is not its .position.f32")
+
+    def test_5_two_edits_each_read_the_wall_as_scanned(self):
+        """Where the second edit (depth 0.05) overlaps the first (like right: 0.02), the board, which it moves too, takes
+        its depth: it read the board where it was scanned, not where the first edit put it (5 cm is not 6 cm before
+        0.05). The moulding 8 cm before the first edit's depth is not 6 cm before the second's: it keeps the first's.
+        And the second moves a lump above the first's rectangle."""
+        U, V, P, fixed, depth = self.south(self.two)
+        u0, u1 = self.second["u"]
+        v0, v1 = self.second["v"]
+        second = (U >= u0) & (U <= u1) & (V >= v0) & (V <= v1)
+        board = box(U, V, BEHIND_BOARD["u"], BEHIND_BOARD["v"])
+        goes = box(U, V, BEHIND_MOVE["u"], BEHIND_BOARD["v"])
+        lump = box(U, V, self.lump2["u"], self.lump2["v"])
+        self.assertTrue((board & second).any() and (board & ~second).any() and (goes & second).any())
+        self.assertLess(float(np.abs(depth[board & second] - 0.05).max()), 1e-5)
+        self.assertLess(float(np.abs(depth[(board & ~second) | goes] - BEHIND_RIGHT[2]).max()), 1e-5)
+        self.assertLess(float(np.abs(depth[lump] - 0.05).max()), 1e-5)
+        self.assertTrue(np.array_equal(np.any(fixed != P, axis=-1), board | goes | lump))
+        self.assertEqual(self.moved_back(self.two, "south"), [int((board | goes).sum()), int(((board & second) | lump).sum())])
+
+    def test_6_an_edit_that_can_move_nothing_stops_the_build_and_says_why(self):
+        """Each fault has its own message: a strip blanked on every row by an opening beside the rectangle (B7), a
+        strip the mesh does not cover, and a rectangle between two texel rows or two texel columns."""
+        rect = dict(type="behind", wall="south", u=list(BEHIND_RECT["u"]), v=list(BEHIND_RECT["v"]), like="right")
+
+        def holed(U, V):
+            d, valid = behind_south(U, V)
+            return d, valid & ~box(U, V, BEHIND_RIGHT[:2])
+
+        for name, edit, reliefs, openings, said in (
+                ("opening", dict(rect, v=[0.5, 1.5]), dict(south=behind_doorway), [BEHIND_DOOR],
+                 "every row of the strip of wall beyond its right lies in an opening (B7)"),
+                ("hole", rect, dict(south=holed), [], "the strip of wall beyond its right holds no covered texel (a hole in the mesh)"),
+                ("row", dict(rect, v=[1.001, 1.004]), dict(south=behind_south), [],
+                 "the rectangle holds no texel row (its v range lies between two texel centres, 10 mm apart)"),
+                ("column", dict(rect, u=[2.401, 2.404]), dict(south=behind_south), [],
+                 "the rectangle holds no texel column (its u range lies between two texel centres, 10 mm apart)")):
+            with self.subTest(name):
+                with self.assertRaises(AssertionError) as stop:
+                    corners_only(f"behind-stop-{name}", [edit], reliefs, openings)
+                message = str(stop.exception)
+                self.assertIn("behind edit on wall south (u ", message)
+                self.assertIn(said, message)
+                self.assertNotIn("Traceback", message)
+
+    def test_7_each_config_here_is_one_the_checker_takes(self):
+        """A rectangle wider than what it moves, a given depth and two overlapping edits are all allowed."""
+        import check_room  # noqa: PLC0415
+        schema = roomlib.load(os.path.join(ROOMS, "room.schema.json"))
+        for build in (self.like, self.depth, self.two):
+            self.assertEqual(check_room.check(build["cfg"], schema, None).errors, [], build["cfg"]["edits"])
+
+
+class BehindBesideOpenings(unittest.TestCase):
+    """`like` beside an opening (the corners step alone, as BehindCorners): beside an open door the rows whose strip
+    lies in the door's face (B7) take the nearest rows' depth, and the step counts them; beside a window, a depth
+    interpolated between the rows below and above it. The door's rectangle runs down to the floor. And a leaf
+    beside its own doorway, `like` left across the doorway from the floor, then a board over it `like` right. A
+    build of its own, so that an edit applied to the wrong wall (whose strip would lie in a door) stops here and not
+    in the builds that show it moving nothing on the other walls."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.build = corners_only(
+            "behind-openings",
+            [dict(type="behind", wall="south", u=[2.4, 3.2], v=[0.0, 2.4], like="right"),
+             dict(type="behind", wall="north", u=[2.4, 3.2], v=[0.7, 1.9], like="right"), BEHIND_LEAF_EDIT, BEHIND_BOARD_EDIT],
+            dict(south=behind_doorway, north=behind_window, west=behind_leaf), openings=[BEHIND_DOOR, BEHIND_BAY, BEHIND_DOOR_WEST])
+
+    def test_1_beside_an_open_door_and_down_to_the_floor(self):
+        """The rectangle runs from the floor to 2.4 m beside an open door whose face (to 2.0 m) holds its strip's lower
+        rows: B7 blanks them, so those 200 rows take the depth of the nearest rows that have one (the strip above the
+        door's head, 2 cm before the face), not the passage's, and the log counts them. The leaf's lowest row, the
+        first above the floor, moves; its rows below the floor's line in the elevation are not the rectangle's, and
+        stay."""
+        s = self.build["walls"]["south"]
+        U, V, P, fixed = s["U"], s["V"], s["P"], s["fixed"]
+        depth = depth_before(self.build["room"], "south", fixed)
+        leaf = box(U, V, (2.5, 3.1), (0.0, 2.2))
+        below = box(U, V, (2.5, 3.1), (-1.0, 0.0))
+        self.assertEqual(int(below.sum()), 5 * 60)
+        self.assertTrue(np.array_equal(np.any(fixed != P, axis=-1), leaf))
+        self.assertLess(float(np.abs(depth[leaf] - 0.02).max()), 1e-5)
+        lowest = V == V[V > 0].min()
+        self.assertAlmostEqual(float(V[lowest][0]), 0.005, places=9)
+        self.assertEqual(int((leaf & lowest).sum()), 60)
+        self.assertRegex(self.build["log"],
+                         rf"south behind u 2\.400\.\.3\.200 v 0\.0\.\.2\.4: moved back {int(leaf.sum())} texels \(200 rows took the nearest rows' depth\)")
+
+    def test_2_beside_a_window_rows_take_a_depth_interpolated_between_the_rows_below_and_above(self):
+        """The window's face (v 1.0..1.6) holds the strip's rows between the face below it (0) and 6 cm before the face
+        above it: B7 blanks those 60 rows, and each takes a depth on the line between the nearest rows either side."""
+        n = self.build["walls"]["north"]
+        U, V, P, fixed = n["U"], n["V"], n["P"], n["fixed"]
+        depth = depth_before(self.build["room"], "north", fixed)
+        board = box(U, V, (2.5, 3.1), (0.8, 1.8))
+        self.assertTrue(np.array_equal(np.any(fixed != P, axis=-1), board))
+        want = np.interp(V, [0.995, 1.605], [0.0, 0.06])           # the nearest rows below and above the window's face
+        self.assertLess(float(np.abs(depth[board] - want[board]).max()), 1e-5)
+        self.assertGreater(float(np.ptp(want[board & (V > 1.0) & (V < 1.6)])), 0.05)
+        self.assertRegex(self.build["log"], r"north behind u 2\.400\.\.3\.200 v 0\.7\.\.1\.9: moved back \d+ texels \(60 rows took")
+
+    def test_3_a_leaf_like_left_across_its_doorway_from_the_floor_then_a_board_like_right(self):
+        """The leaf edit's strip (u 1.7..1.8) lies in the doorway below its head: those 200 rows take the depth of the
+        rows above the head (3 cm before the face), not the passage's, counted; the rows of the elevation below the
+        floor's line stay. Where the board edit overlaps it, the leaf takes the board edit's depth, the strip beyond its
+        right (1 cm), and keeps the leaf edit's elsewhere."""
+        w = self.build["walls"]["west"]
+        U, V, P, fixed = w["U"], w["V"], w["P"], w["fixed"]
+        depth = depth_before(self.build["room"], "west", fixed)
+        leaf = box(U, V, (1.9, 2.7), (0.0, 2.3))
+        (u0, u1), (v0, v1) = BEHIND_BOARD_EDIT["u"], BEHIND_BOARD_EDIT["v"]
+        board = (U >= u0) & (U <= u1) & (V >= v0) & (V <= v1)
+        self.assertTrue((leaf & board).any() and (leaf & ~board).any())
+        self.assertEqual(int(box(U, V, (1.9, 2.7), (-1.0, 0.0)).sum()), 5 * 80)                # the rows below the floor's line
+        self.assertTrue(np.array_equal(np.any(fixed != P, axis=-1), leaf))
+        self.assertLess(float(np.abs(depth[leaf & ~board] - 0.03).max()), 1e-5)
+        self.assertLess(float(np.abs(depth[leaf & board] - 0.01).max()), 1e-5)
+        self.assertRegex(self.build["log"], rf"west behind u 1\.800\.\.2\.800 v 0\.0\.\.2\.5: moved back {int(leaf.sum())} texels "
+                                            r"\(200 rows took the nearest rows' depth\)")
+        self.assertRegex(self.build["log"], rf"west behind u 2\.500\.\.3\.000 v 1\.0\.\.2\.0: moved back {int((leaf & board).sum())} texels\n")
+
+    def test_4_the_config_is_one_the_checker_takes(self):
+        """A rectangle down to the floor, strips beside a door and a window, and overlapping edits, are allowed."""
+        import check_room  # noqa: PLC0415
+        self.assertEqual(check_room.check(self.build["cfg"], roomlib.load(os.path.join(ROOMS, "room.schema.json")), None).errors, [])
 
 
 # --- B19: the floor refills' roll direction -------------------------------------------------------------------
