@@ -135,6 +135,16 @@ export const REQUIRED_POSTGRES_TEST_FILES = [
   // VENVIEWER_S6_TEST_DATABASE_URL (venviewer_s6_test)
   "src/__tests__/room-day-postgres.test.ts",
   "src/__tests__/window-proposals-postgres.test.ts",
+  // VENVIEWER_JOBS_TEST_DATABASE_URL (venviewer_jobs_test)
+  "src/__tests__/jobs-schema-postgres.test.ts",
+  "src/__tests__/jobs-enqueue-postgres.test.ts",
+  "src/__tests__/jobs-claim-postgres.test.ts",
+  "src/__tests__/jobs-worker-postgres.test.ts",
+  "src/__tests__/jobs-two-process-postgres.test.ts",
+  "src/__tests__/jobs-repeating-postgres.test.ts",
+  "src/__tests__/jobs-runtime-postgres.test.ts",
+  "src/__tests__/admin-jobs-postgres.test.ts",
+  "src/__tests__/jobs-sentry-scope-postgres.test.ts",
 ] as const;
 
 const apiRoot = resolve(import.meta.dirname, "../..");

@@ -29,7 +29,7 @@ import "./DashboardLayout.css";
 // DashboardLayout — shared venue navigation and a single workspace landmark
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "pricing" | "search" | "loadouts" | "settings" | "team" | "inventory" | "rota" | "onboarding" | "admin";
+type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "pricing" | "search" | "loadouts" | "settings" | "team" | "inventory" | "rota" | "onboarding" | "admin" | "stuckWork";
 
 interface DashboardLayoutProps {
   /** Present only on /dashboard, which owns the view switch itself. Every
@@ -95,6 +95,9 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   { view: "rota", label: "Rota", capability: "rota" },
   { view: "onboarding", label: "Clients & access", capability: "platformAdmin" },
   { view: "admin", label: "Admin", capability: "platformAdmin" },
+  // Stuck work is StuckWork, reading api/jobs.js — routes/admin-jobs.ts
+  // answers platform administrators alone.
+  { view: "stuckWork", label: "Stuck work", capability: "platformAdmin" },
 ];
 
 /** Venue names already read, by venue. Every page wears its own copy of the

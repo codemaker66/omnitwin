@@ -143,6 +143,9 @@ jobs:
           ready=$(status_of "$API/health/ready")
           note "- /health/ready: $ready"
           [[ "$ready" == "200" ]] || failed=1
+          # The job list's worker (T-702), noted and never failed on: 200 is off
+          # (JOBS_WORKER unset) or well; 503 is on and faulty, overdue or stuck.
+          note "- /health/worker: $(status_of "$API/health/worker")"
 
           if [[ -n "$ROUTE_CHECKS" ]]; then
             note ""

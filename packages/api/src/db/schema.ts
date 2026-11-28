@@ -1311,9 +1311,30 @@ export const emailSends = pgTable("email_sends", {
   sentAt: timestamp("sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  // T-702, migration 0110: what a queued send needs. Unused until the next
+  // piece. A send names the venue it belongs to, and an event or enquiry only
+  // under that same venue. Each link column has a partial index, so removing
+  // an event or enquiry checks its sends (the keys are RESTRICT) by index.
+  venueId: uuid("venue_id").references(() => venues.id),
+  eventId: uuid("event_id"),
+  enquiryId: uuid("enquiry_id"),
+  fromHeader: text("from_header"),
+  replyTo: text("reply_to"),
+  html: text("html"),
+  firstTriedAt: timestamp("first_tried_at", { withTimezone: true }),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  attemptEpoch: integer("attempt_epoch").notNull().default(0),
 }, (table) => [
   index("email_sends_status_idx").on(table.status),
   index("email_sends_created_at_idx").on(table.createdAt),
+  index("email_sends_venue_created_idx").on(table.venueId, table.createdAt).where(sql`${table.venueId} IS NOT NULL`),
+  index("email_sends_event_idx").on(table.eventId).where(sql`${table.eventId} IS NOT NULL`),
+  index("email_sends_enquiry_idx").on(table.enquiryId).where(sql`${table.enquiryId} IS NOT NULL`),
+  foreignKey({ columns: [table.eventId, table.venueId], foreignColumns: [events.id, events.venueId], name: "email_sends_event_venue_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.enquiryId, table.venueId], foreignColumns: [enquiries.id, enquiries.venueId], name: "email_sends_enquiry_venue_fk" }).onDelete("restrict"),
+  check("email_sends_link_needs_venue", sql`(${table.eventId} IS NULL AND ${table.enquiryId} IS NULL) OR ${table.venueId} IS NOT NULL`),
+  check("email_sends_status", sql`${table.status} IN ('pending', 'sent', 'failed', 'suppressed', 'dev_mode', 'queued', 'not_sent', 'bounced', 'complained')`),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -6938,4 +6959,51 @@ export const webVitalSamples = pgTable("web_vital_samples", {
   check("web_vital_samples_value_check", sql`${table.value} >= 0`),
   // The cleanup and the p75 report both read by day alone.
   index("web_vital_samples_recorded_idx").on(table.recordedAt),
+]);
+
+// T-702, migration 0110: the job list. Work the API carries out later, kept in
+// PostgreSQL so that it survives a restart and is tried again when it fails.
+// A job carries ids, never facts (`payload` is at most 2,048 bytes); `kind`
+// and `key` together name it, so the same work asked for twice is one job. A
+// venue's job (`scope` 'venue') names its venue and goes when the venue does;
+// a platform job names none. A running row holds a claim and no other row
+// does. The database's clock decides what is due and whose claim has run out.
+export const jobs = pgTable("jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  kind: text("kind").notNull(),
+  version: integer("version").notNull().default(1),
+  key: text("key").notNull(),
+  scope: text("scope").notNull(),
+  venueId: uuid("venue_id").references(() => venues.id, { onDelete: "cascade" }),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  runAt: timestamp("run_at", { withTimezone: true }).defaultNow().notNull(),
+  state: text("state").notNull().default("queued"),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull(),
+  lostClaims: integer("lost_claims").notNull().default(0),
+  lastError: text("last_error"),
+  claimToken: uuid("claim_token"),
+  claimedBy: text("claimed_by"),
+  claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),
+  resolvedBy: uuid("resolved_by").references(() => users.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolution: text("resolution"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (table) => [
+  unique("jobs_kind_key_unique").on(table.kind, table.key),
+  index("jobs_due_idx").on(table.runAt).where(sql`${table.state} = 'queued'`),
+  index("jobs_claims_idx").on(table.claimExpiresAt).where(sql`${table.state} = 'running'`),
+  index("jobs_dead_idx").on(table.finishedAt).where(sql`${table.state} = 'dead'`),
+  index("jobs_venue_state_idx").on(table.venueId, table.state),
+  check("jobs_scope", sql`${table.scope} IN ('venue', 'platform')`),
+  check("jobs_scope_venue", sql`(${table.scope} = 'venue') = (${table.venueId} IS NOT NULL)`),
+  check("jobs_state", sql`${table.state} IN ('queued', 'running', 'done', 'dead', 'abandoned')`),
+  check("jobs_claim", sql`(${table.state} = 'running' AND ${table.claimToken} IS NOT NULL AND ${table.claimedBy} IS NOT NULL AND ${table.claimExpiresAt} IS NOT NULL)
+    OR (${table.state} <> 'running' AND ${table.claimToken} IS NULL AND ${table.claimedBy} IS NULL AND ${table.claimExpiresAt} IS NULL)`),
+  check("jobs_payload_small", sql`octet_length(${table.payload}::text) <= 2048`),
+  check("jobs_key_length", sql`char_length(${table.key}) BETWEEN 1 AND 300`),
+  check("jobs_counts", sql`${table.attempts} >= 0 AND ${table.lostClaims} >= 0 AND ${table.maxAttempts} BETWEEN 1 AND 20`),
+  check("jobs_abandoned_has_note", sql`${table.state} <> 'abandoned' OR (${table.resolvedAt} IS NOT NULL AND ${table.resolution} IS NOT NULL)`),
 ]);

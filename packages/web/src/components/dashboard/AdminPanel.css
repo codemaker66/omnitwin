@@ -300,11 +300,26 @@
   white-space: nowrap;
 }
 
+/* A cell of running text (a job's reason) wraps instead of stretching the table. */
+.admin-panel-table td.admin-panel-table-cell--wrap {
+  min-width: 16rem;
+  white-space: normal;
+}
+
 .admin-panel-table th {
   color: #68d8d2;
   font-size: 0.72rem;
   letter-spacing: 0.11em;
   text-transform: uppercase;
+}
+
+/* A row's own header cell (Stuck work's job kind) looks like the row's other cells, not like a column heading. */
+.admin-panel-table th.admin-panel-table-row-header {
+  color: rgba(244, 239, 228, 0.78);
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .admin-panel-chip {
