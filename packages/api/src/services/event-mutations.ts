@@ -12,10 +12,11 @@ import {
   type UpdateEvent,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { bookings, events } from "../db/schema.js";
+import { bookings, events, venues } from "../db/schema.js";
 import type { JwtUser } from "../middleware/auth.js";
 import { canWriteEvents, isEventWriteRole } from "../utils/query.js";
 import { recordEventPlanChange } from "./event-plan-lifecycle.js";
+import { wallRange } from "./booking-move-feed.js";
 
 type EventRow = typeof events.$inferSelect;
 export type EventDbConn = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -57,6 +58,51 @@ function changedSurfaces(before: EventRow, after: EventRow): EventPlanChangeSurf
     || before.clientName !== after.clientName || before.notes !== after.notes) surfaces.push("service_notes");
   if (before.status !== after.status) surfaces.push("evidence");
   return surfaces;
+}
+
+/** An event's hours as the floor reads them, or that none are set. */
+function eventHours(row: Pick<EventRow, "startsAt" | "endsAt">, timeZone: string): string {
+  if (row.startsAt === null || row.endsAt === null) return "no hours set";
+  return wallRange({ startsAt: row.startsAt, endsAt: row.endsAt }, timeZone);
+}
+
+/**
+ * What an event edit changed, in the floor's words (the Day Board shows them
+ * until someone acknowledges the change). Names the guests and the hours in
+ * the venue's clock; for the written details it says only which changed,
+ * never their words.
+ */
+export function describeEventEdit(before: EventRow, after: EventRow, timeZone: string): {
+  readonly summary: string;
+  readonly beforeSummary: string | null;
+  readonly afterSummary: string | null;
+} {
+  const parts: string[] = [];
+  const was: string[] = [];
+  const now: string[] = [];
+  if (before.guestCount !== after.guestCount) {
+    parts.push(`guests ${String(before.guestCount)} to ${String(after.guestCount)}`);
+    was.push(`${String(before.guestCount)} guests`);
+    now.push(`${String(after.guestCount)} guests`);
+  }
+  if (before.startsAt?.getTime() !== after.startsAt?.getTime() || before.endsAt?.getTime() !== after.endsAt?.getTime()) {
+    parts.push(`hours now ${eventHours(after, timeZone)}`);
+    was.push(eventHours(before, timeZone));
+    now.push(eventHours(after, timeZone));
+  }
+  const details: string[] = [];
+  if (before.name !== after.name) details.push("name");
+  if (before.eventType !== after.eventType) details.push("occasion");
+  if (before.clientName !== after.clientName) details.push("client");
+  if (before.notes !== after.notes) details.push("notes");
+  if (details.length > 0) parts.push(`${details.join(", ")} changed`);
+  if (before.status !== after.status) parts.push(`status ${before.status.replace(/_/g, " ")} to ${after.status.replace(/_/g, " ")}`);
+  const summary = `${after.name}: ${parts.join("; ")}.`;
+  return {
+    summary: summary.length <= 1000 ? summary : `${summary.slice(0, 999)}…`,
+    beforeSummary: was.length === 0 ? null : was.join(" · ").slice(0, 1000),
+    afterSummary: now.length === 0 ? null : now.join(" · ").slice(0, 1000),
+  };
 }
 
 function dateOrNull(value: string | null): Date | null {
@@ -146,12 +192,14 @@ export async function updateEventCore(
     if (updated === undefined) throw new Error("Locked event update returned no row");
 
     const requiresAcknowledgement = affectedSurfaces.some(surface => surface !== "evidence");
+    const [venue] = await tx.select({ timezone: venues.timezone }).from(venues).where(eq(venues.id, updated.venueId)).limit(1);
+    const words = describeEventEdit(row, updated, venue?.timezone ?? "Europe/London");
     await recordEventPlanChange(tx, {
       eventId: updated.id, venueId: updated.venueId,
       actorUserId: actor.id, actorRole: toEventPlanAudienceRole(actor.role), actorLabel: actor.email,
       sourceKind: "event", sourceId: updated.id, title: "Event plan updated",
-      summary: `${updated.name} changed: ${affectedSurfaces.join(", ").replace(/_/g, " ")}.`,
-      beforeSummary: `${String(row.guestCount)} guests`, afterSummary: `${String(updated.guestCount)} guests`,
+      summary: words.summary,
+      beforeSummary: words.beforeSummary, afterSummary: words.afterSummary,
       affectedSurfaces, audienceRoles: ["staff", "hallkeeper"],
       riskLevel: requiresAcknowledgement ? "attention" : "info",
       requiresHallkeeperAcknowledgement: requiresAcknowledgement,

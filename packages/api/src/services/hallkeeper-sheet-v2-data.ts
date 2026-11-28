@@ -91,7 +91,12 @@ export async function assembleSheetDataV2(
    *  sheet's times to that event rather than to the union of every event the
    *  layout is linked to. */
   requestedEventId: string | null = null,
+  /** `timing: false` skips the Diary reads for a caller that never shows the
+   *  sheet's hours (the changeover); its payload then carries no timing. */
+  options: { readonly timing?: boolean } = {},
 ): Promise<SheetDataV2Internal | null> {
+  const timingOf = (config: { readonly id: string; readonly spaceId: string; readonly venueId: string }): Promise<Timing | null> =>
+    options.timing === false ? Promise.resolve(null) : resolveTiming(db, config, requestedEventId);
   // Step 1: config is the root — every subsequent query either uses its
   // columns or needs it to exist to be meaningful.
   const [config] = await db.select().from(configurations)
@@ -111,11 +116,11 @@ export async function assembleSheetDataV2(
     // approval moves the sheet, its PDF and the Day Board with it. Only the
     // response carries them; the stored snapshot is never rewritten, and
     // neither its source hash nor its issue identity includes timing.
-    const timing = await resolveTiming(db, {
+    const timing = await timingOf({
       id: config.id,
       spaceId: config.spaceId,
       venueId: config.venueId,
-    }, requestedEventId);
+    });
     return {
       authPivot: { venueId: config.venueId, configUserId: config.userId },
       payload: { ...frozen, timing, generatedAt: nowIso, webViewUrl },
@@ -224,11 +229,11 @@ export async function assembleSheetDataV2(
 
   // Both branches take the times from the Diary; an approved sheet keeps its
   // frozen instructions, so only the live sheet reads them here.
-  const timing = await resolveTiming(db, {
+  const timing = await timingOf({
     id: config.id,
     spaceId: config.spaceId,
     venueId: config.venueId,
-  }, requestedEventId);
+  });
   const instructions = resolveInstructions(config.metadata);
   const gangwayReview = resolveGangwayReview(config.metadata);
 

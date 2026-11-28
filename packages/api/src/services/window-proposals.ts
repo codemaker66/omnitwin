@@ -6,6 +6,7 @@ import { canProposeWindow, isClientSideRole } from "../utils/query.js";
 import { canWriteBookings, ownerWorksAtVenue, PG_UNIQUE_VIOLATION } from "./booking-mutations.js";
 import { clientHoldsEventLink } from "./conversations.js";
 import { movePhasesWithBooking, syncEventStatus } from "./event-binding.js";
+import { recordBookingMove } from "./booking-move-feed.js";
 import { lockLiveRoom } from "./room-liveness.js";
 
 // ---------------------------------------------------------------------------
@@ -169,25 +170,42 @@ export async function proposeWindowCore(
   }
 
   return db.transaction(async (tx): Promise<ProposalOk | ProposalDeny> => {
+    // The proposal's own hold as it stands now, held until this commits. A
+    // Diary move may have overtaken the read above, so whether the window
+    // moves, from where, its rank and decision date, and everything moved with
+    // it (its phases, the floor's change) come from this row, never from that
+    // read. Still this proposer's live hold on this event, as it was found: one
+    // the office has moved to another event meanwhile is no longer theirs to
+    // move from here. Locked before the room, in the order a Diary move takes them.
+    const lockedHold = mine === undefined ? null : (await tx.select().from(bookings)
+      .where(and(
+        eq(bookings.id, mine.id), eq(bookings.eventId, eventId), eq(bookings.createdBy, actor.id),
+        eq(bookings.kind, "hold"), eq(bookings.status, "active"), isNull(bookings.deletedAt),
+      ))
+      .for("update"))[0] ?? null;
+    if (mine !== undefined && lockedHold === null) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");
     // The room as it stands now, held until this commits, so a room being
     // deleted never takes the proposal (admin-venues-3).
     if (!(await lockLiveRoom(tx, eventRow.venueId, space.id))) return deny(400, "SPACE_VENUE_MISMATCH", "That room is not at this venue.");
     let row: BookingRow | undefined;
     let changeKind: ProposalOk["changeKind"];
-    if (mine !== undefined) {
-      const unchanged = mine.spaceId === space.id && mine.startsAt.getTime() === startsAt.getTime() && mine.endsAt.getTime() === endsAt.getTime();
-      const rank = unchanged ? mine.rank : await nextRank(tx, space.id, startsAt, endsAt, mine.id);
+    if (lockedHold !== null) {
+      const unchanged = lockedHold.spaceId === space.id && lockedHold.startsAt.getTime() === startsAt.getTime() && lockedHold.endsAt.getTime() === endsAt.getTime();
+      const rank = unchanged ? lockedHold.rank : await nextRank(tx, space.id, startsAt, endsAt, lockedHold.id);
       // The decision date stays while it still comes before the window; a
       // move to a sooner window that it would fall after gets a new one, and
       // the next action's date with it.
-      const decisionKept = mine.decisionAt !== null && mine.decisionAt.getTime() < startsAt.getTime();
-      const decisionAt = decisionKept && mine.decisionAt !== null ? mine.decisionAt : decisionDateFor(startsAt, now);
-      const nextActionDueAt = decisionKept && mine.nextActionDueAt !== null && mine.nextActionDueAt.getTime() < startsAt.getTime()
-        ? mine.nextActionDueAt
+      const decisionKept = lockedHold.decisionAt !== null && lockedHold.decisionAt.getTime() < startsAt.getTime();
+      const decisionAt = decisionKept && lockedHold.decisionAt !== null ? lockedHold.decisionAt : decisionDateFor(startsAt, now);
+      const nextActionDueAt = decisionKept && lockedHold.nextActionDueAt !== null && lockedHold.nextActionDueAt.getTime() < startsAt.getTime()
+        ? lockedHold.nextActionDueAt
         : decisionAt;
       [row] = await tx.update(bookings)
         .set({ spaceId: space.id, startsAt, endsAt, rank, decisionAt, nextActionDueAt, updatedAt: now })
-        .where(and(eq(bookings.id, mine.id), eq(bookings.kind, "hold"), eq(bookings.status, "active")))
+        .where(and(
+          eq(bookings.id, lockedHold.id), eq(bookings.eventId, eventId), eq(bookings.createdBy, actor.id),
+          eq(bookings.kind, "hold"), eq(bookings.status, "active"),
+        ))
         .returning();
       if (row === undefined) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");
       changeKind = "booking.updated";
@@ -195,12 +213,22 @@ export async function proposeWindowCore(
       // on the day follow it, and the event's dates follow its bookings.
       if (!unchanged) {
         await movePhasesWithBooking(tx, {
-          bookingId: mine.id,
+          bookingId: lockedHold.id,
           eventId,
-          from: { spaceId: mine.spaceId, startsAt: mine.startsAt, endsAt: mine.endsAt },
+          from: { spaceId: lockedHold.spaceId, startsAt: lockedHold.startsAt, endsAt: lockedHold.endsAt },
           to: { spaceId: space.id, startsAt },
         });
         await syncEventStatus(tx, eventId);
+        // And the floor is told, as it is of a Diary move (booking-move-feed.ts).
+        await recordBookingMove(tx, {
+          bookingId: lockedHold.id,
+          eventId,
+          venueId: eventRow.venueId,
+          actor,
+          before: { spaceId: lockedHold.spaceId, startsAt: lockedHold.startsAt, endsAt: lockedHold.endsAt },
+          after: { spaceId: space.id, startsAt, endsAt },
+          now,
+        });
       }
     } else {
       // The office owns its own proposal, as it owns a hold it pencils on the

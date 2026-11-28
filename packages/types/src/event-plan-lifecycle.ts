@@ -201,6 +201,100 @@ export const HallkeeperAcknowledgementSchema = z.object({
 }).strict();
 export type HallkeeperAcknowledgement = z.infer<typeof HallkeeperAcknowledgementSchema>;
 
+/**
+ * The Day Board's one read of what waits for the floor: for each event asked
+ * about, the changes to the plan itself (the event, its phases, its bookings
+ * moved in the Diary) that need a hallkeeper's acknowledgement and that nobody
+ * has acknowledged yet (the floor acknowledges as one, as the event-day board
+ * does), and who last acknowledged one of them on the event. Proposal traffic
+ * stays on the event-day board: nothing has changed on the floor until the
+ * plan does.
+ *
+ * `from` and `to` are the board's day. With them, each event's changes are
+ * those placed on that day and those with no place of their own (see
+ * FloorChangeSchema's eventWide), so another day's changes never crowd this
+ * day's out of the cap. Without them (a board from before the day was sent),
+ * every waiting change of the event is read, as before.
+ */
+export const AwaitingAcknowledgementQuerySchema = z.object({
+  eventIds: z.string().max(4000)
+    .transform((value) => value.split(",").map((part) => part.trim()).filter((part) => part.length > 0))
+    .pipe(z.array(EventIdSchema).min(1).max(100)),
+  from: z.iso.datetime({ offset: true }).optional(),
+  to: z.iso.datetime({ offset: true }).optional(),
+}).strict()
+  .refine((query) => (query.from === undefined) === (query.to === undefined), { message: "A board's day has both a from and a to", path: ["to"] })
+  .refine((query) => query.from === undefined || query.to === undefined || Date.parse(query.from) < Date.parse(query.to), { message: "A board's day ends after it starts", path: ["to"] });
+export type AwaitingAcknowledgementQuery = z.infer<typeof AwaitingAcknowledgementQuerySchema>;
+
+/** At most this many waiting changes of one event in one read, newest first,
+ *  so one busy event never crowds another's out of the board; the read says
+ *  when an event had more (EventAwaitingAcknowledgementSchema's truncated). */
+export const AWAITING_CHANGES_PER_EVENT = 50;
+
+/**
+ * The titles a booking moved in the Diary is recorded under
+ * (api services/booking-move-feed.ts): a move, or a move back to where the
+ * floor last knew it after the floor may have read of the move away.
+ */
+export const BOOKING_MOVE_TITLES = [
+  "Times moved",
+  "Room changed",
+  "Room and times changed",
+  "Back to the original hours",
+  "Back to the original room",
+  "Back to the original room and hours",
+] as const;
+export type BookingMoveTitle = (typeof BOOKING_MOVE_TITLES)[number];
+
+/** A booking's place: its room and its exact hours, as instants. */
+export const BookingMovePlaceSchema = z.object({
+  spaceId: z.uuid(),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
+}).strict();
+export type BookingMovePlace = z.infer<typeof BookingMovePlaceSchema>;
+
+/**
+ * A change as the floor reads it: the feed's change, and for a Diary move the
+ * place it put the booking, so the board can tell when a move took a function
+ * off the day it shows without reading the words.
+ */
+export const FloorChangeSchema = ChangeFeedItemSchema.extend({
+  /** Where a Diary move put its booking; null for every other change. */
+  movedTo: BookingMovePlaceSchema.nullable(),
+  /**
+   * The change has no place of its own on the board's day, so the board
+   * shows it on every slot of its event: an edit to the event itself, or a
+   * source no board places (a booking still an enquiry, a phase with no room
+   * or no time, a phase the day's bookings do not hold, one since removed).
+   * Absent from an API from before it was sent: the board then reads the
+   * change as it did before (an edit to the event on every slot, anything
+   * else on the slots that hold it).
+   */
+  eventWide: z.boolean().optional(),
+}).strict();
+export type FloorChange = z.infer<typeof FloorChangeSchema>;
+
+export const EventAwaitingAcknowledgementSchema = z.object({
+  eventId: EventIdSchema,
+  /** Newest first, at most AWAITING_CHANGES_PER_EVENT. */
+  changes: z.array(FloorChangeSchema),
+  /**
+   * More changes wait than `changes` holds: the newest are here, and the rest
+   * come in as these are acknowledged. Absent from an API from before it was
+   * sent, which is read as not known to be more.
+   */
+  truncated: z.boolean().optional(),
+  lastAcknowledgement: z.object({
+    at: z.iso.datetime(),
+    by: z.string().trim().min(1).max(200),
+    /** Who it was; null for this device's own acknowledgement before the server answers. */
+    byUserId: UserIdSchema.nullable(),
+  }).strict().nullable(),
+}).strict();
+export type EventAwaitingAcknowledgement = z.infer<typeof EventAwaitingAcknowledgementSchema>;
+
 export const RecordEventPlanChangeInputSchema = z.object({
   eventId: EventIdSchema,
   venueId: VenueIdSchema,
@@ -221,5 +315,22 @@ export const RecordEventPlanChangeInputSchema = z.object({
   riskLevel: EventPlanRiskLevelSchema.default("attention"),
   requiresHallkeeperAcknowledgement: z.boolean().default(false),
   actionPath: z.string().trim().min(1).max(500).nullable().optional(),
+  /**
+   * A Diary move's places, kept as data so a later move is compared with them
+   * by room id and instant, never by reading the words back: where the floor
+   * last knew the booking (before the first move nobody has acknowledged),
+   * where this move put it, and the run of unacknowledged moves it belongs to.
+   */
+  bookingMove: z.object({
+    known: z.object({ spaceId: z.uuid(), startsAt: z.date(), endsAt: z.date() }).strict(),
+    to: z.object({ spaceId: z.uuid(), startsAt: z.date(), endsAt: z.date() }).strict(),
+    chainId: z.uuid(),
+    /**
+     * Whether the floor is told of the move. A move into the past is not
+     * news to the floor: it is kept as history only, ringing no bell, so the
+     * next move is still compared with the place the floor last knew.
+     */
+    told: z.boolean(),
+  }).strict().optional(),
 }).strict();
 export type RecordEventPlanChangeInput = z.infer<typeof RecordEventPlanChangeInputSchema>;
