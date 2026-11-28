@@ -111,14 +111,18 @@ export async function stampFirstResponse(conn: Conn, input: StampFirstResponseIn
 /**
  * Lock an enquiry's row and read the first reply it holds, so a report can
  * record exactly which reply it replaced (the audit keeps every report, and
- * the enquiry only the earliest). Inside the reporting transaction.
+ * the enquiry only the earliest). Inside the reporting transaction. The lock
+ * is FOR NO KEY UPDATE, as every lock on an enquiry is: the reply's columns
+ * are not key columns, and a writer that has inserted a row referencing the
+ * enquiry (a viewing, a quote) holds a key share on it, which FOR UPDATE
+ * would wait for. Reports still queue behind one another on it.
  */
 export async function lockFirstResponse(conn: Conn, enquiryId: string, venueId: string): Promise<FirstResponseStamp | null> {
   const [row] = await conn.select(stampColumns)
     .from(enquiries)
     .where(and(eq(enquiries.id, enquiryId), eq(enquiries.venueId, venueId)))
     .limit(1)
-    .for("update");
+    .for("no key update");
   return toStamp(row);
 }
 

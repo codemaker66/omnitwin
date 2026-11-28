@@ -22,6 +22,8 @@ import { OPEN_PIPELINE_STAGES, PIPELINE_VALUE_CURRENCY, loadPipelineValueMinor }
 import { ensureEnquiryPerson, ensurePrimaryAccount } from "../services/people-link.js";
 import { isCommercialMember } from "../services/people-records.js";
 import { clipped } from "../services/client-answer-notice.js";
+import { EVENT_HAS_OPEN_DEAL, EventHasOpenDeal, eventForNewDeal, openDealAnswer, openDealRefusedFor } from "../services/event-links.js";
+import { RETRY_ANSWER } from "../utils/sql-state.js";
 
 /** What opportunities.title holds (varchar(200)). */
 const OPPORTUNITY_TITLE_MAX = 200;
@@ -119,8 +121,14 @@ export async function crmRoutes(
     const clientEmail = enquiry.guestEmail ?? enquiry.email;
     const clientPhone = enquiry.guestPhone;
     const eventLabel = occasionLabel(enquiry.eventType) ?? "Event";
+    // opportunities.title holds 200 characters; the occasion (up to 100)
+    // and the guest's name (up to 200) together can be longer.
+    const title = clipped(`${eventLabel} — ${clientName}`, OPPORTUNITY_TITLE_MAX);
+    // The event the deal was to join, for naming an open deal the
+    // one-open-deal index met after the transaction has rolled back.
+    const joining: { eventId: string | null } = { eventId: null };
 
-    const created = await db.transaction(async (tx) => {
+    const press = () => db.transaction(async (tx) => {
       // One deal per enquiry. A second press, another tab or a colleague
       // pressing at the same moment waits here, then finds the deal the
       // first made and lands on it.
@@ -145,6 +153,18 @@ export async function crmRoutes(
         name: clientName,
         phone: clientPhone,
       }, ownerUserId);
+      // The deal's event (services/event-links.ts): its enquiry taken next,
+      // after the person and before the organisation the deal joins, as the
+      // order above has it. A refusal rolls the whole press back.
+      const linked = await eventForNewDeal(tx, {
+        venueId: enquiry.venueId,
+        sourceEnquiryId: enquiry.id,
+        title,
+        eventType: enquiry.eventType,
+        createdBy: request.user.id,
+      });
+      if (!linked.ok) throw new EventHasOpenDeal(linked.dealId);
+      joining.eventId = linked.eventId;
       const [named] = await tx.select({ name: contacts.name }).from(contacts)
         .where(and(eq(contacts.id, person.contactId), eq(contacts.venueId, enquiry.venueId)))
         .limit(1);
@@ -168,10 +188,9 @@ export async function crmRoutes(
         primaryContactId: contact.id,
         sourceEnquiryId: enquiry.id,
         ownerUserId: request.user.id,
-        // opportunities.title holds 200 characters; the occasion (up to 100)
-        // and the guest's name (up to 200) together can be longer.
-        title: clipped(`${eventLabel} — ${clientName}`, OPPORTUNITY_TITLE_MAX),
+        title,
         stage: "new",
+        eventId: linked.eventId,
         eventType: enquiry.eventType,
         preferredDate: enquiry.preferredDate,
         guestCount: enquiry.estimatedGuests,
@@ -208,6 +227,17 @@ export async function crmRoutes(
 
       return { account, contact, opportunity, followUpTask };
     });
+
+    let created: Awaited<ReturnType<typeof press>>;
+    try {
+      created = await press();
+    } catch (error) {
+      // The deal's event already has an open deal: refused by the check, or,
+      // when another writer put one there at the same moment, by the index.
+      const openDeal = await openDealRefusedFor(db, error, joining.eventId);
+      if (openDeal === undefined) throw error;
+      return reply.status(409).send(openDeal === null ? RETRY_ANSWER : openDealAnswer(EVENT_HAS_OPEN_DEAL, openDeal));
+    }
 
     if ("existing" in created) {
       return {

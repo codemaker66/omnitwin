@@ -91,6 +91,11 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     schema.opportunities, schema.followUpTasks, schema.activities,
     schema.opportunityStatusHistory, schema.enquiries, schema.clientAccounts, schema.contacts,
     schema.contactPoints, schema.accountMemberships, schema.users,
+    // A deal takes its event as it is made (services/event-links.ts): what of
+    // the enquiry's own reaches an event is read, and a new event is made with
+    // its phases on the venue's clock, and linked.
+    schema.venues, schema.bookings, schema.proposals, schema.events, schema.eventPhases,
+    schema.eventConfigurationLinks,
   ];
 
   beforeAll(async () => {
@@ -120,7 +125,10 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, enquiries, client_accounts, contacts, contact_points, account_memberships, users");
+    await pool.query(`TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, enquiries, client_accounts, contacts, contact_points, account_memberships, users,
+      venues, bookings, proposals, events, event_phases, event_configuration_links`);
+    // The venue's clock, as the real column's default gives it (a deal's new event is made on it).
+    await pool.query("INSERT INTO venues (id, name, slug, timezone) VALUES ($1, 'Fixture venue', 'fixture-venue', 'Europe/London')", [VENUE]);
     // Five opportunities created on five consecutive days, inserted
     // oldest-first so a route that forgets to sort returns them in exactly
     // the wrong order and the assertions below fail loudly.
@@ -176,6 +184,15 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
       const { rows } = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM ${table} WHERE source_enquiry_id = $1`, [enquiryId]);
       expect(rows[0]?.count, table).toBe(1);
     }
+    // One event, made with the deal for the enquiry, and both linked to it.
+    const { rows: linked } = await pool.query<{ deal_event: string | null; enquiry_event: string | null; events: number }>(
+      `SELECT (SELECT event_id FROM opportunities WHERE source_enquiry_id = $1) AS deal_event,
+              (SELECT event_id FROM enquiries WHERE id = $1) AS enquiry_event,
+              (SELECT count(*)::int FROM events WHERE venue_id = $2) AS events`,
+      [enquiryId, VENUE],
+    );
+    expect(linked[0]?.deal_event).toEqual(expect.any(String));
+    expect(linked[0]).toEqual({ deal_event: linked[0]?.deal_event, enquiry_event: linked[0]?.deal_event, events: 1 });
     // A later press lands on the same deal.
     const again = await press();
     expect(again.statusCode).toBe(200);

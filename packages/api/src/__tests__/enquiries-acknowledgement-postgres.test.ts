@@ -214,6 +214,10 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     schema.eventPlanNotifications, schema.emailSends, schema.pricingRules,
     // A booking enquiry finds or makes its person in the People Book (T-665).
     schema.clientAccounts, schema.contacts, schema.contactPoints, schema.accountMemberships,
+    // An approval works the enquiry, which gets its event (services/enquiry-event.ts): what of the
+    // enquiry's own reaches an event is read, and a new event is made with its phases and linked.
+    schema.bookings, schema.opportunities, schema.proposals, schema.events, schema.eventPhases,
+    schema.eventConfigurationLinks,
   ];
   const savedTwinSlugs = process.env["TWIN_PUBLIC_VENUE_SLUGS"];
 
@@ -247,10 +251,12 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
 
   beforeEach(async () => {
     await pool.query(
-      "TRUNCATE venues, spaces, configurations, enquiries, enquiry_status_history, guest_leads, users, event_plan_notifications, email_sends, pricing_rules, client_accounts, contacts, contact_points, account_memberships",
+      `TRUNCATE venues, spaces, configurations, enquiries, enquiry_status_history, guest_leads, users, event_plan_notifications, email_sends, pricing_rules, client_accounts, contacts, contact_points, account_memberships,
+        bookings, opportunities, proposals, events, event_phases, event_configuration_links`,
     );
+    // The venue's clock, as the real column's default gives it (a new event is made on it).
     await pool.query(
-      "INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Trades Hall Glasgow', $2, '85 Glassford Street')",
+      "INSERT INTO venues (id, name, slug, address, timezone) VALUES ($1, 'Trades Hall Glasgow', $2, '85 Glassford Street', 'Europe/London')",
       [VENUE, VENUE_SLUG],
     );
     await pool.query(
@@ -372,6 +378,11 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     // Saying yes to an enquiry holds no date, so what the route sends never
     // says "approved", which a guest reads as booked.
     expect(sent.subject).not.toMatch(/approv/iu);
+    // It works the enquiry, which gets its event: a draft at the venue.
+    const filed = await pool.query<{ status: string; venue_id: string }>(
+      "SELECT e.status, e.venue_id FROM enquiries q JOIN events e ON e.id = q.event_id WHERE q.id = $1", [enquiryId],
+    );
+    expect(filed.rows).toEqual([{ status: "draft", venue_id: VENUE }]);
   });
 
   it("acknowledges the organiser by email", async () => {

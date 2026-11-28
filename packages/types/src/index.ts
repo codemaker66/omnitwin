@@ -1050,6 +1050,7 @@ export {
   CreateEnquirySchema,
   GuestEnquirySchema,
   GuestEnquiryEmailSchema,
+  EnquiryEventResultSchema,
   GUEST_ENQUIRY_LIMITS,
   GUEST_ENQUIRY_LATEST_EVENT_DATE,
   GUEST_ENQUIRY_SOURCES,
@@ -1071,6 +1072,7 @@ export {
   type GuestEnquiry,
   type GuestEnquirySource,
   type EnquirySource,
+  type EnquiryEventResult,
 } from "./enquiry.js";
 
 export { eventDisplayName, eventNameFor, eventTitleFor, holdsEmailAddress, type EventNameInput, type NamedEvent } from "./event-name.js";
@@ -2572,6 +2574,7 @@ export * from "./forward-book.js";
 // The bind (event-spine Phase A): every hold and ink has its event, whose
 // status follows its bookings.
 export * from "./event-binding.js";
+export * from "./event-spine.js";
 export * from "./diary-command.js";
 export * from "./room-layout-timeline.js";
 // T-637 slice B: the staff rota and its working-time checks.

@@ -7,9 +7,7 @@ import {
   TransitionBookingSchema,
   UpdateBookingSchema,
   VIEWING_BOOKING_KIND,
-  holdsEmailAddress,
   isBookingEnquiry,
-  occasionLabel,
   type DiaryCommand,
 } from "@omnitwin/types";
 import { z } from "zod";
@@ -39,6 +37,7 @@ import {
 } from "../services/diary-commands.js";
 import { announcePromotionNotices, loadPromotionDraft } from "../services/hold-promotion.js";
 import { bindBookingToEvent, syncEventStatus } from "../services/event-binding.js";
+import { ensureEnquiryEvent, enquiryEventNaming, enquiryTitleName } from "../services/enquiry-event.js";
 import { lockLiveRoom } from "../services/room-liveness.js";
 import { canReadDiary } from "../utils/query.js";
 
@@ -66,14 +65,9 @@ const ENQUIRY_BOOKINGS_LIMIT = 100;
 /** Booking titles are at most 200 characters and never empty (booking.ts). */
 const MAX_BOOKING_TITLE_LENGTH = 200;
 
-/** Who a hold made from an enquiry is titled after: the enquiry's name, or
- *  its email when the name is blank. Public enquiries stored before
- *  GuestEnquirySchema treated a blank name as no name can hold "" here, and
- *  an empty title fails every Diary read for the venue. */
-export function enquiryTitleName(enquiry: { readonly name: string; readonly email: string }): string {
-  const name = enquiry.name.trim();
-  return name === "" ? enquiry.email.trim() : name;
-}
+// Who a hold made from an enquiry is titled after, offered here as it always
+// was; it lives with the enquiry's event, which is named the same way.
+export { enquiryTitleName };
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({
@@ -377,15 +371,15 @@ export async function bookingRoutes(
       return reply.status(OWNER_VENUE_MISMATCH.status).send({ error: OWNER_VENUE_MISMATCH.error, code: OWNER_VENUE_MISMATCH.code });
     }
 
-    const occasion = occasionLabel(enquiry.eventType);
-    const who = enquiryTitleName(enquiry);
-    const fallbackTitle = `${who}${occasion === null ? "" : ` — ${occasion}`}`;
-    // No client name for the event, which the Diary card and the handoff pack
-    // carry, when the enquiry's name is an email address (N7, A4): a guest who
-    // gave no name is filed under their email, and a name can hold another
-    // address (the email corrected since, or an address typed as a name).
-    const clientName = holdsEmailAddress(who) || who.toLowerCase() === enquiry.email.trim().toLowerCase() ? null : enquiry.name;
-    const title = input.title ?? fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH);
+    // The hold's default title, "<who> — <occasion>" cut to a booking title's
+    // length, and the client name for the event, which the Diary card and the
+    // handoff pack carry: none when the enquiry's name is an email address
+    // (N7, A4), since a guest who gave no name is filed under their email and
+    // a name can hold another address. One statement of it, shared with the
+    // event an enquiry gets when it is first worked (enquiryEventNaming).
+    const naming = enquiryEventNaming(enquiry);
+    const clientName = naming.clientName;
+    const title = input.title ?? naming.title;
     // A new event takes the hold's title unless it holds an email address,
     // which eventNameFor counts as no title (the bind itself drops only an
     // address cut at 200 characters, titleWithoutEnquiryEmail): the event is
@@ -470,7 +464,8 @@ export async function bookingRoutes(
   // A viewing booked for an enquiry (migration 0100): a show-round of a room,
   // hosted by its owner (by default whoever books it). Gated as the hold
   // conversion is, by the Diary's write roles at the enquiry's venue. It
-  // takes no event, carries no hold's hygiene and never blocks a date: the
+  // takes no event itself (its enquiry gets one: ensureEnquiryEvent below),
+  // carries no hold's hygiene and never blocks a date: the
   // conflict engine says when it overlaps a confirmed booking or another
   // viewing. Show-rounds per booking, a funnel measure, counts these. The same
   // viewing asked for twice (a double press, a retry) is booked once: the
@@ -536,6 +531,12 @@ export async function bookingRoutes(
       // room being deleted never takes it (admin-venues-3).
       const created = await db.transaction(async (tx): Promise<BookingRow | "room_deleted" | undefined> => {
         if (!(await lockLiveRoom(tx, enquiry.venueId, spaceId))) return "room_deleted";
+        // A viewing works the enquiry: the enquiry gets its event now, locked
+        // before the viewing that references it is written
+        // (services/enquiry-event.ts). The viewing itself never has one. A
+        // refusal (a closed enquiry, or one whose records reach several
+        // events) is no error: the viewing is booked.
+        await ensureEnquiryEvent(tx, enquiry.id, request.user.id);
         const [row] = await tx
           .insert(bookings)
           .values({

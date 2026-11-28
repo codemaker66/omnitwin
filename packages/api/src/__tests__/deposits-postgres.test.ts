@@ -99,6 +99,69 @@ describe.skipIf(paymentsTestUrl === undefined)("deposits through the routes on m
     id: session, payment_status: "paid", amount_total: 50_000, currency: "gbp", payment_intent: intent, metadata,
   });
 
+  async function requestEvent(requestId: string): Promise<string | null | undefined> {
+    const { rows } = await pool.query<{ event_id: string | null }>("SELECT event_id FROM proposal_deposit_requests WHERE id = $1", [requestId]);
+    return rows[0]?.event_id;
+  }
+
+  describe("the event a request is for", () => {
+    it("is its proposal's own event, not the event its plan is linked to", async () => {
+      const f = await accepted();
+      const res = await ask(f, { basis: "amount", amountMinor: 50_000 });
+      expect(res.status).toBe(201);
+      const eventId = await requestEvent(res.body.data?.id ?? "");
+      expect(eventId).toBe(f.proposalEventId);
+      expect(eventId).not.toBe(f.eventId);
+    });
+
+    it("is none while its proposal has none, even when the proposal's plan is linked to an event", async () => {
+      const f = await accepted({ ownEvent: false });
+      expect(f.proposalEventId).toBeNull();
+      // The fixture still links the proposal's plan to an event, or this case proves nothing.
+      const linked = await pool.query(
+        `SELECT 1 FROM proposals p
+         JOIN event_configuration_links k ON k.configuration_id = p.configuration_id
+         WHERE p.id = $1 AND k.event_id = $2`,
+        [f.proposalId, f.eventId],
+      );
+      expect(linked.rowCount).toBe(1);
+      const res = await ask(f, { basis: "amount", amountMinor: 50_000 });
+      expect(res.status).toBe(201);
+      expect(await requestEvent(res.body.data?.id ?? "")).toBeNull();
+    });
+
+    it("is the event the proposal holds once its lock is had, not the one read before it", async () => {
+      const f = await accepted();
+      const moved = randomUUID();
+      await pool.query("INSERT INTO events (id, venue_id, name) VALUES ($1, $2, 'Moved to')", [moved, f.venueId]);
+      const holder = await pool.connect();
+      let asking: ReturnType<typeof ask> | undefined;
+      try {
+        const holderPid = (await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid;
+        if (holderPid === undefined) throw new Error("The holder has no backend");
+        await holder.query("BEGIN");
+        await holder.query("SELECT id FROM proposals WHERE id = $1 FOR UPDATE", [f.proposalId]);
+        // The route reads the proposal plainly first (its event is still the old one), then waits here for its lock.
+        asking = ask(f, { basis: "amount", amountMinor: 50_000 });
+        await expect.poll(async () => (await pool.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND application_name LIKE 'deposits_%' AND wait_event_type = 'Lock' AND pid <> $1`,
+          [holderPid],
+        )).rows[0]?.n, { timeout: 10_000 }).toBe(1);
+        // A writer moves the proposal to another event while the route waits.
+        await holder.query("UPDATE proposals SET event_id = $1 WHERE id = $2", [moved, f.proposalId]);
+        await holder.query("COMMIT");
+        const res = await asking;
+        expect(res.status).toBe(201);
+        expect(await requestEvent(res.body.data?.id ?? "")).toBe(moved);
+      } finally {
+        await holder.query("ROLLBACK");
+        holder.release();
+        await asking?.catch(() => undefined);
+      }
+    }, 30_000);
+  });
+
   describe("the venue asks", () => {
     it("for a percentage of the accepted quote, in whole pence, against the proposal's event", async () => {
       const f = await accepted({ totalMinor: 333_333 });
@@ -106,7 +169,7 @@ describe.skipIf(paymentsTestUrl === undefined)("deposits through the routes on m
       expect(res.status).toBe(201);
       expect(res.body.data).toMatchObject({ state: "requested", basis: "percent", percentBasisPoints: 2_500, amountMinor: 83_333, quoteTotalMinor: 333_333, proposalVersion: 1 });
       const { rows } = await pool.query("SELECT event_id, proposal_version_hash FROM proposal_deposit_requests WHERE proposal_id = $1", [f.proposalId]);
-      expect(rows[0]).toEqual({ event_id: f.eventId, proposal_version_hash: proposalVersionPayloadDigest(f.payload) });
+      expect(rows[0]).toEqual({ event_id: f.proposalEventId, proposal_version_hash: proposalVersionPayloadDigest(f.payload) });
       const view = await call<StaffDepositView>("GET", `/proposals/${f.proposalId}/deposit`, f.staff);
       expect(view.body.data?.availability).toBe("test");
       expect(view.body.data?.requests).toHaveLength(1);
