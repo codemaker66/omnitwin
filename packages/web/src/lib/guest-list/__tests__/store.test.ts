@@ -950,6 +950,156 @@ describe("guest list store: a lock request the browser drops is asked once more"
 });
 
 // ---------------------------------------------------------------------------
+// What the whole fix rests on: the store's own asking of the browser holds the
+// lock until the work has settled. These go through the default `exclusive`
+// (two stores over one device, no stand-in for it) and a browser's locks that
+// queue: were the lock let go as soon as the work had started, the delete
+// would land inside the save.
+// ---------------------------------------------------------------------------
+
+describe("guest list store: the browser's lock is held until the work has settled", () => {
+  const LOCK = "venviewer-guest-lists";
+
+  afterEach(() => {
+    vi.useRealTimers();
+    Reflect.deleteProperty(navigator, "locks");
+  });
+
+  /**
+   * The browser's locks as its tabs share them. One holder a name; the rest
+   * wait in the order they asked. A lock is let go only when the promise its
+   * callback returned has settled (at once, when it returned none). A signal
+   * is honoured only before the grant: after it, giving up changes nothing.
+   * `heldByAnotherTab` takes the lock now and answers how to let it go.
+   */
+  function queueingLocks(): { readonly heldByAnotherTab: (name: string) => () => void } {
+    const held = new Set<string>();
+    const lines = new Map<string, (() => void)[]>();
+    const letGo = (name: string): void => {
+      held.delete(name);
+      lines.get(name)?.shift()?.();
+    };
+    const locks = {
+      request: (name: string, options: { readonly signal: AbortSignal }, callback: () => unknown): Promise<unknown> =>
+        new Promise<unknown>((resolve, reject) => {
+          const line = lines.get(name) ?? [];
+          lines.set(name, line);
+          let granted = false;
+          const start = (): void => {
+            granted = true;
+            held.add(name);
+            void Promise.resolve().then(callback).then(
+              (value) => {
+                letGo(name);
+                resolve(value);
+              },
+              () => {
+                letGo(name);
+                reject(new Error("the work rejected"));
+              },
+            );
+          };
+          options.signal.addEventListener("abort", () => {
+            if (granted) return;
+            line.splice(line.indexOf(start), 1);
+            reject(new Error("given up before the grant"));
+          });
+          if (held.has(name)) line.push(start);
+          else start();
+        }),
+    };
+    Object.defineProperty(navigator, "locks", { value: locks, configurable: true });
+    const heldByAnotherTab = (name: string): (() => void) => {
+      let finish: () => void = () => undefined;
+      void locks.request(name, { signal: new AbortController().signal }, () => new Promise<void>((resolve) => { finish = resolve; }));
+      return () => { finish(); };
+    };
+    return { heldByAnotherTab };
+  }
+
+  it("a delete asked for while another tab's save is between its read and its write waits for that save, so the names do not come back", async () => {
+    queueingLocks();
+    const backend = memoryBackend();
+    /** What reached the device, in order. */
+    const order: string[] = [];
+    // Tab A's device notes when its delete reaches the store.
+    const a = createGuestListStore(withBackend<unknown>({
+      ...backend,
+      delete: async (key) => {
+        order.push("delete");
+        await backend.delete(key);
+      },
+    }));
+    // Tab B's device holds one read open until told to go on, and notes its writes.
+    let hold = false;
+    let release: () => void = () => undefined;
+    const reading = new Promise<void>((resolve) => { release = resolve; });
+    const b = createGuestListStore(withBackend<unknown>({
+      ...backend,
+      get: async (key) => {
+        const value = await backend.get(key);
+        if (hold) {
+          hold = false;
+          order.push("read held open");
+          await reading;
+        }
+        return value;
+      },
+      put: async (key, value) => {
+        order.push("write");
+        await backend.put(key, value);
+      },
+    }));
+    const first = await b.save(listFor(PLAN_A, { guests: [guestAt(1, null, null, "Ada Canary")] }), null);
+    if (first.kind !== "saved") throw new Error("the first save was not kept");
+    order.length = 0;
+
+    // B saves a change; while its read is held open, A deletes the list.
+    hold = true;
+    const saving = b.save(listFor(PLAN_A, { guests: [guestAt(1, null, null, "Ada Canary")], title: "Changed" }), first.stamp);
+    const deleting = a.erase(PLAN_A);
+    // Every step that can be taken has been: a delete not held off by the lock would have reached the device by now.
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect(order).toEqual(["read held open"]);
+    release();
+    const saved = await saving;
+    await deleting;
+
+    // The save finished first, and the delete then removed what it wrote: nothing is stored.
+    expect(order).toEqual(["read held open", "write", "delete"]);
+    if (saved.kind !== "saved") throw new Error("the save was not kept");
+    expect(await backend.get(PLAN_A)).toBeNull();
+    // B's next save finds the list gone, and writes nothing.
+    expect((await b.save(listFor(PLAN_A, { title: "Again" }), saved.stamp)).kind).toBe("removed-elsewhere");
+    expect(await backend.get(PLAN_A)).toBeNull();
+  });
+
+  it("does its work when the lock is granted after a wait shorter than the bound, and gives up nothing afterwards", async () => {
+    vi.useFakeTimers();
+    const { heldByAnotherTab } = queueingLocks();
+    const backend = memoryBackend();
+    const s = createGuestListStore(withBackend<unknown>(backend));
+    const otherTabFinishes = heldByAnotherTab(LOCK);
+    const answers: string[] = [];
+    void s.save(listFor(PLAN_A), null).then((saved) => { answers.push(saved.kind); });
+
+    // Just inside the bound, the other tab still holds the lock: nothing has been done.
+    await vi.advanceTimersByTimeAsync(LOCK_WAIT_MS - 1);
+    expect(answers).toEqual([]);
+    expect(await backend.get(PLAN_A)).toBeNull();
+
+    otherTabFinishes();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(answers).toEqual(["saved"]);
+    // The bound went with the grant: no timer is left, and nothing is given up later.
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(2 * LOCK_WAIT_MS);
+    expect(answers).toEqual(["saved"]);
+    expect((await s.open(PLAN_A)).kind).toBe("ready");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Nothing is removed on the strength of an earlier read. The sweep, and the
 // removal of a value that cannot be read, compare and delete in one step of
 // the store, so a list another tab stored in between stays, lock or no lock.
