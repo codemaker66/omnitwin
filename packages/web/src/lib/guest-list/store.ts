@@ -165,35 +165,49 @@ export const LOCK_WAIT_MS = 2_000;
  * (the Web Locks API). The lock is held only while the store's own steps run,
  * never across anything a person waits on. The wait for it is bounded: when
  * another tab still holds it after that, the work is not started at all, for
- * work done without the lock is how a deleted list came back. A browser
- * without the lock, or one that refuses the request outright, does the work
- * unguarded, as every browser did before.
+ * work done without the lock is how a deleted list came back.
+ *
+ * A request the browser rejects with no grant, before the bound, is asked
+ * once more, with a bound of its own: a browser can drop one pending request
+ * (WebKit drops them when it suspends a page) and grant the next. Only a
+ * browser that refuses twice does the work unguarded, as does one without the
+ * lock, and as every browser did before. Why a request was rejected is never
+ * looked at.
  */
 const acrossTabs: Exclusive = async <T>(work: () => Promise<T>): Promise<Alone<T>> => {
   // Typed as always present, but an older browser has no `locks`, or has it empty.
   const locks = typeof navigator === "undefined" ? undefined : (navigator.locks as LockManager | null | undefined);
   if (locks === undefined || locks === null) return { ran: true, value: await work() };
   const asked: { work: Promise<T> | null; gaveUp: boolean } = { work: null, gaveUp: false };
-  const waiting = new AbortController();
-  const bound = setTimeout(() => {
-    asked.gaveUp = true;
-    waiting.abort();
-  }, LOCK_WAIT_MS);
-  // The lock is held until the work has settled, whichever way it settles.
-  const run = (): Promise<void> => {
-    clearTimeout(bound);
-    asked.work = work();
-    return asked.work.then(() => undefined, () => undefined);
+  /** One request for the lock, with a signal and a bound of its own. Resolves once the request has ended, whichever way. */
+  const ask = async (): Promise<void> => {
+    const waiting = new AbortController();
+    const bound = setTimeout(() => {
+      asked.gaveUp = true;
+      waiting.abort();
+    }, LOCK_WAIT_MS);
+    // The lock is held until the work has settled, whichever way it settles.
+    const run = (): Promise<void> => {
+      clearTimeout(bound);
+      // Started inside a promise: work that threw as it started would reject that promise, and
+      // so count as started. It can never be started a second time below.
+      asked.work = (async () => work())();
+      return asked.work.then(() => undefined, () => undefined);
+    };
+    try {
+      await locks.request(LOCK_NAME, { signal: waiting.signal }, run);
+    } catch {
+      // Not granted in time, or dropped, or refused: settled below.
+    } finally {
+      clearTimeout(bound);
+    }
   };
-  try {
-    await locks.request(LOCK_NAME, { signal: waiting.signal }, run);
-  } catch {
-    // Not granted in time, or refused: settled below.
-  } finally {
-    clearTimeout(bound);
-  }
+  await ask();
+  // Neither granted nor waited out: the browser dropped the request. No work was started, so it is asked once more.
+  if (asked.work === null && !asked.gaveUp) await ask();
   if (asked.work !== null) return { ran: true, value: await asked.work };
   if (asked.gaveUp) return { ran: false };
+  // Refused twice: this browser gives no lock.
   return { ran: true, value: await work() };
 };
 

@@ -820,6 +820,136 @@ describe("guest list store: a lock that is never let go does not hold the page u
 });
 
 // ---------------------------------------------------------------------------
+// A request for the lock that the browser drops (it rejects, with no grant and
+// before the bound) is asked once more before any work is done without the
+// lock. Only a browser that refuses twice works unguarded.
+// ---------------------------------------------------------------------------
+
+describe("guest list store: a lock request the browser drops is asked once more", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    Reflect.deleteProperty(navigator, "locks");
+  });
+
+  /** A device that notes, at each read and each write, whether the browser's lock was held at that moment. */
+  function watchedDevice(holding: () => boolean): { readonly backend: CacheBackend; readonly reads: boolean[]; readonly puts: boolean[] } {
+    const inner = memoryBackend();
+    const reads: boolean[] = [];
+    const puts: boolean[] = [];
+    const backend: CacheBackend = {
+      ...inner,
+      get: (key) => {
+        reads.push(holding());
+        return inner.get(key);
+      },
+      put: (key, value) => {
+        puts.push(holding());
+        return inner.put(key, value);
+      },
+    };
+    return { backend, reads, puts };
+  }
+
+  /**
+   * The browser's locks, answering each request in turn: "dropped" rejects it
+   * without ever calling the work (as WebKit does to a pending request when it
+   * suspends the page), "granted" runs the work and holds the lock until it
+   * has settled, "held" leaves it waiting on another tab until it is given up.
+   */
+  function locksAnswering(answers: readonly ("dropped" | "granted" | "held")[]): {
+    readonly asked: () => number;
+    readonly holding: () => boolean;
+    readonly signals: AbortSignal[];
+  } {
+    let asked = 0;
+    let held = false;
+    const signals: AbortSignal[] = [];
+    const locks = {
+      request: (_name: string, options: { readonly signal: AbortSignal }, work: () => Promise<unknown>): Promise<unknown> => {
+        const answer = answers[asked];
+        asked += 1;
+        signals.push(options.signal);
+        if (answer === "granted") {
+          held = true;
+          return work().finally(() => { held = false; });
+        }
+        if (answer === "held") {
+          return new Promise((_resolve, reject) => {
+            options.signal.addEventListener("abort", () => { reject(new Error("given up")); });
+          });
+        }
+        return Promise.reject(new Error("dropped"));
+      },
+    };
+    Object.defineProperty(navigator, "locks", { value: locks, configurable: true });
+    return { asked: () => asked, holding: () => held, signals };
+  }
+
+  it("asks again when the first request is rejected with no grant, and does its work once, under the second", async () => {
+    const lock = locksAnswering(["dropped", "granted"]);
+    const device = watchedDevice(lock.holding);
+    const s = createGuestListStore(withBackend<unknown>(device.backend));
+
+    expect((await s.save(listFor(PLAN_A, { title: "Kept under the lock" }), null)).kind).toBe("saved");
+    expect(lock.asked()).toBe(2);
+    // One save: its read, its one write and its read-back, each made while the lock was held.
+    expect(device.reads).toEqual([true, true]);
+    expect(device.puts).toEqual([true]);
+    // The second request had a signal of its own, not the first one's.
+    expect(lock.signals[1]).not.toBe(lock.signals[0]);
+    expect(lock.signals[1]?.aborted).toBe(false);
+  });
+
+  it("does its work once, unguarded, only when the browser rejects the request twice", async () => {
+    const lock = locksAnswering(["dropped", "dropped"]);
+    const device = watchedDevice(lock.holding);
+    const s = createGuestListStore(withBackend<unknown>(device.backend));
+
+    expect((await s.save(listFor(PLAN_A), null)).kind).toBe("saved");
+    expect(lock.asked()).toBe(2);
+    expect(device.reads).toEqual([false, false]);
+    expect(device.puts).toEqual([false]);
+    expect((await s.open(PLAN_A)).kind).toBe("ready");
+  });
+
+  it("does not ask again after waiting out the bound: the work is never started, and the answer is busy", async () => {
+    vi.useFakeTimers();
+    const lock = locksAnswering(["held", "granted"]);
+    const device = watchedDevice(lock.holding);
+    const s = createGuestListStore(withBackend<unknown>(device.backend));
+    const answers: string[] = [];
+    void s.save(listFor(PLAN_A), null).then((saved) => { answers.push(saved.kind); });
+
+    await vi.advanceTimersByTimeAsync(LOCK_WAIT_MS);
+    expect(answers).toEqual(["busy"]);
+    expect(lock.asked()).toBe(1);
+    // However long after: no second request, and nothing read or written.
+    await vi.advanceTimersByTimeAsync(2 * LOCK_WAIT_MS);
+    expect(lock.asked()).toBe(1);
+    expect(device.reads).toEqual([]);
+    expect(device.puts).toEqual([]);
+  });
+
+  it("gives the second request a bound of its own: when another tab still holds the lock after it, the answer is busy and nothing is written", async () => {
+    vi.useFakeTimers();
+    const lock = locksAnswering(["dropped", "held"]);
+    const device = watchedDevice(lock.holding);
+    const s = createGuestListStore(withBackend<unknown>(device.backend));
+    const answers: string[] = [];
+    void s.save(listFor(PLAN_A), null).then((saved) => { answers.push(saved.kind); });
+
+    await vi.advanceTimersByTimeAsync(LOCK_WAIT_MS - 1);
+    expect(lock.asked()).toBe(2);
+    expect(answers).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(answers).toEqual(["busy"]);
+    expect(lock.asked()).toBe(2);
+    expect(device.reads).toEqual([]);
+    expect(device.puts).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Nothing is removed on the strength of an earlier read. The sweep, and the
 // removal of a value that cannot be read, compare and delete in one step of
 // the store, so a list another tab stored in between stays, lock or no lock.
