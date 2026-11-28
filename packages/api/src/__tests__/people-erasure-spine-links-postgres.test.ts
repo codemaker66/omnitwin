@@ -1145,8 +1145,8 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     const { personId: xanthe } = await keptByAnInk(v, "Xanthe Keptwell");
     const { spare, made } = await spareAndMade(v, xanthe, "Xanthe Keptwell");
     await planOn(v, made);
-    // The record marked undone by hand, as the undo marks it; the enquiry still
-    // points at the event, so the pass reaches it.
+    // The made record marked undone by hand (its undone_at set); the enquiry
+    // still points at the event, so the pass reaches it.
     await pool.query("UPDATE event_link_joins SET undone_at = now() WHERE subject_kind = 'enquiry' AND subject_id = $1", [spare]);
 
     await passKeeps(v, xanthe);
