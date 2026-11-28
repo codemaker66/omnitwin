@@ -15,12 +15,14 @@ import {
   resolveRotaTimeZone,
   type CalendarBookingEntry,
   type CalendarEntry,
+  type CalendarPhaseEventBooking,
   type CalendarQuery,
   type CalendarResponse,
 } from "@omnitwin/types";
 import { bookings, eventPhases, events, spaces, turnaroundRules, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { canReadDiary } from "../utils/query.js";
 import { userDisplayName } from "../utils/user-display-name.js";
 import {
@@ -111,6 +113,27 @@ interface BookingEntryRow {
   readonly eventClientName: string | null;
   readonly eventGuestCount: number | null;
   readonly ownerName: string | null;
+}
+
+/**
+ * What a phase's event has on the Diary, across all its bookings whatever
+ * their dates: "ink" while a confirmed booking of it is live, else "hold"
+ * while a provisional option is, else null. The Day Board's building reads
+ * it for a phase whose booking is not on the board (tomorrow's setup
+ * tonight): an event with neither needs no building, and one only held is
+ * provisional. Live is the Diary's rule (isLiveBooking). The subqueries
+ * alias their table, so each column binds to the row meant
+ * (utils/outer-column.ts); bookings_event_idx serves them.
+ */
+const PHASE_EVENT_BOOKING = sql<string | null>`case
+  when exists (select 1 from "bookings" as live where live."event_id" = ${outerColumn(events.id)}
+    and live."kind" = 'ink' and live."status" = 'active' and live."deleted_at" is null) then 'ink'
+  when exists (select 1 from "bookings" as live where live."event_id" = ${outerColumn(events.id)}
+    and live."kind" = 'hold' and live."status" = 'active' and live."deleted_at" is null) then 'hold'
+end`;
+
+function phaseEventBooking(value: string | null): CalendarPhaseEventBooking | null {
+  return value === "ink" || value === "hold" ? value : null;
 }
 
 function toBookingEntry(row: BookingEntryRow, timeZone: string): CalendarBookingEntry {
@@ -299,6 +322,7 @@ export async function calendarRoutes(
           eventId: events.id,
           eventName: events.name,
           eventType: events.eventType,
+          eventBooking: PHASE_EVENT_BOOKING,
           eventStartsAt: events.startsAt,
         })
         .from(eventPhases)
@@ -448,6 +472,7 @@ export async function calendarRoutes(
         startsAt: row.startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
         sortOrder: row.sortOrder,
+        eventBooking: phaseEventBooking(row.eventBooking),
       });
     }
 

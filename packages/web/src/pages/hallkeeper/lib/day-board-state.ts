@@ -141,6 +141,11 @@ export interface DayBoardSlot {
   readonly setupStartsAtMs: number;
   readonly segments: SlotSegments;
   readonly state: DayBoardState;
+  /** Under way by the clock: past its doors and not finished (live or
+   *  clearing down), or seen in use past its end. Decided before an
+   *  exception lays its state over the slot's, so a live function held at
+   *  risk is still happening now. */
+  readonly underWay: boolean;
   readonly stateLabel: string;
   readonly tone: DayBoardTone;
   readonly motion: DayBoardMotion;
@@ -155,6 +160,10 @@ export interface DayBoardSlot {
   /** A warning-grade turnaround note that does not escalate the state. */
   readonly turnaroundWarning: string | null;
   readonly gapBefore: LaneGap | null;
+  /** The booking the turn-round runs from, which `gapBefore` measures: what
+   *  the room holds when this setup starts. Null when nothing comes before
+   *  this slot in its room, or the two run at once. */
+  readonly previousBookingId: string | null;
   /** The other rooms this slot's event occupies on the same board. */
   readonly linkedRooms: readonly string[];
   /** The next instant at which this slot's state changes; null when nothing will. */
@@ -752,20 +761,29 @@ export function deriveDayBoard(
         timeZone,
       );
 
-      // What this slot follows. A function follows the last function, past any
-      // viewing in between, so a show-round never hides the changeover between
-      // two functions; a viewing follows whatever came just before it.
-      const previous = entry.kind === "viewing"
-        ? entries[index - 1]
-        : entries.slice(0, index).reverse().find((candidate) => candidate.kind !== "viewing");
+      // What this slot follows: of the bookings before it that have left the
+      // room by the time its doors open, the one that left last, which leaves
+      // the room as this setup finds it. A function follows the last
+      // function, past any viewing in between, so a show-round never hides
+      // the changeover between two functions; a viewing follows whatever
+      // came before it. A booking still running when this one opens (a first
+      // and second option on the same evening; an exhibition a talk sits
+      // inside) has no changeover with it: neither a turn-round to dimension
+      // nor a room to clear. So a talk inside a running exhibition has none,
+      // the private view after that talk runs from the talk, and the dinner
+      // after the exhibition from the exhibition. The doors, not the setup,
+      // mark the cut: a setup that starts before the booking ahead of it has
+      // ended is the short turn-round the board exists to show.
+      let previous: (typeof entries)[number] | undefined;
+      for (const candidate of entries.slice(0, index)) {
+        if (entry.kind !== "viewing" && candidate.kind === "viewing") continue;
+        if (Date.parse(candidate.endsAt) > startsAtMs) continue;
+        if (previous === undefined || Date.parse(candidate.endsAt) >= Date.parse(previous.endsAt)) previous = candidate;
+      }
       let gapBefore: LaneGap | null = null;
       let changeover: string | null = null;
       let changeoverFromMs: number | null = null;
-      // Two bookings at once in one room (a first and second option on the
-      // same evening; a talk inside a running exhibition) have no changeover
-      // between them: neither a turn-round to dimension nor a room to clear.
-      const concurrent = previous !== undefined && startsAtMs < Date.parse(previous.endsAt);
-      if (previous !== undefined && !concurrent) {
+      if (previous !== undefined) {
         const previousEnd = Date.parse(previous.endsAt);
         // After a viewing there is nothing to clear; before one, the room
         // still needs the previous function's changeover to be shown.
@@ -816,6 +834,7 @@ export function deriveDayBoard(
         segments,
         timeRange,
         gapBefore,
+        previousBookingId: gapBefore === null ? null : previous?.id ?? null,
         linkedRooms,
         requests: slotRequests,
         requestSignal,
@@ -825,6 +844,7 @@ export function deriveDayBoard(
 
       const overrunFromMs = endsAtMs + OVERRUN_GRACE_MIN * MIN_MS;
       const seenInUse = observed !== null && observationMeansInUse(observed.kind);
+      const underWay = timed.state === "live" || timed.state === "clear-down";
 
       let slot: DayBoardSlot;
       if (observed !== null && observationMeansOver(observed.kind)) {
@@ -832,6 +852,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: "done",
+          underWay: false,
           stateLabel: observed.kind === "cleaned" ? "Cleaned" : "Done",
           tone: "faded",
           motion: "none",
@@ -849,6 +870,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: "exception",
+          underWay: true,
           stateLabel: "Overrun",
           tone: "red",
           motion: "none",
@@ -863,6 +885,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: "exception",
+          underWay,
           stateLabel: "Changeover at risk",
           tone: "red",
           motion: "none",
@@ -880,6 +903,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: "exception",
+          underWay,
           stateLabel: "Changeover at risk",
           tone: "red",
           motion: "none",
@@ -894,6 +918,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: timed.state,
+          underWay,
           stateLabel: timed.stateLabel,
           tone: timed.tone,
           motion: timed.motion,

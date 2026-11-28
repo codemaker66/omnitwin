@@ -449,6 +449,44 @@ describe.skipIf(target === undefined)("the bind: every hold and ink belongs to i
     expect(await readBindInvariant(db, v.venueId)).toEqual({ unboundBookings: 0, contradictingEvents: 0 });
   });
 
+  it("says on each calendar phase how firmly its event is booked: in ink, only held, or neither", async () => {
+    const v = await venue("phase booking");
+    // Tomorrow's wedding, held, with its setup planned into the Grand Hall tonight.
+    const wedding = await holdFromEnquiry(v.admin, {
+      enquiryId: await v.enquiry("Campbell & Rao"), spaceId: v.rooms.hall, title: "Campbell–Rao wedding",
+      startsAt: at("12:00", 1), endsAt: at("23:30", 1), rank: 1, ...hygiene(v.admin.id),
+    });
+    if (wedding.eventId === null) throw new Error("Unbound fixture");
+    // An event booked nowhere yet, with a phase in the Saloon this morning;
+    // then interest only joins it.
+    const [draft] = await db.insert(schema.events).values({ venueId: v.venueId, name: "Fraser christening", createdBy: v.admin.id }).returning();
+    if (draft === undefined) throw new Error("Event fixture missing");
+    await db.insert(schema.eventPhases).values([
+      { eventId: wedding.eventId, spaceId: v.rooms.hall, name: "Setup", sortOrder: 99, startsAt: new Date(at("22:00")), durationMinutes: 660 },
+      { eventId: draft.id, spaceId: v.rooms.saloon, name: "Setup", sortOrder: 0, startsAt: new Date(at("08:00")), durationMinutes: 180 },
+    ]);
+    const phases = async (): Promise<ReadonlyMap<string | null, unknown>> => {
+      const response: LightMyRequestResponse = await server.inject({
+        method: "GET", headers: bearer(v.admin),
+        url: `/calendar?venueId=${v.venueId}&from=${encodeURIComponent(at("00:00"))}&to=${encodeURIComponent(at("04:00", 1))}`,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const calendar = CalendarResponseSchema.parse(response.json<{ data: unknown }>().data);
+      return new Map(calendar.entries.flatMap((entry) => (entry.entryType === "phase" ? [[entry.eventId, entry.eventBooking] as const] : [])));
+    };
+    expect(await phases()).toEqual(new Map([[wedding.eventId, "hold"], [draft.id, null]]));
+
+    const interest = await createBookingCore(db, v.admin, CreateBookingSchema.parse({
+      venueId: v.venueId, spaceId: v.rooms.reception, kind: "prospect", title: "Fraser christening enquiry",
+      startsAt: at("11:00", 8), endsAt: at("15:00", 8), eventId: draft.id,
+    }));
+    expect(interest).toMatchObject({ ok: true });
+    expect((await eventRow(draft.id)).status).toBe("draft");
+    // The wedding confirmed tomorrow: its setup tonight is in ink.
+    expect(await transitionBookingCore(db, v.admin, wedding.id, { toState: "ink" })).toMatchObject({ ok: true });
+    expect(await phases()).toEqual(new Map([[wedding.eventId, "ink"], [draft.id, null]]));
+  });
+
   it.each([
     { label: "a release racing a confirmation", second: "ink", expected: "confirmed" },
     { label: "two options released at once", second: "released", expected: "lost" },

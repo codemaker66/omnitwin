@@ -728,6 +728,12 @@ export const CalendarBookingEntrySchema = z.object({
 });
 export type CalendarBookingEntry = z.infer<typeof CalendarBookingEntrySchema>;
 
+/** What an event has on the Diary, read across all its bookings whatever
+ *  their dates: "ink" while a confirmed booking of it is live, else "hold"
+ *  while a provisional option is, else null (interest only, or nothing). */
+export const CalendarPhaseEventBookingSchema = BookingKindSchema.extract(["ink", "hold"]);
+export type CalendarPhaseEventBooking = z.infer<typeof CalendarPhaseEventBookingSchema>;
+
 /** Room-scoped, timed phases only — the Occupancy Footprint on a lane. */
 export const CalendarPhaseEntrySchema = z.object({
   entryType: z.literal("phase"),
@@ -742,6 +748,12 @@ export const CalendarPhaseEntrySchema = z.object({
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
   sortOrder: z.number().int(),
+  // Whether the phase's event is booked, and how firmly (above). A phase of
+  // an event that is not on the board (tomorrow's setup tonight) says from
+  // this whether the building is needed for it, and whether only
+  // provisionally. Optional so an older server's answer and recorded
+  // fixtures stay valid: a phase without it reads as it did before.
+  eventBooking: CalendarPhaseEventBookingSchema.nullable().optional(),
 });
 export type CalendarPhaseEntry = z.infer<typeof CalendarPhaseEntrySchema>;
 

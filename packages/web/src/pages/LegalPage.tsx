@@ -19,7 +19,13 @@
 // ---------------------------------------------------------------------------
 
 import { Fragment, useEffect, useSyncExternalStore, type ReactElement } from "react";
-import { CONTRACT_CONSENT_STATEMENT, DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
+import {
+  CONTRACT_CONSENT_STATEMENT,
+  DIETARY_MEMORY_CONSENT,
+  DIETARY_MEMORY_MONTHS_UNUSED,
+  DIETARY_NOTE_RETENTION,
+  SUPPLIER_ARRIVAL_RETENTION,
+} from "@omnitwin/types";
 import { REMEMBERED_NOTES_PATH } from "../lib/dietary-memory.js";
 import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
 import {
@@ -120,14 +126,23 @@ const ACCESSIBILITY_UPDATED = { text: "18 November 2026", iso: "2026-11-18" } as
  *  third-party analytics, and said what the error monitor's timing records
  *  carry (T-685); and, the same day, said "internet address" for the address
  *  those records leave out, as the page also calls a page's URL its address
- *  (Blake, 20 November 2026: "Say "internet address""). Re-date it, and the
- *  sitemap's /privacy date, to the day a change goes live. */
-const PRIVACY_UPDATED = { text: "20 November 2026", iso: "2026-11-20" } as const;
+ *  (Blake, 20 November 2026: "Say "internet address""). And on 22
+ *  November, when it said what the Day Board keeps of suppliers coming to an
+ *  event, for how long and on what basis (T-692; Blake, 12 November 2026),
+ *  and what the opening and lock-up checks keep of the staff who tick them,
+ *  on what basis and for how long (T-693; Blake, 12 November 2026).
+ *  Re-date it, and the sitemap's /privacy date, to the day a change goes
+ *  live. */
+const PRIVACY_UPDATED = { text: "22 November 2026", iso: "2026-11-22" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
  *  retention pass and the planner also read. */
 const NOTE_DAYS_AFTER_EVENT = DIETARY_NOTE_RETENTION.daysAfterEvent;
 const NOTE_MONTHS_WITHOUT_EVENT = Math.round(DIETARY_NOTE_RETENTION.daysWithoutEvent / 30.4);
+
+/** How long a supplier's contact and note for the day are kept, from the one
+ *  definition the API's nightly pass also reads. */
+const SUPPLIER_CONTACT_DAYS = SUPPLIER_ARRIVAL_RETENTION.daysAfterBooking;
 
 /** The box beside the note, word for word as the planner shows it. Both
  *  paths are described; the lawful condition for health information is the
@@ -304,6 +319,24 @@ const PRIVACY: LegalDocument = {
                 + `Beside the note, the person planning the event is asked "${REMEMBER_QUESTION}" The box starts unticked. Left unticked, the note stays with that event only. Ticked, we also keep a copy with that person's account, shown to them alone, and fill it in on their next layout with us; we record who ticked the box, when, and the words beside it. They can see and remove that copy at any time.`,
             },
             {
+              // The Day Board's supplier arrivals (T-692): @omnitwin/types
+              // supplier-arrivals.ts and api migration 0111. The wall screen
+              // reads none of them (DayBoardPage).
+              term: "Suppliers coming to an event",
+              detail:
+                "When the venue expects a supplier for an event, such as a florist, a band or a caterer, its office records the supplier's name, what they do, when they are due and by which door, and, where the office adds them, a contact for the day and a short note. "
+                + "The venue's staff record when each supplier arrives and leaves, with the name of the person who marked it, and keep a history of those marks, of any mark taken back, and of who removed a supplier from the list. These are seen by the venue's staff.",
+            },
+            {
+              // The Day Board's opening and lock-up checks (T-693): @omnitwin/types
+              // building-checks.ts and api migration 0112, the general audit log
+              // for a list put in a new order.
+              term: "Opening and lock-up checks",
+              detail:
+                "The venue keeps its own lists of checks for opening the building and locking it up. When a member of its staff ticks a check, or takes a tick back, we record their name and the time with it. "
+                + "We also keep which staff account wrote each check, took one off the list, or put the list in a new order. These are seen by the venue's staff.",
+            },
+            {
               term: "Your signature on a contract",
               detail:
                 "Once you have accepted a proposal, the venue may ask you to sign its contract on your proposal link. You sign by typing your name and ticking the statement \"" + CONTRACT_CONSENT_STATEMENT + "\" "
@@ -360,6 +393,13 @@ const PRIVACY: LegalDocument = {
                 "Article 6(1)(b): entering into and performing the contract for your event. Keeping the signature record and the payment records afterwards is Article 6(1)(c), the venue's legal obligation to keep accounting records, and Article 6(1)(f), our legitimate interest in being able to show what was agreed, by whom and when.",
             },
             {
+              // The Day Board's supplier arrivals (T-692; Blake, 12 November 2026).
+              term: "Receiving suppliers at the door",
+              detail:
+                "Article 6(1)(f), legitimate interests: receiving each supplier at the right door and time, with a supplier's contact and note for the day to reach them by, and keeping the venue's record of who was in the building, with the names of the staff who marked them in and out. "
+                + `We have weighed this against the interests of the people named: the contact and note are ordinary business details, removed ${String(SUPPLIER_CONTACT_DAYS)} days after the booking ends, and the names on the door are the venue's safety record, kept after a member of staff's account is deleted.`,
+            },
+            {
               term: "Keeping the service secure and working",
               detail:
                 "Article 6(1)(f), legitimate interests: protecting the site from abuse, spam and bulk harvesting, and diagnosing faults so that the service stays available.",
@@ -368,6 +408,11 @@ const PRIVACY: LegalDocument = {
               term: "Measuring how fast our pages are",
               detail:
                 "Article 6(1)(f): our legitimate interest in a fast, working site. You can object at any time with the \"Don't measure my visits\" switch (see \"How fast our pages are\").",
+            },
+            {
+              term: "Opening and lock-up checks",
+              detail:
+                "Article 6(1)(f), legitimate interests: keeping the building safe and secure, and keeping the venue's record of who did each opening and lock-up check, and when. We have weighed this against the interests of the staff concerned: the record holds only their name and the time, and it is kept after their account is deleted because it must still show who did each check.",
             },
             {
               term: "Venue staff accounts",
@@ -544,6 +589,17 @@ const PRIVACY: LegalDocument = {
               term: "An allergy note you asked us to remember",
               detail:
                 `Kept with your account until you remove it, which you can do at any time. If ${String(DIETARY_MEMORY_MONTHS_UNUSED)} months pass without it being saved with a layout, we remove it. Once it is removed, we keep only the record that you agreed, when, the words you agreed to, and when it ended, without the note itself.`,
+            },
+            {
+              term: "Suppliers coming to an event",
+              detail:
+                `A supplier's contact for the day and the note about them are removed ${String(SUPPLIER_CONTACT_DAYS)} days after the booking ends. `
+                + "The supplier's name, when they were due, and when they arrived and left stay with the booking's records, with the names of the staff who marked them in and out: they are the venue's record of who was in the building, and are kept after a member of staff's account is deleted.",
+            },
+            {
+              term: "Opening and lock-up checks",
+              detail:
+                "Each tick, and each tick taken back, is kept with the name of the member of staff who made it and the time, for as long as the venue keeps its records on this service: it is the venue's record of who did each check, so it is kept after a member of staff's account is deleted.",
             },
             {
               term: "Signed contracts and deposit records",

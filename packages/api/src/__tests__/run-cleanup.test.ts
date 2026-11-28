@@ -10,9 +10,11 @@ import type { Database } from "../db/client.js";
 // silently) when they cannot run. The job's log is public with the repository.
 // The enquiry funnel's engagement events (migration 0100) are kept no longer
 // than the privacy page keeps an enquiry, so their retention pass runs here too,
-// and so does the field web vitals' (goal 07).
+// and so does the field web vitals' (goal 07). So does the pass that clears a
+// supplier's contact and note a year after their booking ends, as the privacy
+// page says (Blake, 12 November 2026).
 
-const { previewMock, orphanMock, lapsedMock, rememberedMock, peopleMock, engagementMock, vitalsMock } = vi.hoisted(() => ({
+const { previewMock, orphanMock, lapsedMock, rememberedMock, peopleMock, engagementMock, vitalsMock, supplierMock } = vi.hoisted(() => ({
   peopleMock: vi.fn(),
   previewMock: vi.fn(),
   orphanMock: vi.fn(),
@@ -20,6 +22,7 @@ const { previewMock, orphanMock, lapsedMock, rememberedMock, peopleMock, engagem
   rememberedMock: vi.fn(),
   engagementMock: vi.fn(),
   vitalsMock: vi.fn(),
+  supplierMock: vi.fn(),
 }));
 
 vi.mock("../services/cleanup.js", () => ({
@@ -44,10 +47,15 @@ vi.mock("../services/enquiry-funnel.js", () => ({
 vi.mock("../services/web-vitals.js", () => ({
   removeExpiredWebVitalSamples: vitalsMock,
 }));
+vi.mock("../services/supplier-arrival-retention.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../services/supplier-arrival-retention.js")>(),
+  clearLapsedSupplierContacts: supplierMock,
+}));
 
 const { describeFailure, runScheduledCleanup } = await import("../scripts/run-cleanup.js");
 const { DietaryMemoryWriteError } = await import("../services/dietary-memory.js");
 const { DietaryRetentionError } = await import("../services/dietary-retention.js");
+const { SupplierContactRetentionError } = await import("../services/supplier-arrival-retention.js");
 const { PeopleRetentionError, peopleRetentionStartsOn } = await import("../services/people-retention.js");
 
 /** The people pass's result, as eraseLapsedPeople returns it. */
@@ -73,6 +81,7 @@ beforeEach(() => {
   peopleMock.mockResolvedValue(peopleResult());
   engagementMock.mockResolvedValue(4);
   vitalsMock.mockResolvedValue(6);
+  supplierMock.mockResolvedValue({ dryRun: false, arrivals: 7 });
 });
 
 describe("runScheduledCleanup", () => {
@@ -99,6 +108,7 @@ describe("runScheduledCleanup", () => {
       enquiriesErased: 3,
       peopleDeferred: 0,
       peopleStepsFailed: 0,
+      supplierContactsCleared: 7,
       engagementEventsRemoved: 4,
       webVitalSamplesRemoved: 6,
     });
@@ -121,9 +131,27 @@ describe("runScheduledCleanup", () => {
       "[cleanup] Removed the notes on single pieces from 2 layout(s) past their retention",
       "[cleanup] Removed 3 remembered allergy note(s) unused for the agreed period",
       "[cleanup] Erased 1 person(s) and 3 enquiry(ies) 24 months after the last contact; kept 2 person(s) for a booking; left 0 for the next night",
+      "[cleanup] Cleared the contact and note from 7 supplier arrival(s) past their retention",
       "[cleanup] Removed 4 engagement event(s) past their retention period",
       "[cleanup] Removed 6 web vital sample(s) past their retention period",
     ]);
+  });
+
+  it("clears suppliers' contacts for real, after the note passes, and fails the job with nothing from a contact in the error", async () => {
+    await runScheduledCleanup(db, () => undefined);
+    // Called with the database alone: no dry run, so the contacts really go.
+    expect(supplierMock).toHaveBeenCalledTimes(1);
+    expect(supplierMock).toHaveBeenCalledWith(db);
+    expect(rememberedMock.mock.invocationCallOrder[0]).toBeLessThan(supplierMock.mock.invocationCallOrder[0] ?? 0);
+
+    const failure = new SupplierContactRetentionError(
+      Object.assign(new Error("Failing row contains (Morven 07700 900123)"), { code: "23514" }),
+    );
+    supplierMock.mockRejectedValue(failure);
+    const lines: string[] = [];
+    await expect(runScheduledCleanup(db, (line) => { lines.push(line); })).rejects.toBe(failure);
+    expect(failure.message).toBe("Supplier contact retention pass failed (SQLSTATE 23514)");
+    expect(lines.join("\n")).not.toContain("07700");
   });
 
   it("runs the engagement retention pass once, after the notes, and fails the job when it cannot run", async () => {

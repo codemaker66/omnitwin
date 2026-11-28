@@ -6,7 +6,8 @@ import type { FastifyInstance } from "fastify";
 // (fix-first item 18): who may run it, that the rehearsal changes nothing,
 // and that the real pass runs with no storage step (sheets are never stored).
 // The same endpoints run the remembered notes' unused period ("ask once,
-// then remember"). Both passes are proven in their -postgres tests.
+// then remember"), and clear suppliers' contacts and notes a year after their
+// booking ends. Each pass is proven in its -postgres test.
 // ---------------------------------------------------------------------------
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
@@ -24,6 +25,10 @@ const removeUnusedRememberedNotes = vi.fn();
 vi.mock("../services/dietary-memory.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../services/dietary-memory.js")>(),
   removeUnusedRememberedNotes: (...args: unknown[]) => removeUnusedRememberedNotes(...args) as unknown,
+}));
+const clearLapsedSupplierContacts = vi.fn();
+vi.mock("../services/supplier-arrival-retention.js", () => ({
+  clearLapsedSupplierContacts: (...args: unknown[]) => clearLapsedSupplierContacts(...args) as unknown,
 }));
 const eraseLapsedPeople = vi.fn();
 vi.mock("../services/people-retention.js", async (importOriginal) => ({
@@ -46,6 +51,9 @@ beforeEach(() => {
   vi.stubEnv("PEOPLE_RETENTION_STARTS_ON", "");
   removeLapsedDietaryNotes.mockReset();
   removeUnusedRememberedNotes.mockReset();
+  clearLapsedSupplierContacts.mockReset();
+  // A default for the cases that are not about suppliers.
+  clearLapsedSupplierContacts.mockResolvedValue({ dryRun: false, arrivals: 0 });
   eraseLapsedPeople.mockReset();
   eraseLapsedPeople.mockResolvedValue({ dryRun: false, off: false, people: 2, keptForBooking: 1, enquiries: 3, deferred: { people: 4, enquiries: 1 }, outOfTime: false });
 });
@@ -101,6 +109,7 @@ describe("POST /admin/cleanup", () => {
   it("removes lapsed notes and says what it did", async () => {
     removeLapsedDietaryNotes.mockResolvedValueOnce(RESULT);
     removeUnusedRememberedNotes.mockResolvedValueOnce({ dryRun: false, removed: 1 });
+    clearLapsedSupplierContacts.mockResolvedValueOnce({ dryRun: false, arrivals: 6 });
     const res = await server.inject({
       method: "POST", url: "/admin/cleanup", headers: { authorization: `Bearer ${platformAdmin}` },
     });
@@ -113,7 +122,9 @@ describe("POST /admin/cleanup", () => {
     expect(body.message).toContain("removed 1 remembered note(s) unused for the agreed period");
     expect(body.message).toContain("erased 2 person(s) and 3 enquiry(ies) 24 months after the last contact, leaving 5 for another run");
     expect(eraseLapsedPeople.mock.calls[0]?.[1]).toBeUndefined();
+    expect(body.message).toContain("cleared the contact and note from 6 supplier arrival(s) past their retention");
     expect(removeUnusedRememberedNotes.mock.calls[0]?.[1]).toBeUndefined();
+    expect(clearLapsedSupplierContacts.mock.calls[0]?.[1]).toBeUndefined();
     // The real pass: no dry run and no storage step.
     expect(removeLapsedDietaryNotes.mock.calls[0]?.[1]).toBeUndefined();
   });
@@ -130,5 +141,24 @@ describe("POST /admin/cleanup", () => {
     const message = res.json<{ data: { message: string } }>().data.message;
     expect(message).toContain("the 24-month people pass is off (PEOPLE_RETENTION_STARTS_ON is unset)");
     expect(message).not.toContain("24 months after the last contact");
+  });
+});
+
+describe("POST /admin/retention/supplier-contacts (the rehearsal)", () => {
+  it("is for platform administrators only, and runs the pass as a dry run", async () => {
+    expect((await server.inject({ method: "POST", url: "/admin/retention/supplier-contacts" })).statusCode).toBe(401);
+    const refused = await server.inject({
+      method: "POST", url: "/admin/retention/supplier-contacts", headers: { authorization: `Bearer ${venueAdmin}` },
+    });
+    expect(refused.statusCode).toBe(403);
+    expect(clearLapsedSupplierContacts).not.toHaveBeenCalled();
+
+    clearLapsedSupplierContacts.mockResolvedValueOnce({ dryRun: true, arrivals: 2 });
+    const res = await server.inject({
+      method: "POST", url: "/admin/retention/supplier-contacts", headers: { authorization: `Bearer ${platformAdmin}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ data: unknown }>().data).toEqual({ dryRun: true, arrivals: 2 });
+    expect(clearLapsedSupplierContacts.mock.calls[0]?.[1]).toEqual({ dryRun: true });
   });
 });

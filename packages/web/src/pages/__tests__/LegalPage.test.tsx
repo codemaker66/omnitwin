@@ -7,6 +7,7 @@ import {
   DIETARY_MEMORY_CONSENT,
   DIETARY_MEMORY_MONTHS_UNUSED,
   DIETARY_NOTE_RETENTION,
+  SUPPLIER_ARRIVAL_RETENTION,
   findUnsupportedProposalClaim,
 } from "@omnitwin/types";
 import { LegalPage } from "../LegalPage.js";
@@ -123,11 +124,12 @@ describe("every document", () => {
     // 18 November, when the tool hints its More panel cut off left its known
     // problems; and the privacy policy on the day it went live, when it
     // described the page-speed measurements, their lawful basis and their
-    // switch (T-685).
+    // switch (T-685), and again on 22 November, when it said what the Day Board
+    // keeps of suppliers and for how long (T-692).
     const expected = {
       terms: { iso: "2026-11-11", text: "11 November 2026" },
       accessibility: { iso: "2026-11-18", text: "18 November 2026" },
-      privacy: { iso: "2026-11-20", text: "20 November 2026" },
+      privacy: { iso: "2026-11-22", text: "22 November 2026" },
     }[type];
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
@@ -397,11 +399,47 @@ describe("the privacy policy", () => {
     expect(link.getAttribute("href")).toBe("/account/allergy-notes");
   });
 
+  it("says what the Day Board keeps of suppliers, and that only their contact and note go, a year after the booking", () => {
+    const text = textOf("privacy");
+    expect(text).toContain("Suppliers coming to an event");
+    expect(text).toContain("a contact for the day and a short note");
+    // The period comes from the one definition the nightly pass runs on (Blake, 12 November 2026).
+    expect(text).toContain(`removed ${String(SUPPLIER_ARRIVAL_RETENTION.daysAfterBooking)} days after the booking ends`);
+    // The names on the door marks are kept, and the page says so.
+    expect(text).toContain("they are the venue's record of who was in the building, and are kept after a member of staff's account is deleted");
+  });
+
+  it("gives the lawful basis for suppliers' contacts and the names on door marks: legitimate interests", () => {
+    textOf("privacy");
+    const basis = document.getElementById("why-we-use-it");
+    const term = [...(basis?.querySelectorAll("dt") ?? [])].find((dt) => dt.textContent === "Receiving suppliers at the door");
+    const detail = term?.nextElementSibling?.textContent ?? "";
+    expect(detail).toMatch(/^Article 6\(1\)\(f\), legitimate interests:/u);
+    expect(detail).toContain("a supplier's contact and note for the day");
+    expect(detail).toContain("the names of the staff who marked them in and out");
+    // Blake's word, and the app's: an account is deleted (Clerk's user.deleted).
+    expect(detail).toContain("after a member of staff's account is deleted");
+  });
+
   it("names no lawful condition for the health note: that is the venue adviser's to confirm", () => {
     const text = textOf("privacy");
     for (const claim of ["Article 9", "explicit consent", "9(2)"]) {
       expect(text, `privacy policy claims "${claim}"`).not.toContain(claim);
     }
+  });
+
+  it("says what the opening and lock-up checks keep of the staff who tick them, on what basis, and that the names stay", () => {
+    render(<LegalPage type="privacy" />);
+    const section = (id: string): string => document.getElementById(id)?.textContent ?? "";
+    // What is held: the name and time on each tick and each tick taken back.
+    expect(section("other-information")).toContain("Opening and lock-up checks");
+    expect(section("other-information")).toContain("When a member of its staff ticks a check, or takes a tick back, we record their name and the time with it.");
+    // Its own lawful basis, on the venue's record of who did each check (Blake, 12 November 2026).
+    expect(section("why-we-use-it")).toContain("Opening and lock-up checks");
+    expect(section("why-we-use-it")).toContain("Article 6(1)(f), legitimate interests: keeping the building safe and secure, and keeping the venue's record of who did each opening and lock-up check, and when.");
+    // How long: the names stay after a member of staff's account is deleted.
+    expect(section("how-long")).toContain("Opening and lock-up checks");
+    expect(section("how-long")).toContain("it is the venue's record of who did each check, so it is kept after a member of staff's account is deleted.");
   });
 
   it("names the ICO with a route to complain", () => {
