@@ -213,14 +213,15 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     });
   }
 
-  async function waitForLockWait(pattern: string): Promise<void> {
+  /** Waits until `waiters` statements like the pattern wait on a lock in this database. */
+  async function waitForLockWait(pattern: string, waiters = 1): Promise<void> {
     for (let attempt = 0; attempt < 200; attempt += 1) {
       const waiting = await value(`SELECT count(*)::int AS value FROM pg_stat_activity
         WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE $1`, [pattern]);
-      if (typeof waiting === "number" && waiting > 0) return;
+      if (typeof waiting === "number" && waiting >= waiters) return;
       await new Promise((resolve) => { setTimeout(resolve, 100); });
     }
-    throw new Error(`Nothing waited on a lock like ${pattern}`);
+    throw new Error(`Fewer than ${String(waiters)} statements waited on a lock like ${pattern}`);
   }
 
   /**
@@ -1113,6 +1114,60 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await namedAnywhere(v, "Isobel Keptwell")).toBe(0);
   });
 
+  it("the 24-month pass clears the client name the join copied onto events it made for a deal and a proposal another live person leads, made from the removed enquiry, never their names", async () => {
+    const v = await venueIn(pool, "retention, a removed enquiry's nearby deal and proposal events");
+    const { personId: zara } = await keptByAnInk(v, "Zara Keptwell");
+    // Another live person leads a deal made from each of her two enquiries that
+    // ask to book nothing (so the deals and the proposal are near her): the
+    // first deal is open, and the join makes its event; the second is lost, and
+    // the join makes an event for its sent proposal. Both events take their
+    // client name from her enquiry.
+    const leith = await person(v, "Leith Leadwell");
+    const forDeal = await enquiry(v, { contactId: zara, name: "Zara Keptwell", eventType: "venue-enquiry", replied: true, at: longAgo });
+    const dealId = await deal(v, { title: "TEST ONLY a dinner Leith leads", enquiryId: forDeal, leadId: leith, at: longAgo });
+    const forProposal = await enquiry(v, { contactId: zara, name: "Zara Keptwell", eventType: "venue-enquiry", replied: true, at: longAgo });
+    const lostDeal = await deal(v, { title: "TEST ONLY a lunch Leith lost", enquiryId: forProposal, leadId: leith, stage: "lost", at: longAgo });
+    const proposalId = await proposal(v, { title: "TEST ONLY Leith's reception", status: "sent", dealId: lostDeal, enquiryId: forProposal, at: longAgo });
+    await join();
+    const dealEvent = await eventOf("opportunities", dealId);
+    const proposalEvent = await eventOf("proposals", proposalId);
+    expect(await names(dealEvent)).toEqual({ name: "TEST ONLY a dinner Leith leads", client_name: "Zara Keptwell" });
+    expect(await names(proposalEvent)).toEqual({ name: "TEST ONLY Leith's reception", client_name: "Zara Keptwell" });
+
+    await passKeeps(v, zara);
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[forDeal, forProposal]])).toBe(0);
+    expect(await names(dealEvent)).toEqual({ name: "TEST ONLY a dinner Leith leads", client_name: null });
+    expect(await names(proposalEvent)).toEqual({ name: "TEST ONLY Leith's reception", client_name: null });
+  });
+
+  it("the 24-month pass leaves an event whose made record is undone", async () => {
+    const v = await venueIn(pool, "retention, an undone made record");
+    const { personId: xanthe } = await keptByAnInk(v, "Xanthe Keptwell");
+    const { spare, made } = await spareAndMade(v, xanthe, "Xanthe Keptwell");
+    await planOn(v, made);
+    // The record marked undone by hand, as the undo marks it; the enquiry still
+    // points at the event, so the pass reaches it.
+    await pool.query("UPDATE event_link_joins SET undone_at = now() WHERE subject_kind = 'enquiry' AND subject_id = $1", [spare]);
+
+    await passKeeps(v, xanthe);
+    expect(await count("enquiries WHERE id = $1", [spare])).toBe(0);
+    expect(await names(made)).toEqual({ name: "Xanthe Keptwell", client_name: "Xanthe Keptwell" });
+  });
+
+  it("the 24-month pass leaves an event whose made record is another venue's", async () => {
+    const v = await venueIn(pool, "retention, a made record of another venue");
+    const elsewhere = await venueIn(pool, "retention, another venue");
+    const { personId: yolanda } = await keptByAnInk(v, "Yolanda Keptwell");
+    const { spare, made } = await spareAndMade(v, yolanda, "Yolanda Keptwell");
+    await planOn(v, made);
+    // A row the join never writes, set by hand: the made record names another venue.
+    await pool.query("UPDATE event_link_joins SET venue_id = $2 WHERE subject_kind = 'enquiry' AND subject_id = $1", [spare, elsewhere.venueId]);
+
+    await passKeeps(v, yolanda);
+    expect(await count("enquiries WHERE id = $1", [spare])).toBe(0);
+    expect(await names(made)).toEqual({ name: "Yolanda Keptwell", client_name: "Yolanda Keptwell" });
+  });
+
   it("an event the join made from the title of someone else's proposal they only answered on is near them, and loses their name", async () => {
     const v = await venueIn(pool, "erasure, a proposal answered on");
     const ailsa = await person(v, "Ailsa Answerwell");
@@ -1257,6 +1312,8 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     const { asked: second, made: clientByStaff } = await madeFor(v, "Beth Oldname");
     await pool.query("UPDATE events SET client_name = 'TEST ONLY the guild' WHERE id = $1", [clientByStaff]);
     expect((await edit(v, first, { name: "Beth Newname" })).statusCode).toBe(200);
+    // The other enquiry of the same name keeps its event's copy until it is edited itself.
+    expect(await names(clientByStaff)).toEqual({ name: "Beth Oldname", client_name: "TEST ONLY the guild" });
     expect((await edit(v, second, { name: "Beth Newname" })).statusCode).toBe(200);
     expect(await names(namedByStaff)).toEqual({ name: "TEST ONLY harvest supper", client_name: "Beth Newname" });
     expect(await names(clientByStaff)).toEqual({ name: "Beth Newname", client_name: "TEST ONLY the guild" });
@@ -1270,14 +1327,23 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     const dealId = await deal(v, { title: "Cora Oldname", enquiryId: forDeal });
     const forProposal = await enquiry(v, { name: "Cora Oldname", eventType: "venue-enquiry" });
     const proposalId = await proposal(v, { title: "TEST ONLY a reception", status: "sent", enquiryId: forProposal });
+    // A third enquiry of the same name, never edited, with a deal of its own.
+    const forOtherDeal = await enquiry(v, { name: "Cora Oldname", eventType: "venue-enquiry", replied: true });
+    const otherDealId = await deal(v, { title: "TEST ONLY another dinner", enquiryId: forOtherDeal });
     await join();
     const dealEvent = await eventOf("opportunities", dealId);
     const proposalEvent = await eventOf("proposals", proposalId);
+    const otherDealEvent = await eventOf("opportunities", otherDealId);
     expect(await names(dealEvent)).toEqual({ name: "Cora Oldname", client_name: "Cora Oldname" });
+    expect(await names(otherDealEvent)).toEqual({ name: "TEST ONLY another dinner", client_name: "Cora Oldname" });
     expect((await edit(v, forDeal, { name: "Cora Newname" })).statusCode).toBe(200);
+    // Only the edited enquiry's own deal's event follows: not another enquiry's proposal's, nor its deal's.
+    expect(await names(proposalEvent)).toEqual({ name: "TEST ONLY a reception", client_name: "Cora Oldname" });
+    expect(await names(otherDealEvent)).toEqual({ name: "TEST ONLY another dinner", client_name: "Cora Oldname" });
     expect((await edit(v, forProposal, { name: "Cora Newname" })).statusCode).toBe(200);
     expect(await names(dealEvent)).toEqual({ name: "Cora Oldname", client_name: "Cora Newname" });
     expect(await names(proposalEvent)).toEqual({ name: "TEST ONLY a reception", client_name: "Cora Newname" });
+    expect(await names(otherDealEvent)).toEqual({ name: "TEST ONLY another dinner", client_name: "Cora Oldname" });
   });
 
   it("an edit to a name the join would not copy gives the event the join's own name and no client", async () => {
@@ -1342,7 +1408,7 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     const held = new Promise<void>((resolve) => { written = resolve; });
     const released = new Promise<void>((resolve) => { release = resolve; });
     const committed = db.transaction(async (tx) => {
-      await writeEnquiryEdit(tx, enquiryId, { name, updatedAt: new Date() }, name);
+      await writeEnquiryEdit(tx, enquiryId, { name, updatedAt: new Date() });
       written?.();
       await released;
     });
@@ -1355,26 +1421,38 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
   it("an edit holding the enquiry while the join runs: the join skips the enquiry without waiting, and its next run names the event by the new name", async () => {
     const v = await venueIn(pool, "edit first, the join beside it");
     const asked = await enquiry(v, { name: "Hilda Oldname", replied: true });
+    // An enquiry that asks to book nothing, with a deal: the event the join
+    // makes for the deal takes its client name from the enquiry, read FOR SHARE.
+    const forDeal = await enquiry(v, { name: "Hamish Oldname", eventType: "venue-enquiry", replied: true });
+    const dealId = await deal(v, { title: "TEST ONLY Hamish's dinner", enquiryId: forDeal });
     const editing = heldEdit(asked, "Hilda Newname");
+    const editingDeal = heldEdit(forDeal, "Hamish Newname");
     try {
       await editing.held;
+      await editingDeal.held;
       const started = Date.now();
       await join();
       // Skipped (SKIP LOCKED), not waited for: the pool's lock limit is 20 s.
       expect(Date.now() - started).toBeLessThan(15_000);
       expect(await joinOf("enquiry", asked)).toBeUndefined();
       expect(await value("SELECT event_id AS value FROM enquiries WHERE id = $1", [asked])).toBeNull();
+      expect(await joinOf("opportunity", dealId)).toBeUndefined();
     } finally {
-      await editing.commit();
+      await Promise.all([editing.commit(), editingDeal.commit()]);
     }
     await join();
     const made = await eventOf("enquiries", asked);
     expect(await names(made)).toEqual({ name: "Hilda Newname", client_name: "Hilda Newname" });
+    expect(await names(await eventOf("opportunities", dealId))).toEqual({ name: "TEST ONLY Hamish's dinner", client_name: "Hamish Newname" });
   });
 
   it("the join holding the enquiry while an edit arrives: the edit waits for the join's commit, then the event the join made follows the new name", async () => {
     const v = await venueIn(pool, "the join first, an edit beside it");
     const asked = await enquiry(v, { name: "Iona Oldname", replied: true });
+    // An enquiry that asks to book nothing, with a deal: the join holds it FOR
+    // SHARE while it makes the deal's event, its client name copied from it.
+    const forDeal = await enquiry(v, { name: "Ishbel Oldname", eventType: "venue-enquiry", replied: true });
+    const dealId = await deal(v, { title: "TEST ONLY Ishbel's dinner", enquiryId: forDeal });
     const joiner = await pool.connect();
     let open = false;
     try {
@@ -1382,13 +1460,15 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
       open = true;
       await joiner.query("SELECT * FROM spine_join_old_records()");
       const editing = edit(v, asked, { name: "Iona Newname" });
+      const editingDeal = edit(v, forDeal, { name: "Ishbel Newname" });
       try {
-        await waitForLockWait(`%from "enquiries"%for no key update%`);
+        await waitForLockWait(`%from "enquiries"%for no key update%`, 2);
       } finally {
         await joiner.query("COMMIT");
         open = false;
       }
       expect((await editing).statusCode).toBe(200);
+      expect((await editingDeal).statusCode).toBe(200);
     } finally {
       if (open) await joiner.query("ROLLBACK");
       joiner.release();
@@ -1396,6 +1476,7 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     const made = await eventOf("enquiries", asked);
     expect(await joinOf("enquiry", asked)).toEqual({ event_id: made, event_made: true, path: "new_event" });
     expect(await names(made)).toEqual({ name: "Iona Newname", client_name: "Iona Newname" });
+    expect(await names(await eventOf("opportunities", dealId))).toEqual({ name: "TEST ONLY Ishbel's dinner", client_name: "Ishbel Newname" });
   });
 
   it("two edits of an enquiry's name at once: the second reads the name the first wrote, under the enquiry's lock, and the event follows both", async () => {

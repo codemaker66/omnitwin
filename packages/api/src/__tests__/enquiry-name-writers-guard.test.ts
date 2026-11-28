@@ -20,7 +20,9 @@ import * as schema from "../db/schema.js";
 //     schema namespace, an import alias or a local alias), whose set() either
 //     is an object literal with no spread, no computed key and no `name` key
 //     (it cannot write the name) or sits in a function listed below that calls
-//     followEnquiryName (it carries the copies);
+//     followEnquiryName and is given one of that function's parameters, whose
+//     name the function reads, no parameter of its own being called `name` (it
+//     carries the copies, keyed off the changes it writes);
 //   - an update builder on a table it cannot name, an insert into the table
 //     that updates on conflict, SQL text that updates "enquiries" by name or
 //     updates an interpolated table, and a call of sql.raw() with text it
@@ -36,7 +38,7 @@ const MIGRATIONS = resolve(import.meta.dirname, "../../drizzle");
 const TABLES = new Map(Object.entries(schema).flatMap(([name, value]) => (is(value, PgTable) ? [[name, getTableName(value)] as const] : [])));
 const ENQUIRIES = "enquiries";
 
-/** Writes that may set the name, and carry the copies: the file, and the function they sit in. */
+/** Writes that may set the name, and carry the copies: the file, and the function they sit in (keysOffItsChanges). */
 const CARRY_THE_COPIES = [{ file: "routes/enquiries.ts", within: "writeEnquiryEdit" }] as const;
 
 /** SQL that updates a table given at run time: the function, and why it cannot be the enquiries table. */
@@ -151,6 +153,31 @@ function leavesTheName(argument: ts.Expression | undefined): boolean {
   });
 }
 
+/**
+ * Whether a listed function's write keys its lock and its copies off the
+ * changes it writes: set() is given one of the function's parameters, the
+ * function reads that parameter's `name`, and no parameter of its own is
+ * called `name` (a name given beside the changes could differ from the one
+ * written).
+ */
+function keysOffItsChanges(fn: ts.Node, setArgument: ts.Expression | undefined): boolean {
+  if (!ts.isFunctionLike(fn) || setArgument === undefined || !ts.isIdentifier(setArgument)) return false;
+  const changes = setArgument.text;
+  const parameters = fn.parameters.map((parameter) => parameter.name.getText());
+  if (!parameters.includes(changes) || parameters.includes("name")) return false;
+  let reads = false;
+  const visit = (node: ts.Node): void => {
+    if (reads) return;
+    const owner = ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) ? node.expression : undefined;
+    const key = ts.isPropertyAccessExpression(node) ? node.name.text
+      : ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) ? node.argumentExpression.text : undefined;
+    if (owner !== undefined && ts.isIdentifier(owner) && owner.text === changes && key === "name") reads = true;
+    else ts.forEachChild(node, visit);
+  };
+  visit(fn);
+  return reads;
+}
+
 /** Judges one source file; `file` is its path relative to src. */
 function judge(file: string, text: string): Judgement {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
@@ -196,8 +223,9 @@ function judge(file: string, text: string): Judgement {
           const setArgument = ts.isCallExpression(setCall) ? setCall.arguments[0] : undefined;
           const place = finding(node, `update(${ENQUIRIES}).set(${setArgument?.getText().slice(0, 60) ?? ""})`);
           const carrier = CARRY_THE_COPIES.find((entry) => entry.file === file && entry.within === place.within);
+          const fn = carrier === undefined ? undefined : functionNamed(source, carrier.within);
           if (leavesTheName(setArgument)) cannotWriteName.push(place);
-          else if (carrier !== undefined && calls(functionNamed(source, carrier.within) ?? source, "followEnquiryName")) carryTheCopies.push(place);
+          else if (fn !== undefined && calls(fn, "followEnquiryName") && keysOffItsChanges(fn, setArgument)) carryTheCopies.push(place);
           else unplaced.push(place);
         }
       }
@@ -289,6 +317,12 @@ describe("every writer of an enquiry's name carries the join's copies of it", ()
       "export async function rename(db) { await db.insert(enquiries).values({}).onConflictDoUpdate({ target: enquiries.id, set: { name: 'x' } }); }",
       "export async function rename(db) { await reword(db, { table: \"enquiries\", columns: { name: 200 } }); }",
       "export async function writeEnquiryEdit(db, changes) { await db.update(enquiries).set(changes); }",
+      // The copies keyed off a name given beside the changes, which may not be the one written.
+      "export async function writeEnquiryEdit(tx, id, changes, name) { const [held] = name === undefined ? [] : await tx.select().from(enquiries); "
+        + "await tx.update(enquiries).set(changes); await followEnquiryName(tx, { from: held.name, to: name }); }",
+      // A set() given something other than the changes the name is read from.
+      "export async function writeEnquiryEdit(tx, id, changes) { const name = changes.name; "
+        + "await tx.update(enquiries).set({ ...changes, name: 'x' }); await followEnquiryName(tx, { from: name, to: name }); }",
     ];
     for (const text of offending) {
       const file = text.includes("writeEnquiryEdit") ? "routes/enquiries.ts" : "services/elsewhere.ts";

@@ -26,7 +26,7 @@ import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
 import { lockFirstResponse, stampFirstResponse } from "../services/enquiry-funnel.js";
 import { followEnquiryName } from "../services/people-erasure.js";
-import type { PeopleConn } from "../services/people-records.js";
+import type { PeopleTx } from "../services/people-records.js";
 import { outerColumn } from "../utils/outer-column.js";
 
 // ---------------------------------------------------------------------------
@@ -126,21 +126,27 @@ function asSeenBy(user: JwtUser, row: EnquiryRow): EnquiryRow | CustomerEnquiry 
   return Object.fromEntries(Object.entries(row).filter(([field]) => !WITHHELD_FIELDS.has(field))) as CustomerEnquiry;
 }
 
+/** An edit's columns, as set() writes them. A name among them is text: the
+ *  edit's lock and the join's copies key off it (writeEnquiryEdit). */
+export type EnquiryEdit = Record<string, unknown> & { name?: string };
+
 /**
- * An edit's writes, in the caller's transaction. When the edit gives a name,
- * the enquiry row is locked FOR NO KEY UPDATE first, as the writers take an
- * enquiry before any of its events, and the name it holds is read under that
- * lock; once the row is written, the events the join of old records named
- * from the old name follow the new one while they still hold the old one
- * (followEnquiryName). Exported for the cases that hold an edit open beside
- * the join or another edit.
+ * An edit's writes, in the caller's transaction: only a transaction can be
+ * given, so the lock below lasts until the edit commits. When the changes give
+ * a name, the enquiry row is locked FOR NO KEY UPDATE first, as the writers
+ * take an enquiry before any of its events, and the name it holds is read
+ * under that lock; once the row is written, the events the join of old records
+ * named from the old name follow the new one while they still hold the old one
+ * (followEnquiryName). The name is read from the changes it writes, so no
+ * caller writes a name without the lock and the copies. Exported for the cases
+ * that hold an edit open beside the join or another edit.
  */
 export async function writeEnquiryEdit(
-  tx: PeopleConn,
+  tx: PeopleTx,
   enquiryId: string,
-  changes: Record<string, unknown>,
-  name: string | undefined,
+  changes: EnquiryEdit,
 ): Promise<EnquiryRow | undefined> {
+  const name = changes.name;
   const [held] = name === undefined ? [] : await tx.select({ name: enquiries.name }).from(enquiries)
     .where(eq(enquiries.id, enquiryId)).for("no key update");
   const [row] = await tx.update(enquiries).set(changes).where(eq(enquiries.id, enquiryId)).returning();
@@ -321,15 +327,15 @@ export async function enquiryRoutes(
       }
     }
 
-    const updateData: Record<string, unknown> = { updatedAt: new Date() };
-    if (parsed.data.name !== undefined) updateData["name"] = parsed.data.name;
+    const updateData: EnquiryEdit = { updatedAt: new Date() };
+    if (parsed.data.name !== undefined) updateData.name = parsed.data.name;
     if (parsed.data.email !== undefined) updateData["email"] = parsed.data.email;
     if (parsed.data.eventType !== undefined) updateData["eventType"] = parsed.data.eventType;
     if (parsed.data.preferredDate !== undefined) updateData["preferredDate"] = parsed.data.preferredDate;
     if (parsed.data.estimatedGuests !== undefined) updateData["estimatedGuests"] = parsed.data.estimatedGuests;
     if (parsed.data.message !== undefined) updateData["message"] = parsed.data.message;
 
-    const updated = await db.transaction((tx) => writeEnquiryEdit(tx, params.data.id, updateData, parsed.data.name));
+    const updated = await db.transaction((tx) => writeEnquiryEdit(tx, params.data.id, updateData));
 
     return { data: updated === undefined ? updated : asSeenBy(request.user, updated) };
   });

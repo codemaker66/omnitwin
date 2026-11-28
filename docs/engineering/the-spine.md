@@ -280,30 +280,36 @@ join has no name to copy back.
   those events' bookings, as they leave the proposal's title.
 - When the 24-month pass keeps a person for a booking and removes their enquiries
   that never became one, nothing of theirs is reworded. What the join copied from a
-  removed enquiry leaves the events it made, among that enquiry's own and nearby
-  events, the names compared being those the removed rows held, read by the delete
-  itself, as the join writes a name (trimmed, cut to 200 characters):
+  removed enquiry leaves the events it made (a made row in force: `event_made`, not
+  undone, of the venue), among that enquiry's own and nearby events, the names
+  compared being those the removed rows held, read by the delete itself, as the join
+  writes a name (trimmed, cut to 200 characters):
   - an event made for an enquiry that no longer exists, that nothing points at any
     more (no row of a table with a key to it or to one of its phases, its own phases
-    apart, and no deal or client account of its own), is used by nobody: it is
-    renamed `Event` and its client name cleared, whatever they hold;
+    apart, and no deal or client account of its own), is renamed `Event` and its
+    client name cleared, whatever they hold;
   - one something still points at may be in use, so a name typed on it since stays:
     its name becomes `Event` while it equals the removed enquiry's name, and its
     client name is cleared while it equals that;
-  - an event made for a deal or a proposal of the removed enquiry loses its client
-    name while that equals the removed enquiry's name; its own name is the deal's or
-    the proposal's, and stays.
+  - an event made for a deal or a proposal of the removed enquiry, its own or one
+    another live person leads, loses its client name while that equals the removed
+    enquiry's name; its own name is the deal's or the proposal's, and stays.
 - An edit of an enquiry's name (`PATCH /enquiries/:id`) carries the join's copies
-  with it, in the edit's one transaction: the enquiry row is locked `FOR NO KEY
-  UPDATE` and its name read under that lock, the row written, then the events of
-  its venue that a made row in force (`event_made`, not undone, of that venue) names
+  with it, in the edit's one transaction (`writeEnquiryEdit` takes only a
+  transaction, and reads the name from the changes it writes): the enquiry row is
+  locked `FOR NO KEY UPDATE` and its name read under that lock, the row written,
+  then the events of its venue that a made row in force (`event_made`, not undone,
+  of that venue) names for that enquiry, or for a deal or a proposal made from it,
   take the new name as the join would write it (`Event` and no client when it would
   copy none): an event made for the enquiry in name and client name, one made for
   its deal or proposal in client name, each column only while it still holds the
-  old name as the join wrote it. So a made event's name follows its enquiry's name
-  until staff change it, and the pass above compares with what the event holds.
-  `enquiry-name-writers-guard.test.ts` fails when another writer of an enquiry's
-  name appears without carrying the copies.
+  old name as the join wrote it. When the old name gave the join nothing to copy
+  (blank, or holding an `@`), the edit follows nothing: an event the join named
+  `Event` keeps that name. So a made event's name follows its enquiry's name until
+  staff change it, and the pass above compares with what the event holds.
+  `enquiry-name-writers-guard.test.ts` fails when a writer it can read (an update
+  builder on the table, or SQL text that updates it) appears without carrying the
+  copies.
 - A record of theirs linked between the erasure's reads and its locks makes it
   answer RETRY, as a booking written meanwhile does.
 - The join copies a name only from a row it holds (above). An erasure under way when
@@ -600,19 +606,25 @@ ignore them. (The backup branch remains the last resort.)
   it or its phases, no deal or account of its own) is named `Event` whatever it
   holds, one something points at loses the copied name and client by column and
   keeps what was typed since, the client name copied onto a deal's or a proposal's
-  event goes and its name stays, and no event made for a surviving enquiry, joined
-  rather than made, or out of the enquiry's reach changes; a padded name is compared
-  as the join trimmed it; an edit of an enquiry's name carries the copies (both
-  columns for its own event, the client for its deal's and proposal's), keeps a
-  column typed since, writes `Event` for a name the join would not copy, touches no
-  event when the name is unchanged, none of another venue and none through a row
-  not in force, and, beside the join or a second edit, ends with the event holding
-  the new name; then the whole way, join, edit and pass, leaves neither name; the
-  pass's readings agree with its step; a link written while the erasure waits
-  answers RETRY; the join and the undo run cleanly afterwards.
+  event goes and its name stays, the deal's and the proposal's another live person
+  leads among them, and no event made for a surviving enquiry, joined rather than
+  made, made under a record undone or of another venue, or out of the enquiry's
+  reach changes; a padded name is compared as the join trimmed it; an edit of an
+  enquiry's name carries the copies (both columns for its own event, the client for
+  its deal's and proposal's), touches no event of another enquiry of the same name
+  nor of its deal or proposal, keeps a column typed since, writes `Event` for a name
+  the join would not copy, touches no event when the name is unchanged, none of
+  another venue and none through a row not in force, and ends with the new name on
+  the event, beside the join in either order (and as the client name of the event
+  the join made for a deal of an enquiry edited then) or beside a second edit; then
+  the whole way, join, edit and pass, leaves neither
+  name; the pass's readings agree with its step; a link written while the erasure
+  waits answers RETRY; the join and the undo run cleanly afterwards.
 - `packages/api/src/__tests__/enquiry-name-writers-guard.test.ts`: every production
-  write to the enquiries table either cannot write its name or carries the join's
-  copies, and no migration assigns an enquiry's name.
+  write to the enquiries table that it can read (an update builder on the table, or
+  SQL text that updates it) either cannot write its name or carries the join's
+  copies, keyed off the changes it writes, and no migration assigns an enquiry's
+  name.
 
 Each spine suite makes and drops a database of its own on the platform test
 cluster; the platform gate (`test:platform-db`) names them all.

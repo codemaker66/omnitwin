@@ -40,7 +40,7 @@ import {
 import { outerColumn } from "../utils/outer-column.js";
 import { lockGuestLead } from "./guest-lead-lock.js";
 import { ERASED_TEXT, isAddress, isOnlyName, jsonTextPatterns, mentionPatterns, namesToErase, withoutNames } from "./people-erasure-text.js";
-import { liveContact, type PeopleConn, type PeopleTx } from "./people-records.js";
+import { liveContact, type PeopleTx } from "./people-records.js";
 
 // ---------------------------------------------------------------------------
 // Erasure of one person at one venue (release audit people-privacy-5).
@@ -1438,8 +1438,8 @@ async function pointedAtEvent(tx: PeopleTx): Promise<SQL> {
  * UPDATE):
  *   - an event made for an enquiry that no longer exists, that nothing points
  *     at any more (no row of a table with a key to it or to one of its phases,
- *     and no deal or client account of its own), is used by nobody: it is
- *     named "Event" and its client cleared, whatever they hold;
+ *     and no deal or client account of its own), is named "Event" and its
+ *     client cleared, whatever they hold;
  *   - one something still points at may be in use, so a name typed on it
  *     since stays: its name becomes "Event" while it equals the name of an
  *     enquiry removed here as the join wrote it, and its client name is
@@ -1497,10 +1497,11 @@ async function unnameLeftEvents(
  *   - an event made for a deal or a proposal of the enquiry: its client name.
  * They take the new name as the join would write it, or "Event" and no
  * client when the join would copy none. Nothing changes when the old name
- * gave no copy. Returns the events changed.
+ * gave no copy (blank, or holding an "@"): an event the join named "Event"
+ * keeps that name. Returns the events changed.
  */
 export async function followEnquiryName(
-  tx: PeopleConn,
+  tx: PeopleTx,
   input: { readonly enquiryId: string; readonly venueId: string; readonly from: string; readonly to: string },
 ): Promise<readonly string[]> {
   const [before] = joinedNameOf(input.from);
