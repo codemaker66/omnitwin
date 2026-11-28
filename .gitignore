@@ -58,6 +58,7 @@ artifacts/img2threejs/*
 !artifacts/img2threejs/*/
 artifacts/img2threejs/*/*
 !artifacts/img2threejs/*/parts.json
+*.key
 *.log
 /*.jpeg
 
