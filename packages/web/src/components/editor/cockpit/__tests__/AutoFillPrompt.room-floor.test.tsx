@@ -63,10 +63,11 @@ describe("Fill's prompt in the Robert Adam Room", () => {
     const onPlaced = vi.fn();
     render(<AutoFillPrompt style="dinner-rounds" published={UNPUBLISHED} onPlaced={onPlaced} onCancel={vi.fn()} />);
     askFor(60);
-    expect(screen.getByTestId("auto-fill-short").textContent).toBe("Room for 40 at this spacing.");
-    expect(screen.getByTestId("auto-fill-place").textContent).toBe("Place 4 tables and 40 chairs");
+    // The floor's own fill (T-760): five rounds of ten, the most the walls take at this spacing.
+    expect(screen.getByTestId("auto-fill-short").textContent).toBe("Room for 50 at this spacing.");
+    expect(screen.getByTestId("auto-fill-place").textContent).toBe("Place 5 tables and 50 chairs");
     fireEvent.click(screen.getByTestId("auto-fill-place"));
-    expect(usePlacementStore.getState().placedItems).toHaveLength(44);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(55);
     expect(outsideTheWalls()).toBe(0);
     expect(onPlaced).toHaveBeenCalledTimes(1);
   });
