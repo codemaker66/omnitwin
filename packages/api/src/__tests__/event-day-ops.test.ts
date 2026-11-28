@@ -103,8 +103,10 @@ describe("event-day ops API", () => {
     // EventDayOpsPage tells the person logging it "Staff and hallkeepers are
     // notified." — true only while the plan change goes to these two roles.
     expect(EVENT_DAY_ISSUE_AUDIENCE).toEqual(["staff", "hallkeeper"]);
-    const route = await readFile(resolve("src/routes/event-day-ops.ts"), "utf-8");
-    expect(route).toContain("audienceRoles: [...EVENT_DAY_ISSUE_AUDIENCE]");
+    // The issue's change-feed copy is written in the issue's own transaction
+    // (createEventDayIssue), addressed to that list.
+    const service = await readFile(resolve("src/services/event-day-ops.ts"), "utf-8");
+    expect(service).toContain("audienceRoles: [...EVENT_DAY_ISSUE_AUDIENCE]");
   });
 
   it("registers the requested event-day routes with safe language", async () => {

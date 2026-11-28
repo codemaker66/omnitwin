@@ -104,7 +104,19 @@ jobs:
           # Same display and headless shell as the E2E CPU shards. A case that
           # fails for any reason other than its screenshot fails this step, and
           # nothing is committed.
-          xvfb-run --auto-servernum pnpm exec playwright test "${cases[@]}" --update-snapshots=changed --reporter=line
+          #
+          # --update-snapshots=all, not =changed (T-758). "changed" rewrites an
+          # image only when the comparison FAILS, so a stored image that still
+          # passes inside the tolerance is never refreshed: a rooms baseline
+          # kept a figure the page no longer drew, and the only way to refresh
+          # it was to delete the file first. "all" takes each screenshot afresh
+          # and rewrites the file whenever its bytes differ from the stored one;
+          # an image the runner draws identically is left untouched, so the
+          # commit below still holds only images that really changed. It holds
+          # for every case named, in every spec: a spec with a looser tolerance
+          # (the 0.02-ratio visual suites) also gets each image whose bytes
+          # moved within it, and those are reviewed like any other.
+          xvfb-run --auto-servernum pnpm exec playwright test "${cases[@]}" --update-snapshots=all --reporter=line
 
       - name: Commit the changed baselines
         env:

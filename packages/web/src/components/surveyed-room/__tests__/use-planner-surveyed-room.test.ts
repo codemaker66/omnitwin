@@ -304,8 +304,9 @@ describe("usePlannerSurveyedRoom, where a survey is asked for", () => {
     expect(status()?.phase).toBe("ready");
   });
 
-  it("treats a download that came back with nothing as a failure: the page is reloading for a newer build", async () => {
-    // Vite's import helper resolves with nothing when a chunk's fetch failed and the page claimed its one reload.
+  it("treats a download that came back with nothing as a failure, never as code to mount", async () => {
+    // No build answers this way now: a chunk that will not load rejects, and the page reloads only
+    // once the app's own server has answered (route-error-boundary.tsx). The seam still refuses it.
     serveSaloon();
     openPlanner(STAGED);
     load.mockImplementation(() => Promise.resolve(undefined));
