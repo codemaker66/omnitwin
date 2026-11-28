@@ -93,7 +93,7 @@ const FIRST_WRITTEN = "15 August 2026";
 /** The terms' own date: it changed on 11 November, when the Grand Hall's
  *  dimensions became the ones measured from its laser scan, so "Capacities,
  *  dimensions and rates" stopped calling every room dimension the venue's own
- *  published figure (Blake, 11 November 2026: "The measured 21.14 x 10.59 m"). */
+ *  published figure (Blake's decision, 11 November 2026: the measured size). */
 const TERMS_UPDATED = { text: "11 November 2026", iso: "2026-11-11" } as const;
 
 /** The accessibility statement's own date: it changed on 8 November, when it

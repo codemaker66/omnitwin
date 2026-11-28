@@ -60,11 +60,11 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full427 union requires422 CPU and all5 GPU with original54 skips and4 executed expected failures', () => {
+test('full432 union requires427 CPU and all5 GPU with original54 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 427, cpu: 422, gpu: 5, ordinaryPasses: 369,
+  assert.deepEqual(result.totals, { inventory: 432, cpu: 427, gpu: 5, ordinaryPasses: 374,
     expectedFailures: 4, originalSkips: 54, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
@@ -74,9 +74,9 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 422);
+  assert.equal(result.totals.cpu, 427);
   assert.equal(result.totals.gpu, 0);
-  assert.equal(result.totals.ordinaryPasses, 364);
+  assert.equal(result.totals.ordinaryPasses, 369);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
 });
 rejected('outside the GPU scope a missing CPU case still fails', (input) => {
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 57);
+  assert.equal(baseline.inventoryAdmissions.length, 58);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -1502,3 +1502,43 @@ rejected('an event question case cannot quietly become a skip', (input) => {
   spec.tests[0].results[0].status = 'skipped';
   spec.tests[0].status = 'skipped';
 }, /policy changed/);
+
+// A table holding a note this browser is not shown (PR #388): five ordinary
+// cases in one spec file, against an in-memory server given #389's rules,
+// admitted after the event question (#253) when master was merged in.
+const heldNoteCases = [
+  '3bc0e3d67bc9f1130b3f-11caae3b7804427ee5cf',
+  '3bc0e3d67bc9f1130b3f-39e5c14090058158c594',
+  '3bc0e3d67bc9f1130b3f-c6f0bee7ee5954b583e8',
+  '3bc0e3d67bc9f1130b3f-c780ed80249f68975b77',
+  '3bc0e3d67bc9f1130b3f-d1906fc1d1ae9f66a4f5',
+];
+test('the held-notes admission adds five ordinary cases', () => {
+  const admission = baseline.inventoryAdmissions[57];
+  assert.equal(admission.date, '2026-11-12');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/planner-held-notes.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'passed');
+  assert.deepEqual(admission.caseIds, heldNoteCases);
+  for (const id of heldNoteCases) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'planner-held-notes.spec.ts');
+    assert.deepEqual(row?.suitePath, ['planner-held-notes.spec.ts']);
+    assert.equal(row?.project, 'chromium');
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+  assert.equal(baseline.cases.filter((entry) => entry.file === 'planner-held-notes.spec.ts').length, 5);
+  assert.equal(baseline.cases.filter((entry) => entry.expectedStatus === 'passed').length,
+    BROWSER_POLICY.total - BROWSER_POLICY.skipped - BROWSER_POLICY.expectedFailures);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+for (const id of heldNoteCases) {
+  rejected(`held-notes case ${id} cannot quietly become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+}

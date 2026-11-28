@@ -27,7 +27,13 @@ export type FailureKind =
    * components/editor/send-layout-flow.ts): none was captured, the API refused it or never received it, or
    * its reply could not be read. The send goes on without it. Tagged by stage, and an upload's status.
    */
-  | "plan-image-failed";
+  | "plan-image-failed"
+  /**
+   * A page whose code would not load asked the app's own server whether a reload would be served, and
+   * the server answered with an error (route-error-boundary.tsx): a fault at the origin, not the device's
+   * network, so no reload was spent. Tagged with the HTTP status.
+   */
+  | "reload-check-refused";
 
 export type FailureTags = Readonly<Record<string, string | number | undefined>>;
 

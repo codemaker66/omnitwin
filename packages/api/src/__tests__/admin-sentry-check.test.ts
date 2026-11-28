@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
+import type * as SentryModule from "../observability/sentry.js";
 
 // ---------------------------------------------------------------------------
 // POST /admin/observability/sentry-check — the production error-reporting
@@ -14,8 +15,11 @@ process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long
 const capture = vi.hoisted(() => vi.fn<(error: unknown, request: unknown) => void>());
 
 // The real module captures only when SENTRY_DSN is set; stand in a capture
-// hook so the test sees exactly what production would hand to Sentry.
-vi.mock("../observability/sentry.js", () => ({
+// hook so the test sees exactly what production would hand to Sentry. The
+// rest of the module stays real (the escalation sweep's inOwnScope runs work
+// as it is, since the SDK is never started here).
+vi.mock("../observability/sentry.js", async (importOriginal) => ({
+  ...await importOriginal<typeof SentryModule>(),
   initSentry: (): Promise<void> => Promise.resolve(),
   buildSentryCapture: () => Promise.resolve(capture),
 }));
