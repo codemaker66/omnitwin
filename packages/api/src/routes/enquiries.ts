@@ -106,19 +106,22 @@ function canWorkEnquiry(user: JwtUser, enquiry: { readonly userId: string | null
 }
 
 type EnquiryRow = typeof enquiries.$inferSelect;
-type CustomerEnquiry = Omit<EnquiryRow, (typeof ENQUIRY_FUNNEL_FIELDS)[number]>;
+/** The venue's own fields: the funnel's measurements (0100) and the event it filed the enquiry under (the spine's links migration, `*_event_spine_links`). */
+const VENUE_ONLY_FIELDS = [...ENQUIRY_FUNNEL_FIELDS, "eventId"] as const satisfies readonly (keyof EnquiryRow)[];
+type CustomerEnquiry = Omit<EnquiryRow, (typeof VENUE_ONLY_FIELDS)[number]>;
 
-const FUNNEL_FIELDS: ReadonlySet<string> = new Set(ENQUIRY_FUNNEL_FIELDS);
+const WITHHELD_FIELDS: ReadonlySet<string> = new Set(VENUE_ONLY_FIELDS);
 
 /**
  * An enquiry as its reader may see it. When and how the venue first replied,
  * and where the person was found, are the venue's own measurements (migration
- * 0100): its team and Venviewer's admins read the whole row, and the
- * enquiry's customer reads it without them.
+ * 0100), and the event it is filed under is the venue's own record (the spine's links migration, `*_event_spine_links`):
+ * its team and Venviewer's admins read the whole row, and the enquiry's
+ * customer reads it without them.
  */
 function asSeenBy(user: JwtUser, row: EnquiryRow): EnquiryRow | CustomerEnquiry {
   if (isPlatformAdmin(user) || canManageVenue(user, row.venueId) || canManageCommercial(user, row.venueId)) return row;
-  return Object.fromEntries(Object.entries(row).filter(([field]) => !FUNNEL_FIELDS.has(field))) as CustomerEnquiry;
+  return Object.fromEntries(Object.entries(row).filter(([field]) => !WITHHELD_FIELDS.has(field))) as CustomerEnquiry;
 }
 
 /** Who may date a reported reply further back than the report window. */

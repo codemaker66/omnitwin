@@ -138,7 +138,7 @@ describe.skipIf(paymentsTestUrl === undefined)("goal 06's twelve pain points (th
     })).toBe("applied");
     // Recorded against the proposal and its event.
     const paid = await pool.query("SELECT r.proposal_id, r.event_id, r.proposal_version, p.amount_received_minor, p.paid_at IS NOT NULL AS paid FROM deposit_payments p JOIN proposal_deposit_requests r ON r.id = p.deposit_request_id WHERE r.id = $1", [requestId]);
-    expect(paid.rows[0]).toEqual({ proposal_id: f.proposalId, event_id: f.eventId, proposal_version: 1, amount_received_minor: 50_000, paid: true });
+    expect(paid.rows[0]).toEqual({ proposal_id: f.proposalId, event_id: f.proposalEventId, proposal_version: 1, amount_received_minor: 50_000, paid: true });
     expect((await call<ClientDepositView>("GET", `/proposal-share/${f.token}/deposit`)).body.data?.request?.state).toBe("paid");
 
     // A request that no longer matches what was accepted is never charged.
