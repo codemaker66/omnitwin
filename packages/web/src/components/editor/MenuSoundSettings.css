@@ -1,0 +1,100 @@
+/* The planner's sound setting in v1's menus (T-700): the desktop More menu's
+   scene settings and the phone's More sheet, where it sits on the dock's
+   graphite. Both are dark grounds, so it takes the scene settings' own ink,
+   rules and copper accent. v2's chrome styles never load here (T-671). */
+.menu-sound {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  color: #d0c9bd;
+  font: 400 11px/1.5 "Inter", system-ui, sans-serif;
+  text-align: left;
+}
+
+.menu-sound__section {
+  display: grid;
+  gap: 8px;
+}
+
+.menu-sound__modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(224, 211, 188, 0.12);
+}
+
+.menu-sound__mode {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #d0c9bd;
+  font: 500 13px/1 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.menu-sound__mode[aria-checked="true"] {
+  background: #e9dfcb;
+  color: #1f1812;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .menu-sound__mode:hover:not([aria-checked="true"]) { color: #f3ecdf; }
+}
+
+.menu-sound__line {
+  margin: 0;
+  color: #a49c8f;
+}
+
+.menu-sound__level {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.menu-sound__label { color: #b6a27e; font-weight: 500; }
+.menu-sound__figure { font-variant-numeric: lining-nums tabular-nums; }
+
+.menu-sound__range {
+  width: 100%;
+  margin: 0;
+  accent-color: #c98a5b;
+  cursor: pointer;
+}
+
+.menu-sound__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #a49c8f;
+}
+
+.menu-sound__keys {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.menu-sound__key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid rgba(224, 211, 188, 0.2);
+  border-radius: 4px;
+  color: #d0c9bd;
+  font: 500 11px/1 "Inter", system-ui, sans-serif;
+}
+
+.menu-sound__mode:focus-visible,
+.menu-sound__range:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}

@@ -14,6 +14,12 @@ import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useMarkupStore } from "../../../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { useHallViewStore } from "../../../stores/hall-view-store.js";
+import {
+  PLANNER_SOUND_STORAGE_KEY,
+  __resetPlannerSoundForTests,
+  __setPlannerContextFactoryForTests,
+  getPlannerSoundSettings,
+} from "../../../lib/sound-registry.js";
 
 const media = vi.hoisted(() => ({ narrow: true, coarse: false }));
 
@@ -43,6 +49,9 @@ beforeEach(() => {
   media.narrow = true; media.coarse = false;
   window.localStorage.clear();
   window.localStorage.setItem("omnitwin_onboarding_seen", "1");
+  __resetPlannerSoundForTests();
+  // Choosing a set arms the planner's one context; the engine has its own tests.
+  __setPlannerContextFactoryForTests(() => null);
   useEditorStore.getState().reset();
   useCockpitStore.getState().reset();
   useLayoutTimelinePreviewStore.getState().clear();
@@ -56,7 +65,14 @@ beforeEach(() => {
   useSelectionStore.setState({ selectedIds: new Set(reordered.map((item) => item.id)) });
   useEditorStore.setState({ objects: reordered.map((item) => placedItemToEditor(item, undefined)), selectedObjectId: reordered[0]?.id ?? null });
 });
-afterEach(() => { cleanup(); useLayoutTimelinePreviewStore.getState().clear(); useSelectionStore.getState().clearSelection(); useEditorStore.getState().reset(); });
+afterEach(() => {
+  cleanup();
+  useLayoutTimelinePreviewStore.getState().clear();
+  useSelectionStore.getState().clearSelection();
+  useEditorStore.getState().reset();
+  __setPlannerContextFactoryForTests(null);
+  __resetPlannerSoundForTests();
+});
 
 describe("mobile planner chrome", () => {
   it("puts the Grand Hall's views and light in a phone's View sheet", () => {
@@ -212,6 +228,24 @@ describe("mobile planner chrome", () => {
     fireEvent.keyDown(guests, { key: "Escape" });
     expect(screen.queryByTestId("mobile-more-sheet")).toBeNull();
     expect(document.activeElement).toBe(more);
+    expect(useCockpitStore.getState().activeMode).toBe("design");
+  });
+
+  it("keeps Sound in the More sheet, below the tools, on at Quiet, and the sheet open while it is set", () => {
+    useSelectionStore.getState().clearSelection();
+    render(<Fixture />);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    const sheet = screen.getByTestId("mobile-more-sheet");
+    const group = within(sheet).getByRole("radiogroup", { name: "Sound" });
+    expect(within(group).getByRole("radio", { name: "Quiet" }).getAttribute("aria-checked")).toBe("true");
+    // The tools first, then the setting, as the sheet reads: lenses, tools, sound.
+    expect(within(sheet).getByRole("button", { name: "Walls" }).compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(sheet).getByRole("button", { name: "Undo" }).compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(within(group).getByRole("radio", { name: "Off" }));
+    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY)).toBe("off");
+    expect(getPlannerSoundSettings().mode).toBe("off");
+    expect(screen.getByTestId("mobile-more-sheet")).toBe(sheet);
+    // Choosing a sound changes no lens, placement or selection.
     expect(useCockpitStore.getState().activeMode).toBe("design");
   });
 

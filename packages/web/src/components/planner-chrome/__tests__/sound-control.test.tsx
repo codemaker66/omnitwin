@@ -9,7 +9,9 @@ import {
   setPlannerSoundMode,
 } from "../../../lib/sound-registry.js";
 import { Key } from "../Keys.js";
-import { SOUND_MODE_LINES, SoundControl, soundKeyLabel } from "../SoundControl.js";
+import { usePlannerSoundShortcut } from "../../../lib/planner-sound-shortcut.js";
+import { SOUND_MODE_LINES } from "../../shared/SoundSettingsCore.js";
+import { SoundControl, soundKeyLabel } from "../SoundControl.js";
 import { TOOLTIP_FIRST_DELAY_MS, useTooltipStore } from "../Tooltip.js";
 import { registerEscapeLayer } from "../../../lib/planner-keys.js";
 
@@ -154,6 +156,19 @@ describe("the speaker", () => {
 });
 
 describe("Shift M", () => {
+  it("tells its caller the mode each press leaves the planner in", () => {
+    const told: string[] = [];
+    function Receipt(): null {
+      usePlannerSoundShortcut((mode) => { told.push(mode); });
+      return null;
+    }
+    render(<Receipt />);
+    fireEvent.keyDown(document.body, { key: "M", shiftKey: true });
+    fireEvent.keyDown(document.body, { key: "M", shiftKey: true });
+    expect(told).toEqual(["off", "quiet"]);
+    expect(getPlannerSoundSettings().mode).toBe("quiet");
+  });
+
   it("mutes and brings back what was muted", () => {
     render(<SoundControl />);
     act(() => { setPlannerSoundMode("full"); });

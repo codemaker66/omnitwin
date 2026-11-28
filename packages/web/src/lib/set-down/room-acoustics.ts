@@ -21,7 +21,7 @@ import {
   SURFACE_ABSORPTION,
   type AbsorberKind,
 } from "./acoustic-data.js";
-import type { BandValues } from "./bands.js";
+import { bandMap, type BandValues } from "./bands.js";
 import {
   ROOM_ACOUSTICS,
   ROOM_PLANS,
@@ -50,6 +50,8 @@ export interface Absorber {
 export interface RoomState {
   readonly rt: BandValues;
   readonly reverberantGain: number;
+  /** Each voice's gain into the room's tail (roomSend), never scaled by the voice's distance (ruling R11). */
+  readonly send: number;
   /** The seven times rounded to 0.02 s, so an unchanged room keeps its tail. */
   readonly key: string;
 }
@@ -288,13 +290,78 @@ export function reverberantGain(room: RoomAcoustics, contents: BandValues): numb
   return Math.sqrt(referenceRoomConstant / roomConstant(room, contents));
 }
 
-/** The room's times, reverberant level and cache key with these pieces in it. */
+/**
+ * The room send: each voice's gain into the room's tail, as an amplitude,
+ * sqrt(32 pi / R) with R the room constant at 1 kHz (ruling R58). EST, from
+ * diffuse-field theory: a source of directivity Q = 2 on the floor makes a
+ * reverberant energy 16 pi r^2 / (Q R) times its direct energy at r, which is
+ * 32 pi / R at the 2 m where a render's direct gain is 1. The tail has unit
+ * energy per channel, so this send gives the echo that energy. It is the
+ * listening page's REVERB_SEND x reverberantGain with the empty Grand Hall's
+ * R cancelled. The send carries the whole render, early reflections included,
+ * which biases the echo about 1-2 dB high (R64, EST); Blake heard the echo as
+ * right on 14 Nov.
+ */
+export function roomSend(room: RoomAcoustics, contents: BandValues): number {
+  return Math.sqrt((32 * Math.PI) / roomConstant(room, contents));
+}
+
+/** The six surveyed rooms empty, as calibrated: the range a space with no survey is held to (ruling R77). */
+interface SurveyedRange {
+  readonly rtLow: BandValues;
+  readonly rtHigh: BandValues;
+  readonly gainLow: number;
+  readonly gainHigh: number;
+  readonly sendLow: number;
+  readonly sendHigh: number;
+}
+
+let surveyedRange: SurveyedRange | null = null;
+
+function surveyedEmptyRange(): SurveyedRange {
+  if (surveyedRange !== null) return surveyedRange;
+  const rooms = Object.values(ROOM_ACOUSTICS);
+  const times = rooms.map((room) => reverberationTimes(room, NO_CONTENTS));
+  const gains = rooms.map((room) => reverberantGain(room, NO_CONTENTS));
+  const sends = rooms.map((room) => roomSend(room, NO_CONTENTS));
+  surveyedRange = {
+    rtLow: bandMap(NO_CONTENTS, (_, band) => Math.min(...times.map((rt) => rt[band] ?? Infinity))),
+    rtHigh: bandMap(NO_CONTENTS, (_, band) => Math.max(...times.map((rt) => rt[band] ?? -Infinity))),
+    gainLow: Math.min(...gains),
+    gainHigh: Math.max(...gains),
+    sendLow: Math.min(...sends),
+    sendHigh: Math.max(...sends),
+  };
+  return surveyedRange;
+}
+
+function within(value: number, low: number, high: number): number {
+  return Math.min(high, Math.max(low, value));
+}
+
+/**
+ * The room's times, reverberant level, send and cache key with these pieces
+ * in it. A space with no survey (ruling R77, amending R71) keeps its own
+ * times, gain and send, each held to the range of the six surveyed rooms
+ * empty and calibrated: no finish is invented for a room nobody has measured,
+ * and a bare box no longer rings for 6.5 s. The surveyed rooms are as their
+ * surfaces and calibration give them.
+ */
 export function roomState(room: RoomAcoustics, items: readonly PlacedItem[]): RoomState {
   const contents = contentsAbsorption(items.map(absorberFor));
-  const rt = reverberationTimes(room, contents);
+  let rt = reverberationTimes(room, contents);
+  let gain = reverberantGain(room, contents);
+  let send = roomSend(room, contents);
+  if (!isRoomSlug(room.slug)) {
+    const range = surveyedEmptyRange();
+    rt = bandMap(rt, (t, band) => within(t, range.rtLow[band] ?? t, range.rtHigh[band] ?? t));
+    gain = within(gain, range.gainLow, range.gainHigh);
+    send = within(send, range.sendLow, range.sendHigh);
+  }
   return {
     rt,
-    reverberantGain: reverberantGain(room, contents),
+    reverberantGain: gain,
+    send,
     key: rt.map((t) => (Math.round(t / 0.02) * 0.02).toFixed(2)).join(","),
   };
 }
@@ -328,7 +395,8 @@ function boxRoom(slug: string, length: number, width: number, height: number): R
 
 /**
  * The acoustics of a space: its surveyed room by slug, or a plain box from its
- * own dimensions (10 x 8 x 4 m with no space at all).
+ * own dimensions (10 x 8 x 4 m with no space at all). roomState holds a box's
+ * times, gain and send to the surveyed rooms' range (ruling R77).
  */
 export function roomAcousticsFor(
   space: Pick<Space, "slug" | "widthM" | "lengthM" | "heightM"> | null,

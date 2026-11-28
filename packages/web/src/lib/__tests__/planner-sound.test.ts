@@ -14,6 +14,7 @@ import {
   seededRandom,
   soundingLengthMs,
 } from "../planner-sound-render.js";
+import { SET_DOWN_TOUCH_DB } from "../set-down/render.js";
 import {
   PLANNER_LIMITER,
   PLANNER_SOUND_DEFAULT_LEVEL,
@@ -37,7 +38,8 @@ import {
 // are the samples that play, so their peak, length and silence above 5 kHz are
 // measured here; then the rules (Off, Quiet, Full, the gesture, a hidden tab,
 // the 45 ms gap, eight a second, a burst of three), and the engine on a
-// stand-in context: what it starts, the mute's 30 ms fade, Lay out's cascade.
+// stand-in context: what it starts and the mute's 30 ms fade. A piece set down
+// is the set-down engine's own render (planner-set-down-sound.test.ts).
 // ---------------------------------------------------------------------------
 
 /** The transform as it was before its twiddle factors were cached, working each one out in its butterfly. */
@@ -108,18 +110,18 @@ describe("each planner sound, rendered", () => {
   });
 
   it("renders the same samples from the same seed", () => {
-    const recipe = PLANNER_SOUND_RECIPES["planner-set-table"];
+    // The cue's contact is a breath of noise, so its samples depend on the seed.
+    const recipe = PLANNER_SOUND_RECIPES["planner-cue"];
     expect(renderPlannerSound(recipe, { seed: 7 })).toEqual(renderPlannerSound(recipe, { seed: 7 }));
   });
 
-  // Peaks only. The ear's balance (spec 9: touch sounds within 6 dB of each other, the rare
-  // moments at most 6 dB above) is measured on Chromium's renders, A- and K-weighted, in the
-  // slice's evidence and settled by the ear test; peaks alone do not show it.
-  it("holds the set-downs' peaks within 6 dB of each other and the rare moments' peaks no more than 6 dB above them", () => {
-    const setDowns = (["planner-set-table", "planner-set-chair"] as const).map((id) => PLANNER_SOUND_RECIPES[id].peakDb);
-    expect(Math.max(...setDowns) - Math.min(...setDowns)).toBeLessThanOrEqual(6);
+  // Peaks only. The ear's balance (spec 9: the rare moments at most 6 dB above the set-downs)
+  // is measured on Chromium's renders, A- and K-weighted, in the slice's evidence and settled
+  // by the ear test; peaks alone do not show it. The set-downs are the engine's, anchored at
+  // its touch level (lib/set-down/render.ts).
+  it("holds the rare moments' peaks no more than 6 dB above the set-downs' touch level", () => {
     for (const hero of ["planner-horizon", "planner-send", "planner-present", "planner-act"] as const) {
-      expect(PLANNER_SOUND_RECIPES[hero].peakDb - Math.max(...setDowns), hero).toBeLessThanOrEqual(6);
+      expect(PLANNER_SOUND_RECIPES[hero].peakDb, hero).toBeLessThanOrEqual(SET_DOWN_TOUCH_DB + 6);
     }
   });
 
@@ -141,7 +143,7 @@ describe("each planner sound, rendered", () => {
 
 describe("the planner palette in the registry", () => {
   it("registers every planner sound as a choice kept on this device", () => {
-    for (const id of PLANNER_SOUND_IDS) {
+    for (const id of [...PLANNER_SOUND_IDS, "planner-set-down"] as const) {
       const definition = SOUND_REGISTRY[id];
       expect(definition.optIn).toBe("device-toggle");
       expect(definition.storageKey).toBe(PLANNER_SOUND_STORAGE_KEY);
@@ -159,19 +161,19 @@ describe("the rules a sound must pass", () => {
 
   it("plays nothing when off, nothing from the full set in Quiet, nothing before a gesture and nothing in a hidden tab", () => {
     const policy = new PlannerSoundPolicy();
-    expect(policy.decide("planner-set-table", gate({ mode: "off" }))).toBe("off");
+    expect(policy.decide("planner-set-down", gate({ mode: "off" }))).toBe("off");
     expect(policy.decide("planner-lift", gate({ mode: "quiet" }))).toBe("not-in-set");
-    expect(policy.decide("planner-set-table", gate({ mode: "quiet" }))).toBe("play");
-    expect(policy.decide("planner-set-table", gate({ armed: false }))).toBe("not-armed");
-    expect(policy.decide("planner-set-table", gate({ hidden: true }))).toBe("hidden");
+    expect(policy.decide("planner-set-down", gate({ mode: "quiet" })), "a set-down is in the quiet set").toBe("play");
+    expect(policy.decide("planner-set-down", gate({ armed: false }))).toBe("not-armed");
+    expect(policy.decide("planner-set-down", gate({ hidden: true }))).toBe("hidden");
   });
 
   it("keeps a sound at least 45 ms from itself, a refusal 600 ms and a snap to eight a second", () => {
     const policy = new PlannerSoundPolicy();
-    const at = (ms: number, id: PlannerSoundId): string => policy.decide(id, gate({ nowMs: ms }));
-    policy.record("planner-set-table", 0);
-    expect(at(30, "planner-set-table")).toBe("too-soon");
-    expect(at(46, "planner-set-table")).toBe("play");
+    const at = (ms: number, id: PlannerSoundId | "planner-set-down"): string => policy.decide(id, gate({ nowMs: ms }));
+    policy.record("planner-set-down", 0);
+    expect(at(30, "planner-set-down")).toBe("too-soon");
+    expect(at(46, "planner-set-down")).toBe("play");
     policy.record("planner-refuse", 0);
     expect(at(400, "planner-refuse")).toBe("too-soon");
     expect(at(601, "planner-refuse")).toBe("play");
@@ -182,7 +184,7 @@ describe("the rules a sound must pass", () => {
 
   it("lets no more than eight play in a second", () => {
     const policy = new PlannerSoundPolicy();
-    const ids = ["planner-set-table", "planner-set-chair", "planner-cue", "planner-lift", "planner-snap", "planner-measure", "planner-hour", "planner-brush", "planner-act"] as const;
+    const ids = ["planner-set-down", "planner-refuse", "planner-cue", "planner-lift", "planner-snap", "planner-measure", "planner-hour", "planner-horizon", "planner-act"] as const;
     ids.forEach((id, index) => {
       const nowMs = index * 100;
       if (index < 8) {
@@ -196,7 +198,7 @@ describe("the rules a sound must pass", () => {
 
   it("keeps only the first three of a burst within 250 ms", () => {
     const policy = new PlannerSoundPolicy();
-    const ids = ["planner-set-table", "planner-set-chair", "planner-cue", "planner-lift"] as const;
+    const ids = ["planner-set-down", "planner-refuse", "planner-cue", "planner-lift"] as const;
     ids.forEach((id, index) => {
       const nowMs = index * 50;
       const verdict = policy.decide(id, gate({ nowMs }));
@@ -246,7 +248,8 @@ class FakeCompressor extends FakeNode {
   readonly knee = new FakeParam();
 }
 class FakeContext {
-  state: "running" | "suspended" = "running";
+  /** "interrupted" is Safari's: a call or another app took the audio. */
+  state: "running" | "suspended" | "interrupted" = "running";
   currentTime = 2;
   readonly sampleRate = 48000;
   readonly destination = new FakeNode();
@@ -291,16 +294,16 @@ describe("the engine", () => {
   it("makes nothing and plays nothing while sound is off, even after a gesture", () => {
     setPlannerSoundMode("off");
     expect(armPlannerSound()).toBe(false);
-    expect(playPlannerSound("planner-set-table")).toBe(false);
+    expect(playPlannerSound("planner-refuse")).toBe(false);
     expect(made).toBe(0);
   });
 
   it("plays nothing before the first gesture, then plays the quiet set", () => {
     setPlannerSoundMode("quiet");
-    expect(playPlannerSound("planner-set-table")).toBe(false);
+    expect(playPlannerSound("planner-refuse")).toBe(false);
     expect(armPlannerSound()).toBe(true);
     expect(options, "one context, made for interaction (spec 9)").toEqual([{ latencyHint: "interactive" }]);
-    expect(playPlannerSound("planner-set-table")).toBe(true);
+    expect(playPlannerSound("planner-refuse"), "Quiet includes the refusal (R82)").toBe(true);
     expect(context.started).toHaveLength(1);
     expect(context.started[0]?.startedAt).toBe(2);
     expect(playPlannerSound("planner-lift"), "the lift is in the full set only").toBe(false);
@@ -335,18 +338,6 @@ describe("the engine", () => {
     expect(master?.gain.events.at(-1)).toBe(`ramp ${String(PLANNER_SOUND_DEFAULT_LEVEL)} @2.03`);
   });
 
-  it("plays Lay out's brush in Quiet as three set-downs 55 ms apart, each 4 dB down", () => {
-    setPlannerSoundMode("quiet");
-    armPlannerSound();
-    expect(playPlannerSound("planner-brush")).toBe(true);
-    expect(context.started.map((source) => source.startedAt)).toEqual([2, 2.055, 2.11]);
-    const levels = context.started.map((source) => {
-      const gain = source.connections[0];
-      return gain instanceof FakeGain ? Math.round(20 * Math.log10(gain.gain.value) * 10) / 10 : null;
-    });
-    expect(levels).toEqual([-4, -4, -4]);
-  });
-
   it("sends the rare moments through the hall and keeps the touch sounds dry", () => {
     setPlannerSoundMode("quiet");
     armPlannerSound();
@@ -357,6 +348,18 @@ describe("the engine", () => {
     playPlannerSound("planner-cue");
     const cueGain = context.started[1]?.connections[0];
     expect(cueGain instanceof FakeGain ? cueGain.connections.length : 0, "dry only").toBe(1);
+  });
+
+  it("resumes the context on a play in any state but running, Safari's interrupted too", () => {
+    setPlannerSoundMode("quiet");
+    armPlannerSound();
+    const resume = vi.spyOn(context, "resume");
+    context.state = "interrupted";
+    expect(playPlannerSound("planner-refuse")).toBe(true);
+    expect(resume).toHaveBeenCalledOnce();
+    vi.spyOn(performance, "now").mockReturnValue(performance.now() + 1000);
+    expect(playPlannerSound("planner-cue")).toBe(true);
+    expect(resume, "running: nothing to resume").toHaveBeenCalledOnce();
   });
 
   it("suspends the context after 20 s of silence", () => {

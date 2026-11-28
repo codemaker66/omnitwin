@@ -455,6 +455,74 @@ describe("the new chrome stays behind its lazy import (T-671)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The set-down engine stays behind the scene's lazy import (T-700, R78)
+//
+// The planner always mounts SetDownSound, a small shell that hears the
+// landings from its mount. The driver, and with it the engine's room models,
+// bodies, surfaces and the Worker's client, load only through the shell's
+// dynamic import: at the planner's first idle while sound is on, and at the
+// first gesture at the latest. Of the engine, the planner's static graph may
+// reach only the registry's ear fatigue, which the registry itself imports.
+// ---------------------------------------------------------------------------
+
+describe("the set-down engine stays behind the scene's lazy import (T-700, R78)", () => {
+  const LAZY_SOUND = [
+    "src/components/editor/set-down-driver.ts",
+    "src/components/editor/set-down-policy.ts",
+    "src/components/editor/set-down-ahead.ts",
+    "src/components/editor/set-down-room.ts",
+  ];
+
+  for (const entry of ["src/components/editor/PlannerScene.tsx", "src/pages/EditorPage.tsx", "src/App.tsx", "src/components/planner-chrome/RoomStage.tsx"]) {
+    it(`reaches only the registry's fatigue of the engine from ${entry} by static imports`, async () => {
+      const path = await import("node:path");
+      const reached = [...await staticImportClosure(entry)].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
+      expect(reached).toContain("src/components/editor/SetDownSound.tsx");
+      expect(reached.filter((file) => file.startsWith("src/lib/set-down/"))).toEqual(["src/lib/set-down/fatigue.ts"]);
+      expect(reached.filter((file) => LAZY_SOUND.includes(file))).toEqual([]);
+    });
+  }
+
+  it("keeps the Worker to what it renders from: none of the catalogue, the rooms or any component (R101)", async () => {
+    const path = await import("node:path");
+    const fs = await import("node:fs/promises");
+    const reached = await staticImportClosure("src/lib/set-down/set-down.worker.ts");
+    const files = [...reached].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
+    // Exactly the modules it renders from, named one by one, so a module the Worker comes to import fails here by
+    // name, not only through the chunks' total: never the catalogue (and the asset catalogue it loads), the rooms,
+    // the Grand Hall's spec or the surfaces' room rules, which are the main thread's (it resolves a surface for a
+    // room; the Worker only renders the input it is sent), nor any component.
+    expect([...files].sort()).toEqual([
+      "src/lib/planner-sound-recipes.ts",
+      "src/lib/planner-sound-render.ts",
+      "src/lib/set-down/analysis.ts",
+      "src/lib/set-down/bands.ts",
+      "src/lib/set-down/modes.ts",
+      "src/lib/set-down/render.ts",
+      "src/lib/set-down/respatialize.ts",
+      "src/lib/set-down/set-down.worker.ts",
+      "src/lib/set-down/surface-data.ts",
+      "src/lib/set-down/tail.ts",
+      "src/lib/set-down/worker-jobs.ts",
+      "src/lib/set-down/worker-protocol.ts",
+    ]);
+    const packageImports: string[] = [];
+    for (const file of reached) {
+      const code = (await fs.readFile(file, "utf-8")).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+      if (/(?:^|[;\n])\s*(?:import|export)\s+(?!type\s)[^;]*?\bfrom\s+["']@omnitwin\//u.test(code)) packageImports.push(path.basename(file));
+    }
+    expect(packageImports).toEqual([]);
+  });
+
+  it("loads the driver only by the shell's dynamic import", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SetDownSound.tsx");
+    expect(codeOnly).toMatch(/\bimport\(["']\.\/set-down-driver\.js["']\)/);
+    // Its types may be imported (`import type` is erased); nothing of it is imported at run time.
+    expect(codeOnly).not.toMatch(/(?:^|[;\n])\s*(?:import|export)\s+(?!type\s)[^;]*?\bfrom\s+["']\.\/set-down-driver/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The planner HUD stays behind its flag (T-723)
 //
 // The HUD is one of three chromes, shown only for `?chrome=hud` until it is
@@ -872,6 +940,76 @@ describe("the planner HUD stays behind its flag (T-723)", () => {
       }
     }
     expect([...taken].sort()).toEqual([...FROM_THE_OTHER_CHROME].sort());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The sound setting reaches v1 without the new chrome (T-700, T-671)
+//
+// v1's two menus hold the planner's sound setting, and the scene's Shift M
+// receipt is mounted for every chrome. They take it from a chrome-free core
+// (the shortcut in lib, the setting in components/shared) dressed in v1's own
+// look, never from planner-chrome: its modules would ship to every visitor,
+// and its stylesheet is global and would restyle the default planner. The
+// module walk skips stylesheets, so this also reads every reached module's
+// own CSS imports. One already reaches v1 on master: GhostSet's MarkLabel is
+// in Surfaces.tsx, the one planner-chrome module T-671 allows, and it imports
+// chrome.css. Nothing else may.
+// ---------------------------------------------------------------------------
+
+/** The stylesheets under `dir` that `files` import by side effect, each as "<importer> -> <sheet>" in source paths. */
+async function stylesheetsUnder(files: Iterable<string>, dir: string): Promise<string[]> {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const sideEffectImport = /(?:^|[;\n])\s*import\s+["'](\.{1,2}\/[^"']+\.css)["']/gu;
+  const relative = (file: string): string => path.relative(path.resolve("."), file).split(path.sep).join("/");
+  const found: string[] = [];
+  for (const file of files) {
+    const code = (await fs.readFile(file, "utf-8")).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+    for (const match of code.matchAll(sideEffectImport)) {
+      const sheet = relative(path.resolve(path.dirname(file), match[1] ?? ""));
+      if (sheet.startsWith(dir)) found.push(`${relative(file)} -> ${sheet}`);
+    }
+  }
+  return found.sort();
+}
+
+describe("the sound setting reaches v1 without the new chrome (T-700, T-671)", () => {
+  const relativeTo = async (files: Iterable<string>): Promise<string[]> => {
+    const path = await import("node:path");
+    return [...files].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
+  };
+
+  for (const entry of ["src/pages/EditorPage.tsx", "src/App.tsx"]) {
+    it(`gives ${entry} the menus' setting and the receipt's shortcut from the chrome-free core, and no stylesheet of the new chrome but master's one`, async () => {
+      const reached = await staticImportClosure(entry);
+      const files = await relativeTo(reached);
+      expect(files).toEqual(expect.arrayContaining([
+        "src/lib/planner-sound-shortcut.ts",
+        "src/components/shared/SoundSettingsCore.tsx",
+        "src/components/editor/MenuSoundSettings.tsx",
+        "src/components/editor/PlannerSoundReceipt.tsx",
+      ]));
+      expect(await stylesheetsUnder(reached, "src/components/planner-chrome/")).toEqual([
+        "src/components/planner-chrome/Surfaces.tsx -> src/components/planner-chrome/chrome.css",
+      ]);
+      // The whole planner's static import closure: about 18 s alone, and 20 s ran out once on a loaded machine.
+    }, 60_000);
+  }
+
+  it("keeps the core and the shortcut free of every chrome", async () => {
+    for (const entry of ["src/components/shared/SoundSettingsCore.tsx", "src/lib/planner-sound-shortcut.ts"]) {
+      const reached = await staticImportClosure(entry);
+      const files = await relativeTo(reached);
+      expect(files.filter((file) => file.startsWith("src/components/planner-chrome/") || file.startsWith("src/components/editor/")), entry).toEqual([]);
+      expect(await stylesheetsUnder(reached, "src/components/"), entry).toEqual([]);
+    }
+  });
+
+  it("finds a stylesheet a module imports, so the checks above mean something", async () => {
+    const path = await import("node:path");
+    expect(await stylesheetsUnder([path.resolve("src/components/planner-chrome/Kbd.tsx")], "src/components/planner-chrome/"))
+      .toEqual(["src/components/planner-chrome/Kbd.tsx -> src/components/planner-chrome/chrome.css"]);
   });
 });
 

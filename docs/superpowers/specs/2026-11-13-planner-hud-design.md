@@ -267,10 +267,10 @@ door with something standing in its space. See `docs/engineering/planner-honest-
   is in hand.
 - The card photographs as one matching set in 2:3 (today's are the square studio renders).
 - Send for signed-in plans (`SubmitForReviewPanel`), and venue staff's tools behind the "more" glyph.
-- Sound: a card lifting, a set landing, and the setting in More tools (Quiet unless chosen). The controls of the
-  planner's sound engine live in `lib/sound-registry.ts`, which every planner and the landing page download, so
-  wiring them to a screen behind a flag would grow that download for everyone. It follows once the engine's
-  controls can be fetched on their own.
+- Sound: a card lifting from the hand. The setting is in More tools (T-700): Off, Quiet or Full in the sheets'
+  own choices, Quiet until chosen, with the level and the keys that mute (Shift M). It is the shared, chrome-free
+  setting (`components/shared/SoundSettingsCore.tsx`) that the default planner's menus already hold, dressed in this
+  screen's look, so it adds nothing to what other planners download. No sound key stands on the screen.
 - `/plan?chrome=hud` checked against a running API.
 
 ## Delivery

@@ -6,9 +6,14 @@ import {
   varyRecipe,
   type PlannerSoundId,
   type PlannerSoundRecipe,
+  type PlannerSoundSet,
   type PlannerSoundVariation,
 } from "./planner-sound-recipes.js";
 import { dbToGain, renderHallImpulse, renderPlannerSound } from "./planner-sound-render.js";
+import { reportAsync } from "./report-async.js";
+import { SetDownFatigue } from "./set-down/fatigue.js";
+import type { Stereo } from "./set-down/tail.js";
+import type { AudioClock } from "./set-down/timing.js";
 
 // ---------------------------------------------------------------------------
 // The sound registry: every sound Venviewer can make, in one place.
@@ -24,8 +29,10 @@ import { dbToGain, renderHallImpulse, renderPlannerSound } from "./planner-sound
 // replaces lib/toolbar-sounds.ts, components/requests/arrival-chime.ts,
 // components/editor/cockpit/when-ribbon-tick.ts and pages/landing/useRoomTone.ts.
 //
-// Sound is opt-in everywhere (goal 01 section 5). Each entry below names one
-// sound, says how a person turns it on, and where that choice is kept. Every
+// Sound is opt-in (goal 01 section 5), but for the planner's Quiet set, which
+// Blake's decision D1 turns on by default; even that waits for the first
+// deliberate gesture. Each entry below names one sound, says how a person
+// turns it on, and where that choice is kept. Every
 // sound is played through `admit`, which refuses an id that is not listed
 // here, so a new sound cannot slip in without being registered and without
 // the opt-in being stated. Audio off loses nothing: no sound here is the only
@@ -35,7 +42,10 @@ import { dbToGain, renderHallImpulse, renderPlannerSound } from "./planner-sound
 export type SoundOptIn =
   /** Muted when the page loads; a control unmutes it for this page only. */
   | "session-toggle"
-  /** Off until the person turns it on; the choice is kept on this device. */
+  /**
+   * A choice kept on this device: off until the person turns it on, except the
+   * planner's palette, which starts at Quiet (PLANNER_SOUND_DEFAULT_MODE, D1).
+   */
   | "device-toggle";
 
 export interface SoundDefinition {
@@ -58,8 +68,7 @@ export const SOUND_REGISTRY = {
   "snap-tick": { label: "When ribbon quarter-hour tick", optIn: "device-toggle", storageKey: TICK_PREFERENCE_KEY },
   "room-tone": { label: "Room tone on the landing page", optIn: "session-toggle", storageKey: null },
   // The planner's palette: every one chosen together, Off · Quiet · Full, on this device.
-  "planner-set-table": { label: "Planner: a table set down", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
-  "planner-set-chair": { label: "Planner: a chair set down", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-set-down": { label: "Planner: a piece set down in the room", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
   "planner-refuse": { label: "Planner: a placement refused", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
   "planner-cue": { label: "Planner: the hour crossing an act", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
   "planner-horizon": { label: "Planner: the sun crossing the horizon", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
@@ -70,7 +79,6 @@ export const SOUND_REGISTRY = {
   "planner-snap": { label: "Planner: a piece locking to a guide", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
   "planner-measure": { label: "Planner: a measurement pinned", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
   "planner-hour": { label: "Planner: the dragged hour crossing a whole hour", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
-  "planner-brush": { label: "Planner: Lay out placing several pieces", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
 } as const satisfies Readonly<Record<string, SoundDefinition>>;
 
 export type SoundId = keyof typeof SOUND_REGISTRY;
@@ -583,7 +591,7 @@ export function useRoomTone(): RoomTone {
 
 // --- The planner's palette (T-671, spec section 9; per device) ---------------
 //
-// Thirteen short sounds for the planner, in two sets (lib/planner-sound-recipes.ts):
+// Ten short sounds for the planner, in two sets (lib/planner-sound-recipes.ts), and the set-down:
 // Quiet plays the set-downs, the refusal, the cue and the four rare moments
 // (the horizon, Send, Present, an act); Full adds the small sounds of the hand.
 // The speaker in the chrome's utilities chooses Off, Quiet or Full and a level,
@@ -605,6 +613,21 @@ export function useRoomTone(): RoomTone {
 // Nothing plays when Off, before a gesture or in a hidden tab; a sound waits at
 // least 45 ms after itself (longer where its recipe says), no more than eight
 // play in a second, and a burst keeps only its first three within 250 ms.
+//
+// A piece set down is not a recipe. The set-down engine (lib/set-down/) renders
+// each landing at unit gain (R57) for its piece, the surfaces under its feet,
+// the ear and the room, and beginSetDownBatch admits a landing's voices as one
+// decision of the policy, counted as up to eight plays. Each voice is a stereo
+// source through its level (the cascade's step, eased by up to 3 dB after a
+// long session, R26), a dry gain for its distance into the master, and a send
+// into the room bus that distance never scales (R58). The room bus feeds the
+// room's own tail on a convolver of its own (setPlannerRoomTail), cross-faded
+// over 0.1 s when the room or its dressing changes (R62); the palette's hall is
+// untouched. No voice starts before the limiter has run 0.25 s (R63), and one
+// that finds the context suspended waits for it to resume and starts on the
+// resumed clock. Arming asks for the "ambient" audio session where the browser
+// has one, and ?soundtap=1 keeps window.__venSoundTap: a log of every voice
+// played and a recorder on the master.
 
 export type PlannerSoundMode = "off" | "quiet" | "full";
 
@@ -636,12 +659,14 @@ export function limiterMakeupDb(thresholdDb: number, ratio: number): number {
 /**
  * A new compressor's detector starts from nothing, so for its first 125 ms it
  * holds a sound down (−6.8 dB at the start, measured). Offline renders start
- * each sound this long after the context, as a live one would play.
+ * each sound this long after the context, as a live one would play, and no
+ * set-down starts before it (R63).
  */
-const PLANNER_LIMITER_WARMUP_SECONDS = 0.25;
-/** In Quiet, Lay out's brush is a cascade of at most three set-downs this far apart, each 4 dB down. */
-const PLANNER_CASCADE_GAP_SECONDS = 0.055;
-const PLANNER_CASCADE_LEVEL_DB = -4;
+export const PLANNER_LIMITER_WARMUP_SECONDS = 0.25;
+/** A new room tail fades in over this while the one before it fades out (R62). */
+export const PLANNER_ROOM_CROSSFADE_SECONDS = 0.1;
+/** The tail before is let go this long after a new one comes in, once its fade is done (R62). */
+export const PLANNER_ROOM_RELEASE_SECONDS = 0.15;
 
 export interface PlannerSoundSettings {
   readonly mode: PlannerSoundMode;
@@ -711,18 +736,34 @@ export interface PlannerSoundGate {
   readonly nowMs: number;
 }
 
+/** Everything the policy rules on: the palette's recipes, and the set-down the engine renders. */
+export type PlannerPolicyId = PlannerSoundId | "planner-set-down";
+
+interface PlannerSoundRule {
+  readonly set: PlannerSoundSet;
+  /** The least time between two plays of it. */
+  readonly gapMs: number;
+}
+
+/** A set-down is in the quiet set and waits the palette's least gap after itself. */
+const SET_DOWN_RULE: PlannerSoundRule = { set: "quiet", gapMs: PLANNER_SOUND_MIN_GAP_MS };
+
+function ruleFor(id: PlannerPolicyId): PlannerSoundRule {
+  return id === "planner-set-down" ? SET_DOWN_RULE : PLANNER_SOUND_RECIPES[id];
+}
+
 export class PlannerSoundPolicy {
-  private readonly lastPlayed = new Map<PlannerSoundId, number>();
+  private readonly lastPlayed = new Map<PlannerPolicyId, number>();
   private played: number[] = [];
 
-  decide(id: PlannerSoundId, gate: PlannerSoundGate): PlannerSoundRefusal | "play" {
-    const recipe = PLANNER_SOUND_RECIPES[id];
+  decide(id: PlannerPolicyId, gate: PlannerSoundGate): PlannerSoundRefusal | "play" {
+    const rule = ruleFor(id);
     if (gate.mode === "off") return "off";
-    if (gate.mode === "quiet" && recipe.set === "full") return "not-in-set";
+    if (gate.mode === "quiet" && rule.set === "full") return "not-in-set";
     if (!gate.armed) return "not-armed";
     if (gate.hidden) return "hidden";
     const last = this.lastPlayed.get(id);
-    if (last !== undefined && gate.nowMs - last < Math.max(recipe.gapMs, PLANNER_SOUND_MIN_GAP_MS)) return "too-soon";
+    if (last !== undefined && gate.nowMs - last < Math.max(rule.gapMs, PLANNER_SOUND_MIN_GAP_MS)) return "too-soon";
     this.played = this.played.filter((at) => gate.nowMs - at < 1000);
     if (this.played.length >= PLANNER_SOUND_MAX_PER_SECOND) return "too-many";
     const inBurst = this.played.filter((at) => gate.nowMs - at < PLANNER_SOUND_BURST_WINDOW_MS).length;
@@ -730,20 +771,38 @@ export class PlannerSoundPolicy {
     return "play";
   }
 
-  record(id: PlannerSoundId, nowMs: number, count = 1): void {
+  record(id: PlannerPolicyId, nowMs: number, count = 1): void {
     this.lastPlayed.set(id, nowMs);
     for (let i = 0; i < count; i += 1) this.played.push(nowMs);
+  }
+
+  /** How many more may play in the second up to `nowMs`: eight, less those already in it. */
+  playsLeftThisSecond(nowMs: number): number {
+    let recent = 0;
+    for (const at of this.played) if (nowMs - at < 1000) recent += 1;
+    return Math.max(0, PLANNER_SOUND_MAX_PER_SECOND - recent);
   }
 }
 
 // The audio itself. The context and its graph exist only once someone has
 // chosen sound and made a deliberate gesture.
 
+/** The room's tail as it plays: its convolver and the fade after it. */
+interface PlannerRoomWet {
+  readonly convolver: ConvolverNode;
+  readonly fade: GainNode;
+  readonly key: string;
+}
+
 interface PlannerGraph {
   readonly context: BaseAudioContext;
   readonly master: GainNode;
   readonly dry: GainNode;
   readonly hall: GainNode;
+  /** The room bus: every set-down's send, into the current room tail. */
+  readonly room: GainNode;
+  /** The room tail now playing, null until the first arrives. */
+  wet: PlannerRoomWet | null;
 }
 
 type PlannerContextFactory = () => AudioContext | null;
@@ -757,11 +816,21 @@ const defaultPlannerContextFactory: PlannerContextFactory = () => {
   }
 };
 
+interface PlannerLive {
+  readonly context: AudioContext;
+  readonly graph: PlannerGraph;
+}
+
 let plannerContextFactory: PlannerContextFactory = defaultPlannerContextFactory;
-let plannerLive: { readonly context: AudioContext; readonly graph: PlannerGraph } | null = null;
+let plannerLive: PlannerLive | null = null;
 let plannerPolicy = new PlannerSoundPolicy();
 let plannerSilenceTimer: number | null = null;
 const plannerBufferCache = new Map<string, AudioBuffer>();
+/** Set-downs heard in the last five minutes, for the ear's fatigue (R26). */
+let plannerFatigue = new SetDownFatigue();
+/** The resume under way, so every wake and play waits on the same one. */
+let plannerResuming: Promise<void> | null = null;
+const plannerArmedListeners = new Set<(sampleRate: number) => void>();
 
 function buildPlannerGraph(context: BaseAudioContext, level: number): PlannerGraph {
   const limiter = context.createDynamicsCompressor();
@@ -792,7 +861,9 @@ function buildPlannerGraph(context: BaseAudioContext, level: number): PlannerGra
   wet.connect(master);
   const hall = context.createGain();
   hall.connect(convolver);
-  return { context, master, dry, hall };
+  // The room bus feeds nothing until a room's tail arrives (setPlannerRoomTail).
+  const room = context.createGain();
+  return { context, master, dry, hall, room, wet: null };
 }
 
 function plannerBuffer(context: BaseAudioContext, recipe: PlannerSoundRecipe, cacheKey: string | null, seed: number): AudioBuffer {
@@ -838,9 +909,35 @@ function restartPlannerSilenceTimer(): void {
   }, PLANNER_SOUND_SILENCE_SUSPEND_MS);
 }
 
+/** The one piece of the Audio Session API the planner uses (Safari 16.4+). */
+interface AudioSessionLike {
+  type: string;
+}
+
+function isAudioSession(value: unknown): value is AudioSessionLike {
+  return typeof value === "object" && value !== null && "type" in value;
+}
+
+/**
+ * Asks for the "ambient" audio session where the browser has one: the
+ * planner's sounds then follow the phone's silent switch and mix with what
+ * else is playing, rather than taking over the device's audio.
+ */
+function askForAmbientAudioSession(): void {
+  if (typeof navigator === "undefined" || !("audioSession" in navigator)) return;
+  const session: unknown = navigator.audioSession;
+  if (!isAudioSession(session)) return;
+  try {
+    session.type = "ambient";
+  } catch {
+    // A browser that refuses the type keeps its own; the sounds still play.
+  }
+}
+
 /**
  * Called inside a deliberate gesture (a press or a key): makes the context, so
- * later sounds may play. Nothing is made while sound is Off.
+ * later sounds may play. Nothing is made while sound is Off. When the context
+ * is made, its listeners hear its rate (a room's tail is rendered at it).
  */
 export function armPlannerSound(): boolean {
   const { mode, level } = getPlannerSoundSettings();
@@ -848,10 +945,47 @@ export function armPlannerSound(): boolean {
   if (plannerLive === null) {
     const context = plannerContextFactory();
     if (context === null) return false;
-    plannerLive = { context, graph: buildPlannerGraph(context, level) };
+    const graph = buildPlannerGraph(context, level);
+    plannerLive = { context, graph };
+    // A new context's clock starts again at 0: a new epoch, so no batch keeps an anchor from an earlier context.
+    plannerEpoch += 1;
+    plannerContextRan = context.state === "running";
+    context.onstatechange = observePlannerContext;
+    askForAmbientAudioSession();
+    if (soundTapWanted()) installSoundTap(context, graph.master);
+    for (const listener of [...plannerArmedListeners]) tellArmedListener(listener, context.sampleRate);
   }
-  if (plannerLive.context.state === "suspended") void plannerLive.context.resume();
+  // Suspended, or Safari's "interrupted" (a call took the audio): the gesture resumes it.
+  if (plannerLive.context.state !== "running") void plannerLive.context.resume();
   return true;
+}
+
+/**
+ * Hears the context's sample rate once: when the first gesture makes the
+ * context, or, when it is made already, at once and synchronously, inside this
+ * call, so a listener added after arming still learns the rate. A listener
+ * that throws is reported and stays subscribed, and the unsubscribe is always
+ * returned.
+ */
+export function subscribePlannerSoundArmed(listener: (sampleRate: number) => void): () => void {
+  plannerArmedListeners.add(listener);
+  if (plannerLive !== null) tellArmedListener(listener, plannerLive.context.sampleRate);
+  return () => { plannerArmedListeners.delete(listener); };
+}
+
+/**
+ * Tells one armed listener the rate. One that throws is reported, never
+ * swallowed, and stops neither arming nor the other listeners nor its own
+ * subscribe call, as the landings' listeners are shielded (R86): the error goes
+ * to the page's error reporting, or is thrown again on a microtask where there
+ * is none.
+ */
+function tellArmedListener(listener: (sampleRate: number) => void, sampleRate: number): void {
+  try {
+    listener(sampleRate);
+  } catch (error: unknown) {
+    reportAsync(error);
+  }
 }
 
 /** While mounted, the first press or key anywhere arms the planner's sound. */
@@ -917,41 +1051,530 @@ export function playPlannerSound(id: PlannerSoundId, variation: PlannerSoundVari
   const { mode } = getPlannerSoundSettings();
   const graph = plannerLive?.graph ?? null;
   const nowMs = performance.now();
-  // In Quiet, Lay out's brush is a cascade of at most three set-downs.
-  const cascade = id === "planner-brush" && mode === "quiet";
-  const deciding: PlannerSoundId = cascade ? "planner-set-table" : id;
-  const verdict = plannerPolicy.decide(deciding, { mode, armed: graph !== null, hidden: plannerSoundHidden(), nowMs });
+  const verdict = plannerPolicy.decide(id, { mode, armed: graph !== null, hidden: plannerSoundHidden(), nowMs });
   if (verdict !== "play" || graph === null || plannerLive === null) return false;
   const { context } = plannerLive;
-  if (context.state === "suspended") void context.resume();
+  // Suspended, or Safari's "interrupted" (a call took the audio): the play resumes it.
+  if (context.state !== "running") void context.resume();
   const at = context.currentTime;
-  if (cascade) {
-    const setDown = PLANNER_SOUND_RECIPES["planner-set-table"];
-    for (let i = 0; i < PLANNER_SOUND_BURST_LIMIT; i += 1) {
-      startPlannerSound(graph, setDown, at + i * PLANNER_CASCADE_GAP_SECONDS, PLANNER_CASCADE_LEVEL_DB, "planner-set-table", 0x5eed);
-    }
-    plannerPolicy.record(deciding, nowMs, PLANNER_SOUND_BURST_LIMIT);
-  } else {
-    const recipe = PLANNER_SOUND_RECIPES[id];
-    let played = recipe;
-    let levelDb = 0;
-    let cacheKey: string | null = id;
-    if (recipe.vary !== null) {
-      // Each set-down is a little different: ±3 % in pitch, ±1 dB in level.
-      played = varyRecipe(recipe, { pitchScale: 1 + (Math.random() * 2 - 1) * recipe.vary.pitch });
-      levelDb = (Math.random() * 2 - 1) * recipe.vary.levelDb;
-      cacheKey = null;
-    }
-    if (variation.pitchScale !== undefined || variation.glide !== undefined) {
-      played = varyRecipe(played, variation);
-      cacheKey = null;
-    }
-    levelDb += variation.levelDb ?? 0;
-    startPlannerSound(graph, played, at, levelDb, cacheKey, Math.floor(Math.random() * 0xffffffff));
-    plannerPolicy.record(id, nowMs);
+  const recipe = PLANNER_SOUND_RECIPES[id];
+  let played = recipe;
+  let cacheKey: string | null = id;
+  if (variation.pitchScale !== undefined || variation.glide !== undefined) {
+    played = varyRecipe(recipe, variation);
+    cacheKey = null;
   }
+  startPlannerSound(graph, played, at, variation.levelDb ?? 0, cacheKey, Math.floor(Math.random() * 0xffffffff));
+  plannerPolicy.record(id, nowMs);
   restartPlannerSilenceTimer();
   return true;
+}
+
+// --- Set-downs, through the room (T-700) ------------------------------------
+//
+// The set-down engine renders each landing; the driver in the scene (Task 14b)
+// hands the renders over here, so this file stays the one that makes sound.
+
+/** One set-down to play: the engine's render and where it sits in the room. */
+export interface SetDownVoice {
+  /** A unit-gain SetDownRender (R57): the distance is directGain's alone. */
+  readonly render: Stereo & { readonly onsetSeconds: number };
+  /**
+   * Context seconds (setDownStartTime). A batch that begins inside the
+   * limiter's first 0.25 s is held back as a whole, its spacing kept (R63).
+   */
+  readonly startAt: number;
+  /** The cascade's step, dB; the registry adds the session's fatigue (R26). */
+  readonly levelDb: number;
+  /** directPath's gain, on the voice's dry gain only (R57, R11). */
+  readonly directGain: number;
+  /** RoomState.send, never scaled by distance (R58). */
+  readonly send: number;
+  /** What the tap logs about the voice (?soundtap=1). */
+  readonly tap?: SetDownVoiceTap;
+}
+
+/**
+ * Which render a voice played (Task 14b): its exact render, ready at its
+ * contact; that render arriving within 45 ms after it (R80); a variant
+ * rendered ahead of its landing (R100); or its drop's render after the
+ * surfaces under it changed (Review Focus 5).
+ */
+export type SetDownPlayed = "exact" | "late" | "variant" | "stale";
+
+/** What the tap logs about a voice. */
+export interface SetDownVoiceTap {
+  readonly slug: string;
+  readonly surface: string;
+  readonly rtMid: number;
+  /** When its contact frame is shown, on the context's clock, ms. */
+  readonly contactMs: number;
+  readonly played?: SetDownPlayed;
+  /** The Worker's time for the render it played, ms. */
+  readonly workMs?: number;
+}
+
+export interface SetDownBatch {
+  /**
+   * Plays one voice of the batch. False once sound is Off or the tab is
+   * hidden, after 1.5 s, or once the batch has played the count it was
+   * admitted for.
+   */
+  play(voice: SetDownVoice): boolean;
+}
+
+/** How long a batch, admitted at its first contact, goes on playing its voices. */
+const SET_DOWN_BATCH_MS = 1500;
+
+/**
+ * Admits a landing's set-downs as one decision of the policy, counted as the
+ * plays it admits: as many voices as asked, but no more than leave eight in
+ * the last second across every batch (Review Focus 2). The 45 ms gap and the
+ * burst of three hold between landings, and the cascade
+ * (lib/set-down/cascade.ts) spaces the voices within one. Null when refused:
+ * sound Off, nothing armed, a hidden tab, a rate rule, or no voices.
+ *
+ * The admitted count is recorded at once, so a slot the batch never plays
+ * (sound turned Off, the tab hidden, the 1.5 s run out, fewer voices played
+ * than asked for) still counts toward the shared eight a second until the
+ * second has passed. That can only over-count, holding a later landing back,
+ * never let more than eight play, so it is safe.
+ */
+export function beginSetDownBatch(count: number): SetDownBatch | null {
+  const wanted = Math.floor(count);
+  if (!(wanted >= 1) || !admit("planner-set-down")) return null;
+  const live = plannerLive;
+  const nowMs = performance.now();
+  const verdict = plannerPolicy.decide("planner-set-down", {
+    mode: getPlannerSoundSettings().mode,
+    armed: live !== null,
+    hidden: plannerSoundHidden(),
+    nowMs,
+  });
+  if (verdict !== "play" || live === null) return null;
+  const allowed = Math.min(wanted, plannerPolicy.playsLeftThisSecond(nowMs));
+  if (allowed < 1) return null;
+  plannerPolicy.record("planner-set-down", nowMs, allowed);
+  restartPlannerSilenceTimer();
+  const lapsesAtMs = nowMs + SET_DOWN_BATCH_MS;
+  let left = allowed;
+  // A batch that begins inside the limiter's warm-up waits it out as a whole,
+  // as the listening page does (page.ts playVoices), so a cascade keeps its
+  // spacing (R63, R75). The shift is measured once, when the batch's first
+  // voice can actually start: at its play on a running clock, exactly as the
+  // page does, or, when that play found the clock stopped (a context made
+  // suspended, as Safari makes it), once the resume has settled. Then the
+  // resumed clock is read back to the first play, as if it had run through the
+  // wait, so a slow first resume does not bunch the early voices at 0.25 s. A
+  // clock already past 0.25 s at the first play has nothing to wait out.
+  let firstPlay: { readonly atMs: number; readonly clock: number } | null = null;
+  let warmupShift: number | null = null;
+  const warmup: BatchWarmup = {
+    shiftAt(currentTime: number, atMs: number): number {
+      if (warmupShift === null) {
+        const first = firstPlay ?? { atMs, clock: currentTime };
+        const clockAtFirstPlay = currentTime - (atMs - first.atMs) / 1000;
+        warmupShift = first.clock >= PLANNER_LIMITER_WARMUP_SECONDS ? 0 : Math.max(0, PLANNER_LIMITER_WARMUP_SECONDS - clockAtFirstPlay);
+      }
+      return warmupShift;
+    },
+  };
+  return {
+    play(voice: SetDownVoice): boolean {
+      const playMs = performance.now();
+      if (left <= 0 || playMs > lapsesAtMs || plannerLive !== live) return false;
+      if (getPlannerSoundSettings().mode === "off" || plannerSoundHidden()) return false;
+      left -= 1;
+      firstPlay ??= { atMs: playMs, clock: live.context.currentTime };
+      playSetDownVoice(live, voice, warmup, playMs);
+      return true;
+    },
+  };
+}
+
+/** A batch's one warm-up shift (R63), measured when its first voice can start. */
+interface BatchWarmup {
+  /** The shift, measured now (context seconds `currentTime`, page time `atMs`) unless it is measured already. */
+  shiftAt(currentTime: number, atMs: number): number;
+}
+
+/** Every wake and every waiting play share one resume. */
+function resumePlannerContext(context: AudioContext): Promise<void> {
+  if (plannerResuming === null) {
+    const resuming = context.resume().finally(() => {
+      observePlannerContext();
+      if (plannerResuming === resuming) plannerResuming = null;
+    });
+    plannerResuming = resuming;
+  }
+  return plannerResuming;
+}
+
+/** R80's heard window, ms (as set-down/timing.ts's HEARD_WINDOW_S): nothing starts later than this after its aim. */
+const SET_DOWN_HEARD_WINDOW_MS = 45;
+
+/**
+ * Why a voice that waited for the context did not play when it answered, if
+ * it did not; `lateMs` is how far past its aimed start it could start now. A
+ * clock that runs again too late for that to be within R80's 45 ms drops it
+ * (R115).
+ */
+function waitingVoiceMiss(lateMs: number): SetDownMiss | null {
+  if (getPlannerSoundSettings().mode === "off") return "off";
+  if (plannerSoundHidden()) return "hidden";
+  if (lateMs > SET_DOWN_HEARD_WINDOW_MS) return "expired";
+  return null;
+}
+
+/** The context's clock epoch: one more for each context made, and each time it runs again after not running (R114). */
+let plannerEpoch = 0;
+/** Whether the context was running when last looked at. */
+let plannerContextRan = false;
+
+/** Looks at the context: running again after not running starts a new clock epoch (R114). */
+function observePlannerContext(): void {
+  if (plannerLive === null) return;
+  const running = plannerLive.context.state === "running";
+  if (running && !plannerContextRan) plannerEpoch += 1;
+  plannerContextRan = running;
+}
+
+/**
+ * The context's clock epoch (R114): one more each time the context runs again
+ * after not running (a resume after the silence's suspension, an interruption
+ * ending), when its clock, stopped meanwhile, no longer keeps time with the
+ * page's; and one more for each context made, whose clock starts again at 0.
+ * A set-down batch anchored in an earlier epoch is anchored again. 0 before
+ * the first gesture.
+ */
+export function plannerClockEpoch(): number {
+  observePlannerContext();
+  return plannerEpoch;
+}
+
+/**
+ * Plays one admitted voice at its startAt plus its batch's warm-up shift;
+ * `nowMs` is when it was played.
+ */
+function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, warmup: BatchWarmup, nowMs: number): void {
+  plannerFatigue.record(nowMs, 1);
+  const levelDb = voice.levelDb + plannerFatigue.levelDb(nowMs);
+  restartPlannerSilenceTimer();
+  const { context } = live;
+  if (context.state === "running") {
+    startSetDownVoice(live.graph, voice, levelDb, voice.startAt + warmup.shiftAt(context.currentTime, nowMs), plannerOutputLatency(context));
+    return;
+  }
+  // A stopped clock (the 20 s silence rule, or a context made suspended): wait
+  // for it to run again, then keep what is left of the voice's lead, and its
+  // batch's warm-up shift, on the resumed clock (Review Focus 1). A voice the
+  // answer comes too late for, or finds Off or hidden, is dropped and logged on
+  // the tap as a miss.
+  const leadSeconds = voice.startAt - context.currentTime;
+  resumePlannerContext(context).then(() => {
+    if (plannerLive !== live) return;
+    const settledMs = performance.now();
+    const shift = warmup.shiftAt(context.currentTime, settledMs);
+    const waitedMs = settledMs - nowMs;
+    const miss = waitingVoiceMiss(waitedMs - (leadSeconds + shift) * 1000);
+    if (miss !== null) {
+      logSetDownMiss(voice, levelDb, voice.startAt + shift, miss);
+      return;
+    }
+    startSetDownVoice(live.graph, voice, levelDb, context.currentTime + Math.max(0, leadSeconds + shift - waitedMs / 1000), plannerOutputLatency(context));
+  }, () => {
+    // The device would not resume, so nothing can play; the miss is logged where the voice was aimed on the stopped clock.
+    if (plannerLive === live) logSetDownMiss(voice, levelDb, voice.startAt, "resume-rejected");
+  });
+}
+
+function logSetDownMiss(voice: SetDownVoice, levelDb: number, aimedAt: number, miss: SetDownMiss): void {
+  const context = plannerLive?.context;
+  plannerTap?.log.push({
+    startAt: aimedAt,
+    levelDb,
+    directGain: voice.directGain,
+    send: voice.send,
+    onsetSeconds: voice.render.onsetSeconds,
+    ...(context === undefined ? {} : { outputLatency: plannerOutputLatency(context) }),
+    ...voice.tap,
+    miss,
+  });
+}
+
+/** One voice: its level, then a dry gain into the master and a send into the room bus; `outputLatency` is for the tap. */
+function startSetDownVoice(graph: PlannerGraph, voice: SetDownVoice, levelDb: number, atSeconds: number, outputLatency: number): void {
+  const { context } = graph;
+  const { render } = voice;
+  const buffer = context.createBuffer(2, render.left.length, render.sampleRate);
+  buffer.getChannelData(0).set(render.left);
+  buffer.getChannelData(1).set(render.right);
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  const level = context.createGain();
+  level.gain.value = dbToGain(levelDb);
+  const dry = context.createGain();
+  dry.gain.value = voice.directGain;
+  const send = context.createGain();
+  send.gain.value = voice.send;
+  source.connect(level);
+  level.connect(dry);
+  dry.connect(graph.master);
+  level.connect(send);
+  send.connect(graph.room);
+  source.onended = () => {
+    source.disconnect();
+    level.disconnect();
+    dry.disconnect();
+    send.disconnect();
+  };
+  const startAt = Math.max(atSeconds, PLANNER_LIMITER_WARMUP_SECONDS);
+  source.start(startAt);
+  plannerTap?.log.push({
+    startAt,
+    levelDb,
+    directGain: voice.directGain,
+    send: voice.send,
+    onsetSeconds: render.onsetSeconds,
+    outputLatency,
+    ...voice.tap,
+  });
+}
+
+/**
+ * Puts a room's tail on the room bus, fading it in over 0.1 s while the tail
+ * before it fades out, and letting that one go after 0.15 s (R62). While the
+ * context is not running nothing rings and its clock has stopped, so the new
+ * tail goes in at once and the old one is let go at once. False before the
+ * first gesture, or for a tail at another rate than the context's (a
+ * ConvolverNode takes no other): the room keeps the tail it has.
+ */
+export function setPlannerRoomTail(tail: Stereo, key: string): boolean {
+  if (plannerLive === null) return false;
+  const { context, graph } = plannerLive;
+  if (tail.sampleRate !== context.sampleRate) return false;
+  const buffer = context.createBuffer(2, tail.left.length, tail.sampleRate);
+  buffer.getChannelData(0).set(tail.left);
+  buffer.getChannelData(1).set(tail.right);
+  const convolver = context.createConvolver();
+  convolver.normalize = false;
+  convolver.buffer = buffer;
+  const fade = context.createGain();
+  graph.room.connect(convolver);
+  convolver.connect(fade);
+  fade.connect(graph.master);
+  const old = graph.wet;
+  const now = context.currentTime;
+  if (old === null || context.state !== "running") {
+    fade.gain.value = 1;
+    if (old !== null) releaseRoomWet(graph, old);
+  } else {
+    fade.gain.setValueAtTime(0, now);
+    fade.gain.linearRampToValueAtTime(1, now + PLANNER_ROOM_CROSSFADE_SECONDS);
+    fadeOutRoomWet(graph, old, now);
+  }
+  graph.wet = { convolver, fade, key };
+  return true;
+}
+
+/**
+ * Takes the room's tail off the room bus, so a set-down sent there is dry
+ * until the next tail is put on: at every change of room, as the set-down
+ * driver asks (fix-1 Minor 4). A tail that may be ringing fades out over the
+ * cross-fade's 0.1 s and is let go after 0.15 s (R62); while the context is
+ * not running it is let go at once. Nothing before the first gesture, or with
+ * no tail on the bus.
+ */
+export function clearPlannerRoomTail(): void {
+  if (plannerLive === null) return;
+  const { context, graph } = plannerLive;
+  const old = graph.wet;
+  if (old === null) return;
+  graph.wet = null;
+  if (context.state === "running") fadeOutRoomWet(graph, old, context.currentTime);
+  else releaseRoomWet(graph, old);
+}
+
+/** Fades a tail out over the cross-fade from `now`, and lets it go once that has passed (R62). */
+function fadeOutRoomWet(graph: PlannerGraph, wet: PlannerRoomWet, now: number): void {
+  wet.fade.gain.cancelScheduledValues(now);
+  wet.fade.gain.setValueAtTime(wet.fade.gain.value, now);
+  wet.fade.gain.linearRampToValueAtTime(0, now + PLANNER_ROOM_CROSSFADE_SECONDS);
+  window.setTimeout(() => { releaseRoomWet(graph, wet); }, PLANNER_ROOM_RELEASE_SECONDS * 1000);
+}
+
+function releaseRoomWet(graph: PlannerGraph, wet: PlannerRoomWet): void {
+  graph.room.disconnect(wet.convolver);
+  wet.convolver.disconnect();
+  wet.fade.disconnect();
+}
+
+/** The context's clock for timing a set-down to its frame, and whether it runs (R117). */
+export interface PlannerAudioClock extends AudioClock {
+  /** The context is running; while it is not (suspended, or Safari's interrupted), its clock stands still. */
+  readonly running: boolean;
+}
+
+/** The context's clock for timing a set-down to its frame; null before the first gesture. */
+export function plannerAudioClock(): PlannerAudioClock | null {
+  if (plannerLive === null) return null;
+  const { context } = plannerLive;
+  return {
+    currentTime: context.currentTime,
+    outputLatency: plannerOutputLatency(context),
+    sampleRate: context.sampleRate,
+    running: context.state === "running",
+  };
+}
+
+/** The output's latency; else the base latency (a browser without outputLatency); else 0. */
+function plannerOutputLatency(context: AudioContext): number {
+  const output = context.outputLatency;
+  if (Number.isFinite(output) && output > 0) return output;
+  const base = context.baseLatency;
+  return Number.isFinite(base) && base > 0 ? base : 0;
+}
+
+/**
+ * At a drop's start: resumes the context if the silence rule suspended it, and
+ * restarts the 20 s timer, so the landing finds it running. Plays nothing, and
+ * wakes nothing before the first gesture or while sound is Off.
+ */
+export function wakePlannerSound(): void {
+  if (plannerLive === null || getPlannerSoundSettings().mode === "off") return;
+  const { context } = plannerLive;
+  if (context.state !== "running") void resumePlannerContext(context).catch(() => undefined);
+  restartPlannerSilenceTimer();
+}
+
+// --- The sound tap (?soundtap=1), for the browser evidence ----------------------
+
+/**
+ * Why an admitted voice was dropped while it waited for the context to resume:
+ * the device refused; sound went Off; the tab hid; or the clock ran again too
+ * late for it to start within R80's 45 ms of its aimed start ("expired", R115).
+ */
+export type SetDownMiss = "resume-rejected" | "off" | "hidden" | "expired";
+
+/**
+ * Why a set-down batch was anchored again: its context ran again after not
+ * running, or its clock fell 150 ms behind (R114); or its context is not
+ * running, so it is anchored at every use (R117).
+ */
+export type SetDownReanchor = "resumed" | "behind" | "suspended";
+
+/** One batch anchored again, as the tap logs it. */
+export interface VenSoundTapReanchor {
+  readonly reanchor: SetDownReanchor;
+  /** How far the context's clock was behind the old anchor's projection, ms. */
+  readonly behindMs: number;
+}
+
+/** One voice as the tap logs it. */
+export interface VenSoundTapEntry {
+  /** Context seconds it started at; for a miss, where it was aimed. */
+  readonly startAt: number;
+  /** Its level as played: the cascade's step and the session's fatigue, dB. */
+  readonly levelDb: number;
+  readonly directGain: number;
+  readonly send: number;
+  /**
+   * Its render's onset, s: from its start to the moment it is heard (Task 16
+   * reads it, with the latency, against R80's window).
+   */
+  readonly onsetSeconds?: number;
+  /** The output's latency when it was started, s, as the clock reads it (plannerAudioClock). */
+  readonly outputLatency?: number;
+  readonly slug?: string;
+  readonly surface?: string;
+  readonly rtMid?: number;
+  readonly contactMs?: number;
+  readonly played?: SetDownPlayed;
+  readonly workMs?: number;
+  /** Set only when the voice was dropped rather than played. */
+  readonly miss?: SetDownMiss;
+}
+
+/**
+ * Why the scene dropped a landing before it played (Task 14b): its driver had
+ * not loaded by its contact (R78); its render came more than 45 ms after its
+ * slot (R80, R105); an undo or redo ended its gesture (R87); its piece was
+ * gone (R89); its render failed; or the policy refused it here, its batch
+ * refused or its count or time used up (Minor 2), so Task 16 can tell "the
+ * policy said no" from a landing that never came.
+ */
+export type SetDownDrop = "not-loaded" | "too-late" | "undone" | "gone" | "failed" | "refused";
+
+/** One landing the scene dropped, as the tap logs it. */
+export interface VenSoundTapDrop {
+  readonly drop: SetDownDrop;
+  readonly slug?: string;
+  /** When its contact frame is shown, on the context's clock, ms. */
+  readonly contactMs?: number;
+  readonly workMs?: number;
+}
+
+export interface VenSoundTap {
+  readonly log: VenSoundTapEntry[];
+  /** Every landing the scene dropped before it could play (Task 14b). */
+  readonly drops: VenSoundTapDrop[];
+  /** Every set-down batch anchored again, with why (R114). */
+  readonly reanchors: VenSoundTapReanchor[];
+  /** Records `seconds` of the master into a Blob. */
+  record(seconds: number): Promise<Blob>;
+}
+
+declare global {
+  interface Window {
+    /** Kept only with ?soundtap=1: every set-down played, and a recorder on the master. */
+    __venSoundTap?: VenSoundTap;
+  }
+}
+
+let plannerTap: VenSoundTap | null = null;
+
+function soundTapWanted(): boolean {
+  return typeof window !== "undefined" && new URLSearchParams(window.location.search).get("soundtap") === "1";
+}
+
+function installSoundTap(context: AudioContext, master: GainNode): void {
+  let destination: MediaStreamAudioDestinationNode;
+  try {
+    destination = context.createMediaStreamDestination();
+  } catch {
+    return; // No stream destination in this browser: it plays without a tap.
+  }
+  master.connect(destination);
+  const tap: VenSoundTap = { log: [], drops: [], reanchors: [], record: (seconds) => recordStream(destination.stream, seconds) };
+  plannerTap = tap;
+  window.__venSoundTap = tap;
+}
+
+/** Logs a set-down batch anchored again, on the tap; nothing without ?soundtap=1 or before the first gesture. */
+export function logSetDownReanchor(entry: VenSoundTapReanchor): void {
+  plannerTap?.reanchors.push(entry);
+}
+
+/** Logs a landing the scene dropped, on the tap; nothing without ?soundtap=1 or before the first gesture. */
+export function logSetDownDrop(drop: VenSoundTapDrop): void {
+  plannerTap?.drops.push(drop);
+}
+
+function recordStream(stream: MediaStream, seconds: number): Promise<Blob> {
+  if (typeof MediaRecorder === "undefined") return Promise.reject(new Error("This browser cannot record the sound tap"));
+  return new Promise((resolve, reject) => {
+    const recorder = new MediaRecorder(stream);
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
+    recorder.onstop = () => { resolve(new Blob(chunks, { type: recorder.mimeType })); };
+    recorder.onerror = () => { reject(new Error("The sound tap's recorder failed")); };
+    recorder.start();
+    window.setTimeout(() => {
+      if (recorder.state !== "inactive") recorder.stop();
+    }, Math.max(0, seconds) * 1000);
+  });
 }
 
 /**
@@ -986,4 +1609,11 @@ export function __resetPlannerSoundForTests(): void {
   plannerSettings = null;
   plannerLastAudible = "quiet";
   plannerBufferCache.clear();
+  plannerFatigue = new SetDownFatigue();
+  plannerResuming = null;
+  plannerArmedListeners.clear();
+  plannerTap = null;
+  plannerEpoch = 0;
+  plannerContextRan = false;
+  if (typeof window !== "undefined") delete window.__venSoundTap;
 }

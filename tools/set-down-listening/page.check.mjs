@@ -2,9 +2,9 @@
 //   - every control renders, and the page is complete at rest (the Grand Hall, a Chiavari, empty, at 3 m);
 //   - "Set it down", "Move it" and "Lay out a dinner" start the audio, with no console errors;
 //   - the room path is live: the convolver holds a two-channel tail at the context's rate, each voice's send is
-//     REVERB_SEND x reverberantGain as the engine gives it (the wiring: the formula is the page's own EST one,
-//     recomputed here, so a wrong formula changed in both would pass), and both the output and the echo carry
-//     sound after a set-down;
+//     the room send (RoomState.send, checked against sqrt(32 pi / R_ref) x reverberantGain, worked out here from
+//     the engine's roomConstant, independently of the page and of roomSend), and both the output and the echo
+//     carry sound after a set-down;
 //   - the arrow keys move the room choice and keep the focus on the chosen chip;
 //   - the first press waits for the limiter, and a press that has to finish a tail says so;
 //   - the Grand Hall's mid-band readout is lower with the dinner laid than empty;
@@ -53,10 +53,10 @@ async function cameTrue(wait) {
   }
 }
 
-// The send the Grand Hall's voices should carry: sqrt(32 pi / R_ref) x reverberantGain, R_ref being the empty hall's
-// room constant at 1 kHz from the engine's roomConstant (R11; the page's EST derivation, Q = 2 at 2 m). It is
-// checked against the gain the live graph holds, which proves the wiring: the formula here is the page's own, so
-// it does not prove the derivation.
+// The room send the Grand Hall's voices should carry (RoomState.send, ruling R58), worked out here the long way
+// rather than through roomSend: sqrt(32 pi / R_ref) x reverberantGain, R_ref being the empty hall's room constant
+// at 1 kHz from the engine's roomConstant (R11; the EST derivation, Q = 2 at 2 m). It is the same send to within
+// rounding, and is checked here against the gain the live graph holds.
 const probe = await esbuild.build({
   stdin: {
     contents: `
@@ -215,7 +215,7 @@ try {
   check("Set it down shows its peak", /^\u2212?\d+\.\d dBFS$/.test(await text(tab, "peak-db")), await text(tab, "peak-db"));
   const empty = await tab.evaluate(roomPath, 1200);
   check("the convolver holds a two-channel tail at the context's rate", empty.rate !== null && empty.rate === empty.contextRate && empty.channels === 2, JSON.stringify(empty));
-  check("the empty hall's send is REVERB_SEND x reverberantGain", near(empty.send, expected.emptySend), `${empty.send} against ${expected.emptySend}`);
+  check("the empty hall's send is the room send", near(empty.send, expected.emptySend), `${empty.send} against ${expected.emptySend}`);
   check("the output carries the set-down", empty.out > 1e-3, `peak ${empty.out.toExponential(2)}`);
   check("the echo carries it too", empty.wet > 1e-5, `peak ${empty.wet.toExponential(2)}`);
 
@@ -236,7 +236,7 @@ try {
   await tab.click("#set-down");
   check("a press inside the dressing's pause finishes the tail, and says so", (await voices(tab)) === 12 && /ms for the tail/.test(await waited(tab)), await waited(tab));
   const dressed = await tab.evaluate(roomPath, 1200);
-  check("the dressed hall's send is REVERB_SEND x reverberantGain", near(dressed.send, expected.dressedSend), `${dressed.send} against ${expected.dressedSend}`);
+  check("the dressed hall's send is the room send", near(dressed.send, expected.dressedSend), `${dressed.send} against ${expected.dressedSend}`);
   check("the dressed hall's echo still sounds", dressed.wet > 1e-5 && dressed.rate === dressed.contextRate, `peak ${dressed.wet.toExponential(2)}`);
   await tab.screenshot({ path: join(shots, "check-desktop-dressed.png"), fullPage: true });
 

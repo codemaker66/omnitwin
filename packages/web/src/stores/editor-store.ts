@@ -669,6 +669,38 @@ function flushActionLogToServer(revision: number): void {
 }
 
 let interactionEpoch = 0;
+/**
+ * Travels through the timeline (T-700, R87): each undo, redo, reset and load
+ * adds one. It never goes back, and nothing else moves it: not a new change, a
+ * gesture's own steps (one that ends where it began, and so drops its step,
+ * included), the key edits' epochs, a save's id remap or another person's
+ * change. The set-down sound keeps a landing whose gesture the timeline left
+ * from ever sounding by it.
+ */
+let historyTravels = 0;
+
+/** How many times the timeline has travelled (undo, redo, reset, load) in this page. */
+export function editorHistoryTravels(): number {
+  return historyTravels;
+}
+
+/**
+ * The latest save's renames that named any (T-700, fix-1 Minor 5): each new
+ * placement's local id to the id the server gave it, as onSaved hands the
+ * live client. The set-down sound finds a piece renamed while it comes down
+ * through it.
+ */
+let lastSaveIdMap: ReadonlyMap<string, string> = new Map();
+
+/** The latest save's local-to-server ids, from the last save that renamed anything. */
+export function editorLastSaveIdMap(): ReadonlyMap<string, string> {
+  return lastSaveIdMap;
+}
+
+function rememberSaveRenames(idMap: ReadonlyMap<string, string>): void {
+  if (idMap.size > 0) lastSaveIdMap = idMap;
+}
+
 let lastRecordAt = Number.NEGATIVE_INFINITY;
 let autosaveRequester: (() => void) | null = null;
 let activeHistoryGesture: {
@@ -1318,6 +1350,8 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // A kept copy that restores nothing has done its work.
       if (localDraft !== null && restoredDraft === null) forgetPlannerDraft(localDraft);
       const restoreBase = staleDraftBase ?? serverObjects;
+      // The document is replaced from here: the timeline has travelled (R87).
+      historyTravels += 1;
       const leftBehind = lostOnLeaving ?? get().leftBehind;
       configurationSession += 1;
       yieldedIds.clear();
@@ -1898,6 +1932,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
   },
 
   reset: () => {
+    historyTravels += 1;
     configurationLoadRequest += 1;
     configurationSession += 1;
     publicConfigurationHandoff.clear();
@@ -1940,6 +1975,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     if (step === null) return;
     if (stepRefusedForHeldNote(s, step.objects, nothingUndoneLine)) return;
     actionEmitter.afterUndo(s.history); // G4: seals the popped gesture + logs history.undo
+    historyTravels += 1;
     interactionEpoch++;
     for (const [original, copy] of step.healed) healedCopies.set(original, copy);
     set(historyStepPatch(step));
@@ -1956,6 +1992,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     if (step === null) return;
     if (stepRefusedForHeldNote(s, step.objects, nothingRedoneLine)) return;
     actionEmitter.afterRedo(step.history); // G4: logs history.redo
+    historyTravels += 1;
     interactionEpoch++;
     for (const [original, copy] of step.healed) healedCopies.set(original, copy);
     set(historyStepPatch(step));
@@ -2401,6 +2438,7 @@ async function saveDocument(
     const placedIds = placedIdsOf(objects, saved.objects);
     const aligned = placedIds !== null;
     const idMap = placedIds ?? new Map<string, string>();
+    rememberSaveRenames(idMap);
     // The user may have kept editing while the request was in flight —
     // remap the latest state, not the snapshot captured before the await.
     const latest = get();
@@ -2621,6 +2659,7 @@ function adoptAsSaved(theirs: configApi.Configuration, sent: readonly EditorObje
   const serverObjects = (theirs.objects ?? []).map(placedObjectToEditor);
   const idMap = matchSavedLayout(sent, serverObjects, (id) => EDITOR_HISTORY_IDS.isLocalId(id));
   if (idMap === null || session !== configurationSession) return false;
+  rememberSaveRenames(idMap);
   const latest = useEditorStore.getState();
   const selection = useSelectionStore.getState();
   if ([...selection.selectedIds].some((id) => idMap.has(id))) {

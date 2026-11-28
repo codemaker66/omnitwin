@@ -68,33 +68,28 @@ after the press, less the output latency, never in the past, and never
 before the limiter has run 0.25 s (R63). A press that had to wait for a tail
 or for the limiter says so, in ms.
 
-## Choices the page makes that the planner's tasks will own
+## What the page takes from the engine, and what is its own
 
-- **The send.** Ruling R11 makes the send `REVERB_SEND × reverberantGain`,
-  not scaled by the direct gain, and the registry does not define
-  `REVERB_SEND` yet (Task 13). The page derives it from diffuse-field theory
-  (EST): a source on the floor (Q = 2) has a reverberant energy of 32π / R
-  times its direct energy at the 2 m reference, so with the tail at unit
-  energy the send is √(32π / R_ref), R_ref being the empty Grand Hall's room
-  constant at 1 kHz, air included (the engine's `roomConstant`). Each set-down is rendered at full direct gain and turned
-  down by its dry gain (`min(1, 2 / distance)`, Task 12's `directPath`): the
-  render is linear in its direct gain, so the dry sound is the same, and the
-  send is the room's alone.
-- **The cascade.** `planCascade` does not exist yet (Task 12). The page
-  follows its plan: one piece of each table family first, then chairs spread
+- **The send.** Each voice's send into the room's tail is the engine's
+  `RoomState.send` (`roomSend`, ruling R58): √(32π / R), R being the room
+  constant at 1 kHz, air included. It is an EST from diffuse-field theory: a
+  source on the floor (Q = 2) has a reverberant energy of 32π / R times its
+  direct energy at the 2 m reference, so with the tail at unit energy that is
+  the send. It is never scaled by the direct gain (R11). Each set-down is
+  rendered at full direct gain and turned down by its dry gain, the engine's
+  `directPath` (`min(1, 2 / distance)`): the render is linear in its direct
+  gain, so the dry sound is the same, and the send is the room's alone.
+- **The cascade.** "Lay out a dinner" plays the engine's `planCascade`
+  (ruling R75): one piece of each table family first, then chairs spread
   across the layout, eight in all, 85–110 ms apart (seeded), each 1 dB
-  softer. Each landing is heard from the chosen distance on the line to a
-  listener at the room's end (Task 12's ear rule, at least 2 m), on the
-  room's floor. The ear stays 1.6 m up for every voice; only its place on the
-  floor follows that line (R61).
-- **The limiter chain, copied by hand.** `sound-registry.ts` does not export
-  its planner graph's output chain, so the page rebuilds it: the master, a
-  compressor with `PLANNER_LIMITER`'s settings (knee 0), then the trim that
-  takes back its makeup gain (`limiterMakeupDb`). Part 3 exports the
-  chain-building code, and the page imports it.
-- **The limiter's warm-up, copied by hand.** The page's 0.25 s wait before the
-  first play mirrors the registry's unexported
-  `PLANNER_LIMITER_WARMUP_SECONDS`. Part 3 exports it, and the page imports it.
+  softer. Every piece lands at once here, so the voices keep that spacing; in
+  the planner no voice plays before its own piece lands.
+- **The ear.** Each landing is heard from the engine's `earFor`: 1.6 m up for
+  every voice (R61), on the line to the listener, held to the chosen distance
+  and to 2 m at the nearest. The page's own parts are the listener, facing
+  along the room so that +z is to the right, the distance slider, and, for
+  "Lay out a dinner", the listener standing 1 m in from the room's end, with
+  each piece landing on the room's floor.
 - **The galleries' walls.** The planner draws the galleries from the
   space's outline in the database; the web package has no drawn geometry for
   them, so their reflections come off the surveyed 11.5 × 4.1 × 2.8 m room.

@@ -976,6 +976,121 @@ body.hud-dragging-card * {
   }
 }
 
+/*
+ * The planner's sound, in More tools (HudSheets.tsx). Nothing in it is new to
+ * the screen: the three sets are the sheets' own choices, kept in one row at
+ * every width (three short words); the level is a hairline, its thumb the
+ * chosen frame round the ground; the keys that mute are named in hairline
+ * caps in the label size.
+ */
+.hud-sound {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hud-gap);
+}
+
+.hud-sound__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hud-gap);
+}
+
+.hud-sound .hud-choices {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.hud-sound__line {
+  margin: 0;
+  color: var(--hud-ink-2);
+}
+
+/* The level: its label and figure, then the range, on one line. */
+.hud-sound__section + .hud-sound__section {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--hud-gap-wide);
+}
+
+.hud-sound__level {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--hud-gap);
+}
+
+/* Wide enough for "100%", so the range does not move as the figure grows. */
+.hud-sound__figure {
+  min-width: 4ch;
+}
+
+.hud-sound__range {
+  flex: 1;
+  min-width: 0;
+  height: var(--hud-hit);
+  margin: 0;
+  background: none;
+  cursor: pointer;
+  appearance: none;
+}
+
+.hud-sound__range::-webkit-slider-runnable-track {
+  height: var(--hud-hair);
+  background: var(--hud-line);
+}
+
+.hud-sound__range::-moz-range-track {
+  height: var(--hud-hair);
+  background: var(--hud-line);
+}
+
+.hud-sound__range::-webkit-slider-thumb {
+  box-sizing: border-box;
+  width: var(--hud-gap-wide);
+  height: var(--hud-gap-wide);
+  margin-top: calc((var(--hud-hair) - var(--hud-gap-wide)) / 2);
+  border: var(--hud-chosen) solid var(--hud-ink);
+  border-radius: var(--hud-radius);
+  background: var(--hud-ground);
+  appearance: none;
+}
+
+.hud-sound__range::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--hud-gap-wide);
+  height: var(--hud-gap-wide);
+  border: var(--hud-chosen) solid var(--hud-ink);
+  border-radius: var(--hud-radius);
+  background: var(--hud-ground);
+}
+
+.hud-sound__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hud-gap);
+  margin: 0;
+  color: var(--hud-ink-2);
+}
+
+.hud-sound__keys {
+  display: inline-flex;
+  gap: var(--hud-u);
+}
+
+.hud-sound__key {
+  min-width: calc(var(--hud-s-lh) + var(--hud-u));
+  padding: 0 var(--hud-u);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: var(--hud-radius);
+  color: var(--hud-ink);
+  font-family: var(--hud-sans);
+  font-size: var(--hud-s);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-s-lh);
+  text-align: center;
+}
+
 .hud-number {
   width: calc(var(--hud-stepper-value) + var(--hud-gap-group));
   min-height: var(--hud-hit);
