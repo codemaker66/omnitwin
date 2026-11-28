@@ -106,12 +106,40 @@ export const REDACTED_PARAMS_MARKER = "params: [redacted]";
 // of a line so "route params: id" in prose is left alone.
 const PARAMS_BLOCK = /(^|\n)params:[\s\S]*?(?=\n[ \t]+at |\ncaused by: |$)/g;
 
+// PostgreSQL's own messages that quote the value they refused, as
+// PostgreSQL 16.6 words them (probed 27 Nov 2026): a guest's name or email
+// typed into the wrong field would otherwise ride the pg error's message,
+// which Sentry sends as a linked error and the log writes as `cause`. Each
+// rule keeps what the value was refused for (the type, the enum, the field)
+// and drops only the value. The messages that quote only the schema (a
+// unique, not-null or check constraint, a column, a relation) are left whole.
+const QUOTED_VALUE_RULES: readonly (readonly [RegExp, string])[] = [
+  // invalid input syntax for type uuid: "<value>" (and integer, timestamp with time zone, ...)
+  [/(invalid input syntax for type [^:\n]+: )"[^\n]*"/g, "$1\"[redacted]\""],
+  // invalid input value for enum request_state: "<value>"
+  [/(invalid input value for enum [^:\n]+: )"[^\n]*"/g, "$1\"[redacted]\""],
+  // date/time field value out of range, malformed array/range/record literal, invalid hexadecimal digit
+  [/((?:date\/time field value out of range|malformed (?:array|range|record) literal|invalid hexadecimal digit): )"[^\n]*"/g, "$1\"[redacted]\""],
+  // value "<value>" is out of range for type integer
+  [/(\bvalue )"[^\n]*?"( is out of range for type )/g, "$1\"[redacted]\"$2"],
+  // invalid value "<value>" for "YYYY"
+  [/(\binvalid value )"[^\n]*?"( for ")/g, "$1\"[redacted]\"$2"],
+  // time zone "<value>" not recognized
+  [/(\btime zone )"[^\n]*?"( not recognized)/g, "$1\"[redacted]\"$2"],
+  // invalid byte sequence for encoding "UTF8": 0xc3 0x28 (the value's own bytes)
+  [/(invalid byte sequence for encoding "[^"\n]+": )0x[0-9a-f]{2}(?: 0x[0-9a-f]{2})*/g, "$1[redacted]"],
+];
+
 /**
- * Replace a query-parameters block with a marker and keep the rest, including
- * the SQL text. A message with no `params:` line is returned unchanged.
+ * Replace a query-parameters block with a marker and drop the value
+ * PostgreSQL quotes in its own refusals; keep the rest, including the SQL
+ * text and the names of the types, constraints, columns and relations. A
+ * message with neither is returned unchanged.
  */
 export function scrubErrorMessage(message: string): string {
-  return message.replace(PARAMS_BLOCK, `$1${REDACTED_PARAMS_MARKER}`);
+  let scrubbed = message.replace(PARAMS_BLOCK, `$1${REDACTED_PARAMS_MARKER}`);
+  for (const [pattern, replacement] of QUOTED_VALUE_RULES) scrubbed = scrubbed.replace(pattern, replacement);
+  return scrubbed;
 }
 
 /** Error properties that help diagnosis and carry schema names, never row values. */

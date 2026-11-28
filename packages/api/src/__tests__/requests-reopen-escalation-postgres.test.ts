@@ -122,7 +122,9 @@ describe.skipIf(target === undefined)("a reopened request on migrated PostgreSQL
       // nobody's, with an email of its own beside the first escalation's.
       const noon = new Date("2026-01-21T12:00:00.000Z");
       await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - 1000) }).where(eq(schema.requests.id, id));
-      const escalated = (await runRequestEscalationPass(db, { now: noon })).filter((item) => item.request.id === id);
+      const pass = await runRequestEscalationPass(db, { now: noon });
+      expect(pass.failed).toEqual([]);
+      const escalated = pass.escalated.filter((item) => item.request.id === id);
       expect(escalated.map((item) => [item.reason, item.emailedAdmins])).toEqual([["unowned", 1]]);
       const keys = await pool.query<{ idempotency_key: string }>("SELECT idempotency_key FROM email_sends WHERE idempotency_key LIKE $1", [`request-escalation:${id}:%`]);
       expect(keys.rows.map((key) => key.idempotency_key)).toEqual([requestEscalationEmailKey(id, noon, f.admin.id)]);

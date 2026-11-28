@@ -188,6 +188,12 @@ interface ThreadSeed {
   readonly createdByUserId: string | null;
 }
 
+/** threads.title is varchar(160). A request's thread takes the request's
+ *  summary, which holds its room's name (up to 200 characters): unclipped, a
+ *  room longer than about 140 refused the request at its raise (22001; found
+ *  under #495's review, LN2). */
+export const THREAD_TITLE_MAX = 160;
+
 /** Insert-or-read against threads_one_per_subject: the index decides. */
 async function getOrCreateThread(conn: Conn, seed: ThreadSeed): Promise<{ created: boolean; row: ThreadRow }> {
   const inserted = await conn
@@ -200,7 +206,7 @@ async function getOrCreateThread(conn: Conn, seed: ThreadSeed): Promise<{ create
       eventId: seed.eventId,
       requestId: seed.requestId,
       subjectUserId: null,
-      title: seed.title,
+      title: seed.title === null ? null : clipName(seed.title, THREAD_TITLE_MAX),
       createdByUserId: seed.createdByUserId,
     })
     .onConflictDoNothing()

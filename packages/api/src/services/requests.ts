@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import {
   STAFF_AUDIENCE_ROLES,
@@ -193,6 +193,14 @@ interface NotificationSeed {
   readonly severity: "info" | "attention" | "urgent";
 }
 
+/** event_plan_notifications.title is varchar(180), and insertNotifications is
+ *  the request paths' one insert into it. A request's title holds its room's
+ *  name, which may be 200 characters, and the escalation's adds "Still
+ *  waiting: ". Unclipped, a room renamed past about 140 to 157 characters
+ *  after a request was raised there refused that request's escalation at
+ *  every pass (22001), so it stayed due for ever (#495's review, LN2, LR3). */
+export const NOTIFICATION_TITLE_MAX = 180;
+
 async function insertNotifications(
   tx: Pick<Database, "insert">,
   seeds: readonly NotificationSeed[],
@@ -205,7 +213,7 @@ async function insertNotifications(
       venueId: seed.venueId,
       audienceRole: seed.audienceRole,
       recipientUserId: seed.recipientUserId,
-      title: seed.title,
+      title: clipName(seed.title, NOTIFICATION_TITLE_MAX),
       body: seed.body,
       severity: seed.severity,
       actionPath: DAY_BOARD_PATH,
@@ -949,7 +957,7 @@ export interface DutyAdmin {
  *  that person is still an administrator or manager of the venue; otherwise
  *  every administrator of the venue, as before. */
 export async function dutyAdminsFor(
-  db: Database,
+  db: Pick<Database, "select">,
   venueId: string,
   settings: { readonly dutyAdminUserId: string | null } | null,
 ): Promise<readonly DutyAdmin[]> {
@@ -1034,15 +1042,85 @@ export interface EscalationPassDeps {
   /** Injected for tests; defaults to the house email service. */
   readonly send?: (payload: EmailPayload, options: SendOptions) => Promise<boolean>;
   readonly appUrl?: string;
+  /** Requests held back until their own retry deadline, each with the due
+   *  instant (epoch ms) its claim failed at: a request the escalation pass
+   *  keeps failing on is not tried at every wake (#495's review, LN1), and a
+   *  request that has moved since (taken and handed over, or reopened) is not
+   *  held at all (LQ2). Nothing is dropped: it is tried again once its
+   *  deadline passes. */
+  readonly skip?: ReadonlyMap<string, number>;
+}
+
+/** The instant a candidate fell due: a handed-over request's relief deadline,
+ *  otherwise its escalation window. */
+const dueInstant = sql`case when ${requests.state} = 'handed-over' then ${requests.handoverDueAt} else ${requests.escalationDueAt} end`;
+
+/** The same instant, read from a row. */
+function dueInstantOf(row: Pick<RequestRow, "state" | "handoverDueAt" | "escalationDueAt">): Date | null {
+  return row.state === "handed-over" ? row.handoverDueAt : row.escalationDueAt;
+}
+
+/** Leaves out each held request only while it is still due at the instant its
+ *  claim failed (#495's review, LQ2): one that has moved since falls due anew
+ *  at once. The columns hold microseconds; drizzle reads them as text and
+ *  makes the Date with new Date(text), to the millisecond. So the stored
+ *  instant is compared to the millisecond, as it was read (LS3). */
+export function notHeldAt(held: ReadonlyMap<string, number>): SQL | undefined {
+  if (held.size === 0) return undefined;
+  return and(...[...held].map(([id, dueMs]) =>
+    sql`not (${requests.id} = ${id} and date_trunc('milliseconds', ${dueInstant}) = ${new Date(dueMs).toISOString()}::timestamptz)`));
+}
+
+/** A request a pass failed on, at which step, and why: at the claim (its
+ *  claim rolled back, so it is still due, at `dueAt`), or at its email (it is
+ *  escalated and announced; only its email waits). */
+export type EscalationPassFailure =
+  | { readonly requestId: string; readonly step: "claim"; readonly dueAt: Date; readonly error: unknown }
+  | { readonly requestId: string; readonly step: "email"; readonly error: unknown };
+
+/** One escalation email that threw, naming its request (a UUID, no person
+ *  value); the original error is its cause. */
+export class EscalationEmailFailed extends Error {
+  readonly requestId: string;
+
+  constructor(requestId: string, cause: unknown) {
+    super(`the escalation email of request ${requestId} could not be sent`, { cause });
+    this.name = "EscalationEmailFailed";
+    this.requestId = requestId;
+  }
+}
+
+/** The email pass when some rows threw: every row was tried; these are the
+ *  ones that threw, and `sent` the ones that went (T-768). */
+export class EscalationEmailPassIncomplete extends AggregateError {
+  readonly failures: readonly EscalationEmailFailed[];
+  readonly sent: readonly EscalationEmailSent[];
+
+  constructor(failures: readonly EscalationEmailFailed[], sent: readonly EscalationEmailSent[]) {
+    super(failures, `the email pass failed on ${String(failures.length)} request(s)`);
+    this.name = "EscalationEmailPassIncomplete";
+    this.failures = failures;
+    this.sent = sent;
+  }
+}
+
+/** What one escalation pass did: the requests it escalated, every one of
+ *  which is to be announced, and the ones it failed on. One request's
+ *  failure costs no other its escalation or its announcement (T-768). */
+export interface EscalationPassResult {
+  readonly escalated: readonly EscalatedRequest[];
+  readonly failed: readonly EscalationPassFailure[];
 }
 
 export async function runRequestEscalationPass(
   db: Database,
   deps: EscalationPassDeps = {},
-): Promise<readonly EscalatedRequest[]> {
+): Promise<EscalationPassResult> {
   const now = deps.now ?? new Date();
   const send = deps.send ?? sendEmail;
 
+  // A failure here comes before any claim, so the whole pass fails and
+  // nothing is lost: every due request is still due.
   const candidates = await db
     .select()
     .from(requests)
@@ -1052,62 +1130,96 @@ export async function runRequestEscalationPass(
         and(inArray(requests.state, [...UNOWNED_ESCALATING_STATES]), isNotNull(requests.escalationDueAt), lte(requests.escalationDueAt, now)),
         and(eq(requests.state, "handed-over"), isNotNull(requests.handoverDueAt), lte(requests.handoverDueAt, now)),
       ),
+      notHeldAt(deps.skip ?? new Map()),
     ))
+    // The longest-waiting first: with more than a hundred due, the oldest go out (LN1).
+    .orderBy(asc(dueInstant), asc(requests.id))
     .limit(100);
 
   const due = selectDueRequestEscalations(candidates, now);
   const escalated: EscalatedRequest[] = [];
+  const failed: EscalationPassFailure[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
+  const fail = (failure: EscalationPassFailure): void => {
+    failed.push(failure);
+    deps.logger?.warn({ err: failure.error, requestId: failure.requestId, step: failure.step }, "the escalation pass failed on a request");
+  };
 
   for (const candidate of due) {
-    // Claim it. A second process (or a second sweep) matches nothing, and
-    // neither does a request somebody took between the reading and now.
-    const claimed = await db
-      .update(requests)
-      .set({ escalatedAt: now, updatedAt: now })
-      .where(and(eq(requests.id, candidate.id), eq(requests.state, candidate.state), isNull(requests.escalatedAt)))
-      .returning();
-    const row = claimed[0];
-    if (row === undefined) continue;
-    const escalatedAt = row.escalatedAt ?? now;
+    let claim: {
+      readonly row: RequestRow;
+      readonly reason: EscalationReason;
+      readonly roomName: string | null;
+      readonly settings: Awaited<ReturnType<typeof readOperatingSettings>>;
+      readonly admins: readonly DutyAdmin[];
+      readonly notificationIds: readonly string[];
+    } | null;
+    try {
+      // The claim, the reads and the inbox copy commit together (T-768): a
+      // request whose inbox copy cannot be written stays unclaimed, so the
+      // next pass escalates it, rather than staying claimed with nobody told.
+      claim = await db.transaction(async (tx) => {
+        // Claim it. A second process (or a second sweep) matches nothing, and
+        // neither does a request somebody took between the reading and now.
+        const [row] = await tx
+          .update(requests)
+          .set({ escalatedAt: now, updatedAt: now })
+          .where(and(eq(requests.id, candidate.id), eq(requests.state, candidate.state), isNull(requests.escalatedAt)))
+          .returning();
+        if (row === undefined) return null;
 
-    const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
-    const roomName = await roomNameFor(db, row.roomId);
-    let settings = settingsByVenue.get(row.venueId);
-    if (settings === undefined) {
-      settings = await readOperatingSettings(db, row.venueId);
-      settingsByVenue.set(row.venueId, settings);
+        const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
+        const roomName = await roomNameFor(tx, row.roomId);
+        let settings = settingsByVenue.get(row.venueId);
+        if (settings === undefined) {
+          settings = await readOperatingSettings(tx, row.venueId);
+          settingsByVenue.set(row.venueId, settings);
+        }
+        const admins = await dutyAdminsFor(tx, row.venueId, settings);
+
+        const title = `Still waiting: ${summariseRequest({ kind: row.kind, quantity: row.quantity, roomName })}`;
+        const body = reason === "handover"
+          ? `${row.ownerName ?? "A colleague"} handed this to ${row.handoverToName ?? "a colleague"}, who has not taken it yet.`
+          : row.state === "reopened"
+            ? `${row.requestedByName}'s request was reopened and nobody has picked it up yet.`
+            : `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
+        const notificationIds = await insertNotifications(tx, admins.map((admin) => ({
+          venueId: row.venueId,
+          eventId: row.eventId,
+          audienceRole: "admin" as AudienceRole,
+          recipientUserId: admin.id,
+          title,
+          body,
+          severity: "urgent" as const,
+        })));
+        return { row, reason, roomName, settings, admins, notificationIds };
+      });
+    } catch (error: unknown) {
+      // The instant it was due at: a hold on it lasts only while it still is (LQ2).
+      fail({ requestId: candidate.id, step: "claim", dueAt: dueInstantOf(candidate) ?? now, error });
+      continue;
     }
-    const admins = await dutyAdminsFor(db, row.venueId, settings);
-
-    const title = `Still waiting: ${summariseRequest({ kind: row.kind, quantity: row.quantity, roomName })}`;
-    const body = reason === "handover"
-      ? `${row.ownerName ?? "A colleague"} handed this to ${row.handoverToName ?? "a colleague"}, who has not taken it yet.`
-      : row.state === "reopened"
-        ? `${row.requestedByName}'s request was reopened and nobody has picked it up yet.`
-        : `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
-    const notificationIds = await insertNotifications(db, admins.map((admin) => ({
-      venueId: row.venueId,
-      eventId: row.eventId,
-      audienceRole: "admin" as AudienceRole,
-      recipientUserId: admin.id,
-      title,
-      body,
-      severity: "urgent" as const,
-    })));
+    if (claim === null) continue;
+    const { row, reason, roomName, settings, admins, notificationIds } = claim;
+    const escalatedAt = row.escalatedAt ?? now;
 
     // Email outside quiet hours only; inside them the inbox copy stands and
     // the email pass sends when they end, if the request is still unowned.
-    // The mark is set once every admin's email went; a send that failed
-    // leaves it for the email pass to try again (each email is keyed per
-    // request and person, so nobody hears twice).
+    // The mark is set once every admin's email went; a send that failed, or
+    // threw, leaves it for the email pass to try again (each email is keyed
+    // per request and person, so nobody hears twice). Either way the request
+    // is escalated, with its inbox copy, and is announced.
     const quiet = quietHoursOf(settings);
     const emailDeferred = quiet !== null && withinQuietHours(now.getTime(), quiet);
     let emailedAdmins = 0;
     if (!emailDeferred) {
-      emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
-      if (emailedAdmins === admins.length) {
-        await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
+      try {
+        emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
+        if (emailedAdmins === admins.length) {
+          await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
+        }
+      } catch (error: unknown) {
+        fail({ requestId: row.id, step: "email", error });
       }
     }
 
@@ -1125,13 +1237,18 @@ export async function runRequestEscalationPass(
     });
   }
 
-  return escalated;
+  return { escalated, failed };
 }
 
+/** One row the email pass tried without a throw. `marked` is whether its
+ *  email went to every duty admin and the row was marked sent; a send that
+ *  failed (sendEmail answers false) leaves it unmarked, to be tried again,
+ *  and is not an email that went (#495, F-A). */
 export interface EscalationEmailSent {
   readonly requestId: string;
   readonly venueId: string;
   readonly emailedAdmins: number;
+  readonly marked: boolean;
 }
 
 /** The emails quiet hours held back: every escalated request whose email
@@ -1157,33 +1274,44 @@ export async function runEscalationEmailPass(
     .limit(100);
 
   const sent: EscalationEmailSent[] = [];
+  const failures: EscalationEmailFailed[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
   for (const row of waiting) {
     const escalatedAt = row.escalatedAt;
     if (escalatedAt === null) continue;
-    let settings = settingsByVenue.get(row.venueId);
-    if (settings === undefined) {
-      settings = await readOperatingSettings(db, row.venueId);
-      settingsByVenue.set(row.venueId, settings);
-    }
-    const quiet = quietHoursOf(settings);
-    if (quiet !== null && withinQuietHours(now.getTime(), quiet)) continue;
+    // Each row on its own (T-768): one that throws leaves its mark unset, so
+    // a later pass tries it again, and costs no other row its email.
+    try {
+      let settings = settingsByVenue.get(row.venueId);
+      if (settings === undefined) {
+        settings = await readOperatingSettings(db, row.venueId);
+        settingsByVenue.set(row.venueId, settings);
+      }
+      const quiet = quietHoursOf(settings);
+      if (quiet !== null && withinQuietHours(now.getTime(), quiet)) continue;
 
-    // Send first, mark after: each email is keyed per request and person in
-    // email_sends, so a second process sends nothing twice, and a send that
-    // failed is tried again on the next pass instead of being marked done.
-    const roomName = await roomNameFor(db, row.roomId);
-    const admins = await dutyAdminsFor(db, row.venueId, settings);
-    const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
-    const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
-    if (emailedAdmins === admins.length) {
-      await db.update(requests).set({ escalationEmailedAt: now }).where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)));
+      // Send first, mark after: each email is keyed per request and person in
+      // email_sends, so a second process sends nothing twice, and a send that
+      // failed is tried again on the next pass instead of being marked done.
+      const roomName = await roomNameFor(db, row.roomId);
+      const admins = await dutyAdminsFor(db, row.venueId, settings);
+      const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
+      const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
+      const marked = emailedAdmins === admins.length;
+      if (marked) {
+        await db.update(requests).set({ escalationEmailedAt: now }).where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)));
+      }
+      deps.logger?.info(
+        { event: "request.escalation_emailed", requestId: row.id, venueId: row.venueId, admins: admins.length, emailedAdmins },
+        "request.escalation_emailed",
+      );
+      sent.push({ requestId: row.id, venueId: row.venueId, emailedAdmins, marked });
+    } catch (error: unknown) {
+      failures.push(new EscalationEmailFailed(row.id, error));
+      deps.logger?.warn({ err: error, requestId: row.id }, "request escalation email failed");
     }
-    deps.logger?.info(
-      { event: "request.escalation_emailed", requestId: row.id, venueId: row.venueId, admins: admins.length, emailedAdmins },
-      "request.escalation_emailed",
-    );
-    sent.push({ requestId: row.id, venueId: row.venueId, emailedAdmins });
   }
+  // Every row was tried; the pass fails if any one did, so the sweep reports it.
+  if (failures.length > 0) throw new EscalationEmailPassIncomplete(failures, sent);
   return sent;
 }
