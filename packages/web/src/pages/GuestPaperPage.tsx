@@ -134,7 +134,9 @@ function useOpenedList(planId: string, store: GuestListStore): boolean {
     // Read afresh after each wait: the planner may leave while one runs.
     const gone = (): boolean => left.signal.aborted;
     void (async () => {
-      // The sweep goes first, so a list past its removal day is never printed.
+      // The sweep goes first, so a list past its removal day is not printed. That holds when this
+      // sweep gets the lock: when another tab holds the lock past the bound, the sweep removes
+      // nothing this time, and the list is opened, and can be printed.
       try {
         if ((await store.sweep(Date.now())).includes(planId)) sweptHere.current = true;
       } catch {
@@ -250,9 +252,11 @@ async function fontsLoaded(): Promise<void> {
 /**
  * Records a print on the list (its version and day) and puts it on the page at
  * once, so the paper the browser lays out next carries it. Not a change undo
- * steps back through. A print never writes over another tab's list: when its
- * save finds one, their list is kept, with this print recorded on it as made
- * from an older copy, and the page says so.
+ * steps back through. A print alone never writes over another tab's list:
+ * when its save finds one, their list is kept, with this print recorded on it
+ * as made from an older copy, and the page says so. With an ordinary change
+ * waiting too, the save is that change's: this tab's list is kept, as for any
+ * change, and the page says that instead.
  */
 function recordPrint(): void {
   const at = new Date().toISOString();
@@ -284,11 +288,16 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
   // no lock: the browser lays the sheet out as this handler returns, so
   // anything awaited here would print the old number. The reads at each
   // mount, on focus and when the page is seen again are what keep the list
-  // current before it. In the moment before such a read returns, the sheet
-  // can be of an older copy, and can then share its number with a sheet
-  // another tab has printed. That cannot be prevented here: the save that
-  // follows keeps their list, and the page says not to use the printout.
-  // What holds is that no later sheet is given a number a sheet has carried.
+  // current before it. In the moment before such a read returns, or while a
+  // change is waiting here (nothing is read then), the sheet can be of an
+  // older copy, and can then share its number with a sheet another tab has
+  // printed. That cannot be prevented here, and what the save that follows
+  // does depends on what was waiting. With nothing else waiting, it keeps
+  // the other tab's list, and the page says not to use the printout. With a
+  // change already waiting here, this tab's list is kept, the page says only
+  // that this tab's version was kept, the two sheets share the number, and
+  // the next print takes the next one. What holds in both: no later sheet is
+  // given a number a sheet has carried.
   useEffect(() => {
     here.current = true;
     const onBeforePrint = (): void => {

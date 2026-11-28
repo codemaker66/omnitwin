@@ -83,7 +83,9 @@ function useOpenedList(planId: string, store: GuestListStore): boolean {
     // Read afresh after each wait: the planner may leave while one runs.
     const gone = (): boolean => left.signal.aborted;
     void (async () => {
-      // The sweep goes first, so a list past its removal day is never shown.
+      // The sweep goes first, so a list past its removal day is not shown. That holds when this
+      // sweep gets the lock: when another tab holds the lock past the bound, the sweep removes
+      // nothing this time, and the list is opened.
       try {
         if ((await store.sweep(Date.now())).includes(planId)) sweptHere.current = true;
       } catch {
