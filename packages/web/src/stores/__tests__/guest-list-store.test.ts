@@ -2439,4 +2439,124 @@ describe("guest list page state: a print is held while a change waits on a busy 
     expect(state().notice).toEqual({ kind: "print-of-older-copy" });
     state().pageGone();
   });
+
+  // The Print button says what its press did to the page's list: the list just before it recorded
+  // the print, and the list just after. Nothing was printed, so when that record is all that
+  // waits, it is taken back and nothing of it is left waiting.
+
+  /** Records a print as the Print button does, and answers the page's list just before and just after. */
+  function recordsAPrint(at: string): { readonly before: GuestList | null; readonly recorded: GuestList | null } {
+    const before = state().list;
+    let printed = 0;
+    state().apply(
+      (list) => {
+        const next = markPrinted(list, at);
+        printed = next.paperVersion;
+        return next;
+      },
+      { undo: false, ifOtherCopy: (theirs) => printedFromOlderCopy(theirs, printed, at) },
+    );
+    return { before, recorded: state().list };
+  }
+
+  it("takes back the record of a print that was held, so nothing waits, nothing is tried again and the page is as before the press", async () => {
+    const { backend, store } = device();
+    let saves = 0;
+    const { waits, say } = answering({
+      ...store,
+      save: (list, loaded, opts) => {
+        saves += 1;
+        return store.save(list, loaded, opts);
+      },
+    });
+    await openedWith(waits);
+    const kept = saves;
+
+    say("busy");
+    const press = recordsAPrint("2026-11-14T10:00:00.000Z");
+    expect(state().list?.paperVersion).toBe(1);
+    await state().flush();
+    expect(state().changeWaiting()).toBe(true);
+    // With a kit page there, the busy answer left a retry scheduled.
+    expect(vi.getTimerCount()).toBe(1);
+
+    expect(state().holdPrint(press)).toBe(true);
+    expect(state().notice).toEqual({ kind: "print-held" });
+    // The very list the page held before the press: never printed.
+    expect(state().list).toBe(press.before);
+    expect(state().list?.paperVersion).toBe(0);
+    expect(state().list?.printedAt).toBeNull();
+    expect(state().changeWaiting()).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    // However long the page stays, nothing of that print is tried again; and it is not held twice.
+    await vi.advanceTimersByTimeAsync(10 * AUTOSAVE_MS);
+    await state().flush();
+    expect(saves).toBe(kept);
+    expect(state().holdPrint()).toBe(false);
+    const stored = await reopened(backend, PLAN_A);
+    expect(stored.kind === "ready" ? stored.list.paperVersion : null).toBe(0);
+
+    // The next change is kept as any change is, over the copy this page still holds.
+    say("as-kept");
+    state().apply(titled("After the held press"));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "print-held" });
+    const after = await reopened(backend, PLAN_A);
+    expect(after.kind === "ready" ? [after.list.title, after.list.paperVersion] : null).toEqual(["After the held press", 0]);
+  });
+
+  it("takes nothing back when something was applied after the record: the record still waits and is tried again", async () => {
+    const { backend, store } = device();
+    const { waits, say } = answering(store);
+    await openedWith(waits);
+
+    say("busy");
+    const press = recordsAPrint("2026-11-14T10:00:00.000Z");
+    // The browser's own Print fires while the button waits: its sheet does go out, and its print is recorded too.
+    recordsAPrint("2026-11-14T10:00:01.000Z");
+    await state().flush();
+    expect(state().list).not.toBe(press.recorded);
+
+    expect(state().holdPrint(press)).toBe(true);
+    expect(state().notice).toEqual({ kind: "print-held" });
+    // The list on the page is left as it was, with the print that did go out.
+    expect(state().list?.paperVersion).toBe(1);
+    expect(state().list?.printedAt).toBe("2026-11-14T10:00:01.000Z");
+    expect(state().changeWaiting()).toBe(true);
+    expect(vi.getTimerCount()).toBe(1);
+
+    // It is tried again, and kept once the other tab has finished.
+    say("as-kept");
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    await state().flush();
+    expect(state().changeWaiting()).toBe(false);
+    const stored = await reopened(backend, PLAN_A);
+    expect(stored.kind === "ready" ? [stored.list.paperVersion, stored.list.printedAt] : null).toEqual([1, "2026-11-14T10:00:01.000Z"]);
+  });
+
+  it("takes nothing back while an ordinary change waits with the record: that change is still tried again, and kept", async () => {
+    const { backend, store } = device();
+    const { waits, say } = answering(store);
+    await openedWith(waits);
+
+    // The device refuses a change, so it is still waiting when the print is recorded.
+    say("not-kept");
+    state().apply(titled("Typed before the press"));
+    await state().flush();
+    expect(state().changeWaiting()).toBe(true);
+    const press = recordsAPrint("2026-11-14T10:00:00.000Z");
+    say("busy");
+    await state().flush();
+    expect(state().list).toBe(press.recorded);
+
+    expect(state().holdPrint(press)).toBe(true);
+    expect(state().list).toBe(press.recorded);
+    expect(state().changeWaiting()).toBe(true);
+
+    say("as-kept");
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    await state().flush();
+    expect(state().changeWaiting()).toBe(false);
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Typed before the press");
+  });
 });

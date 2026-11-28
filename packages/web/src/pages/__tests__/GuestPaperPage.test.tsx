@@ -1665,12 +1665,14 @@ describe("the guest paper page: the Print button holds its print while another t
     expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("print-held");
     await waitFor(() => { expect(button.getAttribute("aria-busy")).toBe("false"); });
     expect(printSpy).not.toHaveBeenCalled();
-    // The record of that print is on the page only: the device still holds the list as never printed.
+    // Nothing was printed, so the record of that print is nowhere: the device still holds the list
+    // as never printed, and so does the page again.
     const before = await memoryStore(backend).open(PLAN_ID);
     expect(before.kind === "ready" ? before.list.paperVersion : null).toBe(0);
+    expect(currentList().paperVersion).toBe(0);
     expect(within(tools()).queryByText(OTHER_TAB_BUSY_WORDS)).toBeNull();
 
-    // The other tab finishes. Pressed again, the button prints once.
+    // The other tab finishes. Pressed again, the button records the print afresh and prints once.
     setBusy(false);
     fireEvent.click(button);
     await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
@@ -1683,6 +1685,80 @@ describe("the guest paper page: the Print button holds its print while another t
     expect(after.kind === "ready" ? [after.list.paperVersion, after.list.changedSincePrint] : null).toEqual([1, false]);
     expect(within(tools()).queryByText(PRINT_HELD_WORDS)).toBeNull();
     expect(state().notice).toBeNull();
+  });
+
+  it("leaves nothing of a held print waiting: the page is as before the press, nothing is tried again, and the next press prints the newest list once, with no word of an older printout", async () => {
+    const backend = memoryBackend();
+    const real = await storeHolding(list180({ paperVersion: 3, changedSincePrint: true, printedAt: "2026-11-10T09:00:00.000Z" }), backend);
+    let busy = false;
+    const save = vi.fn<GuestListStore["save"]>((list, loaded, opts) => (busy ? Promise.resolve({ kind: "busy" }) : real.save(list, loaded, opts)));
+    const store: GuestListStore = { ...real, save };
+    // Every notice the page state holds, from now to the end.
+    const noticed: string[] = [];
+    const stopNoting = useGuestListStore.subscribe((now) => {
+      if (now.notice !== null) noticed.push(now.notice.kind);
+    });
+    // What is on the paper as the dialog opens.
+    let versionAtPrint = "";
+    let titleAtPrint = "";
+    printSpy.mockImplementation(() => {
+      versionAtPrint = text(document.querySelector(".gp-running"));
+      titleAtPrint = text(document.querySelector(".gp-leaf__title"));
+    });
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    const button = within(tools()).getByRole("button", { name: "Print" });
+    /** Lets the button's own steps finish while the clock is held: they wait on the device, never on a timer. (A `findBy` would wait on a timer the fake clock holds.) */
+    const untilFree = async (): Promise<void> => {
+      for (let turn = 0; turn < 20 && button.getAttribute("aria-busy") === "true"; turn += 1) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      }
+      expect(button.getAttribute("aria-busy")).toBe("false");
+    };
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(new Date("2026-11-15T10:00:00.000Z"));
+    try {
+      // Another tab holds the list's lock past the bound as the print's record is saved.
+      busy = true;
+      fireEvent.click(button);
+      await untilFree();
+      expect(printSpy).not.toHaveBeenCalled();
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(within(tools()).getByText(PRINT_HELD_WORDS).closest("[data-notice]")?.getAttribute("data-notice")).toBe("print-held");
+      // The page is as it was before the press: version 3, changed since, printed when it was.
+      expect([currentList().paperVersion, currentList().changedSincePrint, currentList().printedAt]).toEqual([3, true, "2026-11-10T09:00:00.000Z"]);
+      expect(text(tools().querySelector(".gp-tools__version"))).toBe("Version 3 · printed 10 November 2026");
+      // Nothing waits: the browser is not asked to confirm leaving over a print that never happened.
+      expect(state().changeWaiting()).toBe(false);
+      const leaving = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(leaving);
+      expect(leaving.defaultPrevented).toBe(false);
+      // And nothing is tried again, however long the paper stays open.
+      await act(async () => { await vi.advanceTimersByTimeAsync(10 * AUTOSAVE_MS); });
+      expect(save).toHaveBeenCalledTimes(1);
+
+      // The other tab was saving this very list: its newer copy is on the device now, and it has finished.
+      await otherTabSaves(backend, (theirs) => ({ ...theirs, title: "Theirs, newer", changedSincePrint: true, updatedAt: "2026-11-15T09:59:00.000Z" }));
+      busy = false;
+      fireEvent.click(button);
+      await untilFree();
+
+      // One dialog, on their list, under the next number.
+      expect(printSpy).toHaveBeenCalledTimes(1);
+      expect(titleAtPrint).toBe("Theirs, newer");
+      expect(versionAtPrint).toBe("Version 4 · printed 15 November 2026");
+      const kept = await memoryStore(backend).open(PLAN_ID);
+      expect(kept.kind === "ready" ? [kept.list.title, kept.list.paperVersion, kept.list.changedSincePrint] : null).toEqual(["Theirs, newer", 4, false]);
+      // At no point did the page speak of a printout made from an older copy: none was made.
+      expect(noticed).toContain("print-held");
+      expect(noticed).not.toContain("print-of-older-copy");
+      expect(within(tools()).queryByText(PRINT_OF_OLDER_COPY_WORDS)).toBeNull();
+      expect(within(tools()).queryByText(PRINT_HELD_WORDS)).toBeNull();
+      expect(state().notice).toBeNull();
+    } finally {
+      stopNoting();
+      vi.useRealTimers();
+    }
   });
 
   it("records no print when a change already waiting here cannot be kept because another tab is busy", async () => {

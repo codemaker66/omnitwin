@@ -71,6 +71,15 @@ export interface MountRead {
   readonly sweptHere: boolean;
 }
 
+/**
+ * What a press of the Print button did to the page's list: the list just
+ * before it recorded its print, and the list just after.
+ */
+export interface PrintPress {
+  readonly before: GuestList | null;
+  readonly recorded: GuestList | null;
+}
+
 export interface GuestListState {
   readonly planId: string | null;
   readonly phase: KitPhase;
@@ -128,8 +137,18 @@ export interface GuestListState {
    * printed (but never in place of the word that a printout was made from an
    * older copy). False, and nothing said, in every other case, a device that
    * refuses to keep the list included: there the button prints as it did.
+   *
+   * The button passes `press` once it has recorded its print. Nothing was
+   * printed, so when that record is all that waits (the page's list is still
+   * the very list it left, and no ordinary change waits with it), it is taken
+   * back: the page's list is the one from before the press again, and nothing
+   * is left waiting or scheduled. So no later save speaks of a printout that
+   * never left, and the browser does not ask before the tab is closed over
+   * one. When anything else was applied meanwhile, or an ordinary change
+   * waits too, everything is left waiting as it was. The answer is true in
+   * both cases.
    */
-  holdPrint(): boolean;
+  holdPrint(press?: PrintPress): boolean;
   /**
    * Takes up another tab's changes. When nothing here is unsaved and no save
    * is running, reads the device again and takes the stored list if it is not
@@ -748,9 +767,19 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         return session !== null && (session.unsaved || session.running !== null);
       },
 
-      holdPrint() {
+      holdPrint(press) {
         const session = current;
         if (session === null || !session.unsaved || !session.waitingOnBusyTab) return false;
+        // Nothing was printed. When the record of that print is all that waits (nothing has been
+        // applied since the button recorded it, and no ordinary change waits with it), it is taken
+        // back: the list from before the press is the page's list again, and nothing is left
+        // waiting or scheduled. Anything else, a print the browser's own command recorded during
+        // the wait included, stays waiting exactly as it was: that sheet did go out.
+        if (press !== undefined && press.before !== null && get().list === press.recorded && !session.ordinary) {
+          clearTimer(session);
+          nothingWaiting(session);
+          set({ list: press.before });
+        }
         // Said in place of whatever is showing, but for the word that a printout was made from an
         // older copy: that one is never put away for another.
         if (get().notice?.kind !== "print-of-older-copy") set({ notice: { kind: "print-held" } });
